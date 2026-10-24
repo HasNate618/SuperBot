@@ -1,5 +1,16 @@
 # The Fall first: a standing-G1 demo against Superhot's measured opening
 
+> **Status 2026-10-24 — two premises in this document are false, the game-side measurements are good.**
+> Corrected: (1) **C0 has run and passed** (`research/c0-results.md`) — the game is installed and
+> accepts synthetic HMD poses. (2) **xrizer is not in the proven path.** Superhot ships
+> `UnityOpenXR.dll` and reaches a focused session directly through the prefix's
+> `wineopenxr.dll` shim → host loader → Monado. The runtime pointer that made it work is
+> **`~/.config/openxr/1/active_runtime.json`**, not an `XR_RUNTIME_JSON` launch option, and the
+> launch **must** come from the Steam client UI (CLI `-applaunch` fails `AppError_9`). Proton was
+> `cachyos-11.0-20260703-slr`, not GE-Proton. (3) The body can now **walk** (39.79 m / 60 s) and
+> **hold** (RMS 1.3×10⁻⁴ m/s), so the "standing G1, no walking" framing is narrower than what is
+> available. The level geometry below — The Fall's 1.41 m enemy, 0.70 m pistol and exit, the 0.005
+> clock floor — is still the best information we have and is `MEASURED`.
 **Date:** 2026-10-23
 **Agent:** OpenCode `wbc-game`
 **Question:** given the measured game-side facts and the measured classical WBC, which whole-body demo should be built first, and what would it prove?
@@ -34,7 +45,7 @@
 The build is Unity **2022.3.62f3**, IL2CPP metadata v31, `xrsdk-pre-init-library=UnityOpenXR`, AppId **617830** `[MEASURED: boot.config / steam_emu.ini]`. `globalgamemanagers.assets` fixes the scene order `[MEASURED]`. The first story levels are:
 
 | Build index | Scene | Story name | Role in this proposal |
-|---:|---|---|---|
+| ---: | --- | --- | --- |
 | 0 | `VRLaunch` | boot/hub | not a level |
 | 1 | `CezaryVR_ReverseFall` | **The Fall** | **Demo 1** |
 | 2 | `CageFight_VR` | **Cage Fight** | standing-only fallback |
@@ -49,7 +60,7 @@ The display names and the order for levels 1–3 are `[CITED: https://readyvrone
 The player's XR origin is `_CameraRig` at **(10.502, 3.623, -7.900)** with a measured yaw of **−90.2°** (forward is −x). A second camera rig, `VRCameraRig`, sits at (10.405, 3.587, -7.936) with `VRCamera (eye)` at local zero; the XR rig is the one carrying `[CameraRig OCULUSVR]` and `XRRig` `[MEASURED: level1 hierarchy]`. The runtime eye is the XR origin plus the HMD pose. At the E3 standing height (**1.221 m**) the eye is at **4.844 m**; the level's catwalk origin is at **3.400 m**, and the combat objects sit at **4.8–4.9 m** — i.e. at standing eye level. The exact in-game eye height is a C0 measurement, not an assumption carried into the honesty claim.
 
 | Object | World position | Horizontal Δ from XR origin | Vertical Δ from XR origin | Role |
-|---|---:|---:|---:|---|
+| --- | ---: | ---: | ---: | --- |
 | `EnemyFactory (12)` | (9.16, 3.50, −7.90) | **1.35 m** | −0.12 m | spawn point under `EnemiesToSpawn` |
 | `EnemyBody` / first enemy | (9.09, 3.60, −7.90) | **1.41 m** | −0.02 m | first enemy |
 | enemy head mimic (`Chest`) | (~9.16, 5.37, −7.90) | ~1.4 m | +1.75 m | head/aim reference |
@@ -74,7 +85,7 @@ The first enemy is authored directly ahead, on the –x side: the player faces �
 `CezaryVR_ReverseFallFlowControl` is a 404-byte MonoBehaviour on `LevelFlowControl`; its serialized references map as follows `[MEASURED: raw PPtr parse, level1 object 25612]`:
 
 | Field | Referenced object | What it is |
-|---|---|---|
+| --- | --- | --- |
 | `RenderersAfterMonitors` | 18 catwalk/lamp/pipe objects | intro staging that appears after the monitors |
 | `FirstEnemies` | `EnemiesToSpawn` (597) | first wave container |
 | `Item` | `PistolGunPickup` (2026) | the pistol, parented under `Zwischenplatz` |
@@ -97,7 +108,7 @@ The first enemy's factory is not active at start: `EnemyFactory (12)` is a child
 `TimeControl` is a 48-byte MonoBehaviour, identical in levels 0–5 `[MEASURED: raw MB floats]`:
 
 | Field | Value |
-|---|---:|
+| --- | ---: |
 | `minTimescale` | **0.005** |
 | `maxTimescale` | **1.0** |
 | `inDash` | 0.0 |
@@ -118,7 +129,7 @@ The time-scale mapping is not decompiled. The C0 protocol in §5 measures the ra
 ### 1.5 Combat constants
 
 | System | Serialized value | Implication |
-|---|---:|---|
+| --- | ---: | --- |
 | `MindDeathWaveSystem.activationTimeShift` | 0.45 s | wave activation delay |
 | `deathWaveInterval` | 1.25 s | wave cadence |
 | `distanceCheckTimeTreshold` | 2.5 m | the first enemy at 1.41 m is inside |
@@ -134,7 +145,7 @@ The mind-death-wave is a potential second kill path at 1.41 m, but its trigger i
 ### 1.6 The later stages
 
 | Stage | First enemy | First item | What it demands |
-|---|---:|---:|---|
+| --- | ---: | ---: | --- |
 | Cage Fight (`CageFight_VR`) | `EnemyBody` **0.90 m** | throwable dog **1.19 m** | melee; enemies close; exit pyramid 1.72 m |
 | Corridor (`CezaryVR_Corridor`) | factory **12.31 m** | Motorola throwable **1.62 m** | traversal, turning, both ends |
 | Dojo (`CezaryVR_Dojo`) | factory **10.26 m** | — | traversal; camping point 12.98 m |
@@ -151,7 +162,7 @@ The Corridor's `Item` is a `ThrowableItem` (Motorola), not a gun; its first enem
 The classical WBC in `research/wbc-classical-proposal.md` is **weighted task-space IK over the floating-base G1**, 50 Hz, `mink` QP, position actuators, Menagerie `scene.xml` (29 joints, no neck, no fingers). It is not a contact-force QP and it does not walk. Its measured standing results:
 
 | Skill | Result | Caveat |
-|---|---:|---|
+| --- | ---: | --- |
 | Hold, 20 s | base **0.22 mm**, head 1.4 mm | neutral stand; Menagerie model |
 | Look, ±35° waist | base **3.3 mm**, yaw error **0.63°**, head tilt 2.9° | head is rigid to the torso; no neck |
 | Reach, single arm | **2.2–12.9 mm** | targets +0.20 m from neutral wrist |
@@ -171,7 +182,7 @@ The **C3 lineage's** walking side is the learned Playground policy's regime: **0
 The Fall's pistol and exit are 0.70 m from the eye. The WBC's published reach targets stop at 0.20 m. A probe with the same controller and default weights, targeting the head position + 0.70 m forward at eye level, gives `[MEASURED: spike/wbc_game/reach_far_test.py, logs/reach_far_test.txt]`:
 
 | Target | Side | Final wrist residual | Base max | Min margin | Fall |
-|---|---|---:|---:|---:|---|
+| --- | --- | ---: | ---: | ---: | --- |
 | pistol at 0.70 m | right | **27.3 cm** | 3.4 cm | 3.1 cm | no |
 | pistol at 0.70 m | left | **27.3 cm** | 3.4 cm | 3.2 cm | no |
 | pyramid at 0.70 m | right | **19.7 cm** | 6.7 cm | 0.2 cm | no |
@@ -195,7 +206,7 @@ C3f's failure was the frozen 29-DoF **Playground** policy, not SONIC; do not use
 ### 2.3 The learned walking candidate — SONIC default
 
 | Skill | SONIC default `[MEASURED: research/wbc-policy-proposal.md]` | Caveat |
-|---|---:|---|
+| --- | ---: | --- |
 | Hold, 20 s | **3.6 cm net**, 7.5 cm max, 0.0001 m/s | wrist pos 4–6 cm, orientation 17–23°; arms float ~0.15 m |
 | Walk, 10 s | **6.36 m**, 0.64 m/s, no fall | path error 0.271 m; 60 s unrun |
 | Arms while walking | survives | path error 0.32–0.37 m; wrist 5–10 cm / 8–19° |
@@ -213,7 +224,7 @@ SONIC is the walking route, not the Demo 1 body. Its hold is ~160× looser than 
 The state-of-findings R1–R8 are project bars, not demo bars. Demo 1 is allowed to be a strict subset; it must not claim the rest.
 
 | # | Requirement | Demo 1 status | Evidence / gap |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | R1 | Arms/head commandable; wrist residual ≤3 cm; orientation measured | **WBC stand: met. SONIC: partial. 0.70 m pedestal: not met.** | WBC reach 2.2–12.9 mm, aim 2.34°; SONIC hold 4–6 cm / 17–23°, walking 5–10 cm / 8–19°; far-reach probe 19.7–34.0 cm at 0.70–0.80 m. The game shot uses the WBC; the pickup/exit needs a step. |
 | R2 | Hold ≤~5 cm base over 20 s | **WBC: met. SONIC: met.** | WBC 0.22 mm; SONIC 3.6 cm; both pass, WBC ~160× tighter. The WBC is the Demo 1 body. |
 | R3 | Walk ≥5 m, ≥0.3 m/s, 60 s, push recovery | **WBC: not met. SONIC: sim pass.** | SONIC 6.36 m/10 s, 0.64 m/s, no fall; 60 s unrun; live unverified. Project route, not Demo 1. |
@@ -282,7 +293,7 @@ The VLM's first useful decision on The Fall is trivial ("enemy ahead, gun in han
 ### 4.5 Work order and estimates
 
 | Step | What | Estimate `[ASSUMPTION]` | Gate |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | C0 | Proton/xrizer/Monado remote + scripted pose + trigger + grim; The Fall's handoff/exit/clock | 1–2 days | C0 pass; otherwise stop |
 | W1 | WBC + `BodyCommand` + 50 Hz bridge + achieved-pose logging | 1–2 days | packets == `mjData`; hold/look/aim |
 | W2 | The Fall scripted clear (handoff, aim, trigger, level end) | 2–3 days | stage clear on video |
@@ -306,7 +317,7 @@ Demo 1 is roughly one week after C0 passes. Demo 2 is one to two weeks after the
 ### 5.2 What to log
 
 | Measurement | Method | Pass |
-|---|---|---|
+| --- | --- | --- |
 | View follows TCP pose | scripted HMD yaw ±35°; record the game window | the view follows; no freeze |
 | Trigger reaches the game | scripted trigger on/off; observe the pistol/UI | trigger registers |
 | Grim captures the game window | `hyprctl clients -j`, `grim -g` | game pixels, not the desktop |
@@ -471,7 +482,7 @@ Bullet:
 From `/tmp/opencode/spawn_contract.txt`; distances are from the `_CameraRig` XR origin, not the eye `[MEASURED]`:
 
 | Level | XR origin | Nearest combat objects |
-|---|---|---|
+| --- | --- | --- |
 | 1 The Fall | (10.50, 3.62, −7.90) | enemy factory 1.35 m; enemy body 1.41 m; pistol 1.46 m 3D (0.70 m horizontal at eye level); pyramid 1.37 m 3D (0.70 m horizontal) |
 | 2 Cage Fight | (19.30, 1.87, 1.09) | enemy body **0.90 m**; throwable dog 1.19 m; teleport pyramid 1.72 m |
 | 3 Corridor | (11.54, 3.40, −8.78) | Motorola throwable 1.62 m; enemy factory 12.31 m; EnemiesToSpawn 21.14 m |

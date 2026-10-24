@@ -1,5 +1,12 @@
 # Classical whole-body control for the G1 — easy half measured, hard half scoped
 
+> **Status 2026-10-24 — the verdict stands, and its open dependency is now resolved.**
+> The QP is precise and cannot walk: unchanged. Its item *"C0 is still unrun"* is **answered** —
+> C0 passed (`research/c0-results.md`): Superhot VR holds a focused session on `Monado: Remote HMD`
+> and its view tracks our poses. Its second dependency also resolved against it: C3j showed the QP
+> **cannot be composed onto SONIC** as a joint override (12.84 cm / 22.40° vs 3.51 cm / 7.22°, and
+> integral correction tips the robot). Only a **wrist-orientation-only** override survives, improving
+> pointing 7.22° → 5.08°.
 **Date:** 2026-10-23
 **Agent:** OpenCode `wbc-classical`
 **Question:** can a classical whole-body controller (QP/HQP over the floating-base G1, plus a gait generator) satisfy the vr-bot requirements R1–R8?
@@ -27,7 +34,7 @@ The measured controller is **weighted task-space IK over the full floating-base 
 Task stack and costs `[MEASURED]`:
 
 | Task | Cost | Notes |
-|---|---:|---|
+| --- | ---: | --- |
 | Left / right ankle-roll frame | 5000 pos / 5000 ori | planted feet |
 | Pelvis frame | 5000 pos / 5000 ori | soft base task inside the IK |
 | CoM (`subtree_com[1]`) | 100 | support/lean regulation |
@@ -54,7 +61,7 @@ Every reported pose is read from `mjData` after `mj_step`: base `qpos`, head `ge
 ### 2.1 Hold and look (R2)
 
 | Metric | Hold, 20 s | Look, 20 s (±35°) |
-|---|---:|---:|
+| --- | ---: | ---: |
 | Base max xy excursion | **0.00022 m** | **0.0033 m** |
 | Base net xy at end | 0.000065 m | 0.0024 m |
 | Head max xy excursion | 0.0014 m | 0.0116 m |
@@ -81,7 +88,7 @@ Nine reach configurations and nine aim configurations, all without a fall `[MEAS
 **Reach (final wrist pose, 2 s after command):**
 
 | Target | Config | Left residual | Right residual | Max base xy | Max ori err |
-|---|---|---:|---:|---:|---:|
+| --- | --- | ---: | ---: | ---: | ---: |
 | forward (+0.20, ±0.05, +0.05 m from neutral) | left | 0.0094 m | 0.0129 m | 0.0147 m | 2.7° |
 | forward | right | 0.0129 m | 0.0094 m | 0.0146 m | 2.7° |
 | forward | both | 0.0220 m | 0.0220 m | 0.0288 m | 5.0° |
@@ -95,7 +102,7 @@ Nine reach configurations and nine aim configurations, all without a fall `[MEAS
 **Aim (wrist z-axis pointed at world point `[0.8, 0, 1.0]`; final pointing error):**
 
 | Target | Config | Left aim err | Right aim err | Left residual | Right residual | Max base xy |
-|---|---|---:|---:|---:|---:|---:|
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
 | forward | left | **2.34°** | — | 0.0080 m | — | 0.0128 m |
 | forward | right | — | **2.34°** | — | 0.0080 m | 0.0128 m |
 | forward | both | 4.86° | 5.16° | 0.0208 m | 0.0205 m | 0.0260 m |
@@ -109,7 +116,7 @@ Nine reach configurations and nine aim configurations, all without a fall `[MEAS
 **Punch** (wrist target +0.30 m forward, ±0.06 m lateral, +0.10 m up from neutral, aim orientation; 0.5 s ramp):
 
 | Side | Final residual | Final ori err | Final aim err | Max base xy | Max base tilt |
-|---|---:|---:|---:|---:|---:|
+| --- | ---: | ---: | ---: | ---: | ---: |
 | left | **0.0095 m** | 3.47° | 3.64° | 0.0392 m | 4.25° |
 | right | **0.0095 m** | 3.46° | 3.64° | 0.0392 m | 4.24° |
 
@@ -127,7 +134,7 @@ Reading the numbers:
 The dodge commands a lateral head target and, in the `weight_shift` variant, moves the pelvis and CoM target by `min(0.5*amp, 0.06)` in the same direction. Duration 1.5 s; the profile ramps 0.4 s up, holds 0.2 s, returns over 0.4 s `[MEASURED]`.
 
 | Requested head y | Variant | Peak achieved head y | Time to 90% peak | Time to peak | Max base xy | Max base tilt | Final head error | Fall |
-|---:|---|---:|---:|---:|---:|---:|---:|---|
+| ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
 | 0.10 m | planted | 0.0144 m | 0.42 s | 0.52 s | 0.0014 m | 0.11° | 0.0024 m | no |
 | 0.10 m | weight shift | **0.0840 m** | 0.50 s | 0.64 s | 0.0769 m | 0.76° | 0.0248 m | no |
 | 0.15 m | planted | 0.0220 m | 0.42 s | 0.52 s | 0.0024 m | 0.19° | 0.0017 m | no |
@@ -150,7 +157,7 @@ The practical dodge point is **0.15 m request → 12.1 cm peak, 0.62 s to 90%, 1
 A 14.5 s unpaused sequence: stand → look ±35° → reach left/right → punch left/right → dodge 0.15 m → stand. A paused variant inserts 0.8 s neutral phases (20.1 s total). Both complete without falling `[MEASURED]`.
 
 | Run | Ticks | Max base xy | Min support margin | Max wrist residual | Max wrist ori err | Max head yaw err | Max base tilt | Fall |
-|---|---:|---:|---:|---:|---:|---:|---:|---|
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
 | paused (20.1 s) | 1005 | 0.0937 m | 0.0315 m | 0.0734 m | 7.55° | 6.41° | 5.39° | no |
 | unpaused (14.5 s) | 725 | 0.1008 m | 0.0179 m | 0.0767 m | 5.82° | **22.02°** | 3.57° | no |
 
@@ -163,7 +170,7 @@ This is a proxy for R4 only for the upper-body transitions. It says nothing abou
 `mink.solve_ik` with `daqp`, measured on CPU, headless `[MEASURED]`:
 
 | Scenario | Mean | p95 | Max |
-|---|---:|---:|---:|
+| --- | ---: | ---: | ---: |
 | hold | 0.51 ms | 0.95 ms | 4.82 ms |
 | look | 0.59 ms | 1.01 ms | 7.25 ms |
 | reach (per config) | 0.58–1.08 ms | — | — |
@@ -183,7 +190,7 @@ Two new scenarios probe the walking boundary without building a gait.
 **Sustained lateral weight shift, both feet planted** (`shift`): the base and CoM targets move laterally by the requested amount over 3 s, then hold. `soft_base` lowers the base task to 500 and raises the CoM task to 500; `default` uses the standing weights `[MEASURED]`.
 
 | Shift | Variant | Fall | Fall time | Max base xy | Final base y | Final CoM y | Max foot deviation | Min margin |
-|---:|---|---:|---:|---:|---:|---:|---:|---:|
+| ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | 0.06 m | soft_base | no | — | 0.0752 m | 0.0752 m | 0.0559 m | 0.0022 m | +0.0529 m |
 | 0.08 m | soft_base | no | — | 0.1031 m | 0.1030 m | 0.0763 m | 0.0041 m | +0.0529 m |
 | 0.10 m | soft_base | no | — | 0.1330 m | 0.1330 m | 0.0997 m | 0.0075 m | +0.0408 m |
@@ -198,7 +205,7 @@ The honest variant is `soft_base`: the default weights reach the same base posit
 **Single-support foot lift** (`lift`): shift 0.08–0.10 m over 3 s with the tuned `soft_base` weights, then lift the right foot 4–6 cm and move it forward 0–10 cm over 1 s `[MEASURED]`.
 
 | Config | Fall | Fall time | Max lift before tip | Max base xy | Max tilt | Min margin |
-|---|---:|---:|---:|---:|---:|---:|
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | shift 0.08, lift 0.04, forward 0.00 | **yes** | 4.68 s | 0.008 m | 0.2547 m | 13.2° | −0.022 m |
 | shift 0.10, lift 0.04, forward 0.00 | **yes** | 4.54 s | 0.012 m | 0.2525 m | 16.8° | −0.020 m |
 | shift 0.10, lift 0.04, forward 0.10 | **yes** | 4.68 s | 0.011 m | 0.2546 m | 16.8° | −0.064 m |
@@ -245,7 +252,7 @@ The root cause is the formulation, not the tuning. The IK QP has no contact-forc
 ### 3.5 Option comparison
 
 | Option | What it adds | Days `[A]` | Risk | First experiment | Main failure mode |
-|---|---|---:|---|---|---|
+| --- | --- | ---: | --- | --- | --- |
 | **A. Scripted gait + contact QP** | Contact wrench/CoP control; gait state machine; swing trajectory | 5–10 | High | Single-support hold 2 s (below) | Sphere-foot contact cone too small; QP infeasible |
 | **B. LIPM/capture-point + ID** | CoM planning; footstep planner; push recovery | 7–14 | High | 2-step walk in place, 3 gain sets | Upper-body CoM/angular-momentum disturbance; tuning time |
 | **C. Hybrid learned legs + QP upper body** | Learned leg robustness; QP upper body outside policy action space | 5–10 (integration) / 15–30 (training) | High | Candidate lower-body policy + 0.10 m shift / 0.15 m dodge / 0.20 m reach | Policy/model mismatch; upper-body disturbance envelope too small |
@@ -257,7 +264,7 @@ The root cause is the formulation, not the tuning. The IK QP has no contact-forc
 ### 4.1 Requirement coverage from this spike
 
 | # | Requirement | Status | Evidence |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | R1 | Arms/head independently commandable; wrist residual ≤3 cm; orientation measured | **Standing: met.** Walking: not met. | Single-arm reach 2.2–12.9 mm; both-arm 17.5–28.8 mm; aim pointing 0.18–2.34° single, 1.05–6.26° both; punch 9.5 mm / 3.6° aim; orientation measured for every reach/punch. |
 | R2 | Hold still ≤~5 cm net base over 20 s | **Met.** | Hold 0.22 mm; look 3.3 mm; mixed 9.4 cm only because it includes a 0.15 m dodge. |
 | R3 | Walk ≥5 m, ≥0.3 m/s, 60 s, push recovery | **Not met.** | No walking controller. Single-support lift tips in 1.3–1.6 s; sustained weight shift limit 0.10 m. |
@@ -344,7 +351,7 @@ Environment: the E3 venv (`mujoco 3.17.0`, `mink 1.3.0`, `numpy 2.2.6`, `scipy 1
 ### A.1 Reach (final, 2 s)
 
 | Target | Config | L res (m) | L ori (°) | R res (m) | R ori (°) | Base max xy (m) | Margin (m) | Fall |
-|---|---|---:|---:|---:|---:|---:|---:|---|
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
 | forward | left | 0.0094 | 2.54 | 0.0129 | 2.29 | 0.0147 | 0.0533 | no |
 | forward | right | 0.0129 | 2.33 | 0.0094 | 2.53 | 0.0146 | 0.0533 | no |
 | forward | both | 0.0220 | 4.61 | 0.0220 | 4.61 | 0.0288 | 0.0533 | no |
@@ -358,7 +365,7 @@ Environment: the E3 venv (`mujoco 3.17.0`, `mink 1.3.0`, `numpy 2.2.6`, `scipy 1
 ### A.2 Aim (final, 2 s; pointing error at `[0.8, 0, 1.0]`)
 
 | Target | Config | L aim (°) | L res (m) | R aim (°) | R res (m) | Base max xy (m) | Fall |
-|---|---|---:|---:|---:|---:|---:|---|
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
 | forward | left | 2.34 | 0.0080 | — | — | 0.0128 | no |
 | forward | right | — | — | 2.34 | 0.0080 | 0.0128 | no |
 | forward | both | 4.86 | 0.0208 | 5.16 | 0.0205 | 0.0260 | no |

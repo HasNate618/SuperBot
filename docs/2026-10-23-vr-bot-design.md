@@ -332,7 +332,7 @@ Enough: a recording where a G1 in MuJoCo moves, hello_xr or Superhot’s view mo
 
 Not enough: a VLM demo on a game screenshot with a mouse; a Superhot run driven by a sine-wave HMD; a claim of whole-body tracking after bolting unbounded IK onto the walk policy.
 
-The phrase “balance-constrained locomotion” requires **both** legs in the loop (C3a) **and** station-keeping that actually holds (C3b). Until both pass, the README claims whole-body tracking on a simulated body, not balance-constrained locomotion.
+The phrase “balance-constrained locomotion” requires **both** legs in the loop (C3a) **and** station-keeping that actually holds (C3b). **Both have now passed (2026-10-24).** Legs in the loop: **39.79 m in 60 s at 0.663 m/s, yaw −2.10°, no fall** (C3i-2). Station-keeping that holds: **RMS 1.3×10⁻⁴ m/s settled, 5/5 clean walk→hold→walk cycles** (C3m). The project may therefore claim **balance-constrained locomotion**. What it may **not** claim yet: independent off-axis aiming (8.63 cm at 30°, §7), live co-residency beside the game (R6), or a cleared stage (R8).
 
 ---
 
@@ -407,6 +407,8 @@ Three agents ran against `docs/2026-10-23-vr-bot-state-of-findings.md` with deli
 
 **What is NOT settled, stated plainly.** (1) **Arms while walking is still unowned** — SONIC's arms cannot aim, the QP cannot walk, and the override has not been tried (C3j). (2) The two controllers run on **different models** (SONIC's own vs Menagerie) — every hybrid number is approximate until C3k unifies them. (3) Nothing has been measured **live**; both controllers are headless. (4) **C0 is still unrun**, and without it none of this matters. (5) SONIC's 5-cycle soak and 60 s walk are unrun.
 
+**Resolved 2026-10-24 — every item above is now measured or answered.** (1) Arms while walking: the QP-on-SONIC override was **tried and failed** (C3j, 16 variants — 12.84 cm / 22.40° against a 3.51 cm / 7.22° baseline); only a **wrist-orientation-only** override survives, 7.22° → 5.08°. (2) Model unification (C3k) is **moot** — the two controllers are no longer composed. (3) Live co-residency is **still open** (R6). (4) **C0 passed**: Superhot holds a focused session on the fabricated headset and its view tracks our poses (`research/c0-results.md`). (5) The 5-cycle soak and 60 s walk **ran**: 5/5 cycles with no fall, **39.79 m in 60 s**. Hold was re-measured (C3m) at **RMS 1.3×10⁻⁴ m/s** with a standing-clip anchor-index freeze — see §18.7.
+
 **Anti-lesson worth keeping.** Every time this project trusted an inherited number it was wrong, and every time it measured the cheap thing the picture changed: the archived speed was an arc, the arc was our XML, and the "freeze is impossible" claim dissolved into a 0.005 constant sitting in a serialized asset. Measure the constant before designing around it.
 
 ### 18.6 SONIC gate and arm-override (2026-10-23) — walking is real, the hybrid is dead
@@ -430,7 +432,7 @@ Detail in `research/c3m-results.md`; script `spike/wbc/hold_c3m.py`; data `spike
 **The C3i soak's 0.23–2.07 m holds were a measurement bug.** SONIC's encoder consumes a **10-frame horizon at 20 ms spacing ≈ 0.9 s of lookahead**. The soak froze only the *anchor* frame index, so the next nine frames still said "here is the rest of your step", and a motion tracker tracked them. Same frozen pose, same frame, same clip:
 
 | Freeze mode on the *same* walk-mid-stride pose | net / 20 s | RMS v (last 10 s) |
-|---|---:|---:|
+| --- | ---: | ---: |
 | anchor index only | 3.928 m | 0.2005 m/s |
 | whole 10-frame horizon frozen | 0.110 m | 0.0085 m/s |
 

@@ -1,5 +1,13 @@
 # RESEARCH — Can a simulated body play a VR game with no headset or controllers?
 
+> **Superseded in places — read `docs/2026-10-23-vr-bot-state-of-findings.md` first.**
+> This is the 2026-10-11 feasibility study, written when no code existed here. Most of it has since
+> been measured or replaced: Monado's `remote` driver is proven end-to-end (E1–E3), the executor is
+> GEAR-SONIC (C3i–C3m), and Superhot VR accepts synthetic HMD poses (C0).
+> No longer authoritative: **§2.4** (a custom OpenVR driver is not needed), **§4** (capture is grim,
+> not the debug GUI), **§9** (the first path is decided), **§10** (the open questions are answered or
+> tracked in the state doc's §7). Sections §1, §5–§8 and §11 remain valid analysis.
+
 **Status:** web research, 2026-10-11. **No code exists in this repo.** Nothing here has been
 measured on this machine. This document is a source-verified feasibility study, not a plan.
 
@@ -168,6 +176,11 @@ this machine with no SteamVR. Replacing the PSVR2 with a scripted device source 
 
 ## 4. Capture — the robot's eye
 
+> **Measured 2026-10-23 (E2), and it contradicts this section's first row:** `XRT_DEBUG_GUI=1` and the
+> compute compositor both **SIGSEGV** in the Wayland presentation queue-family check on this box. The
+> working capture is **grim on the Monado window at 36.9 fps**, pose→pixel **30–59 ms (mid 44 ms)**.
+> See `research/e2-spike-results.md`. The survey below is the 10-11 reasoning; grim is the answer.
+
 | Path | Mechanism | Platform |
 | --- | --- | --- |
 | Monado debug-GUI mirror | `comp_mirror_to_debug_gui` blits composited frames into an SDL window; `XRT_DEBUG_GUI=1` | Linux/Win |
@@ -301,6 +314,11 @@ The choice was left open. Here is the honest comparison.
 | **Monado `remote` + fake client** | medium | the core mechanism, on Linux, for any OpenXR/OpenVR title | packet ABI vs pinned fork; debug-GUI capture with the compute compositor |
 | **VRChat OSC** | low | "a real VR game is being played" end-to-end soonest | VRChat only; bypasses the emulation problem entirely |
 | **Custom OpenVR driver** | high (C++) | max portability + HMD/controller control | Linux driver friction (SlimeVR #43) |
+
+**Decided 2026-10-23:** Monado `remote` + a fake client. E1/E2/E3 measured it end to end (376-byte
+packets over TCP 4242, poses identical to `mjData`, a real game bound to it in C0). The table's stated
+risk — debug-GUI capture with the compute compositor — was real: that path SIGSEGVs, and grim is the
+substitute. Its other risk, packet ABI drift against the pinned fork, did not materialise.
 | **Reimplement the game in sim** | medium | full control, matches Robo-Saber | arguably no longer "playing a VR game" |
 
 **Do this first regardless of the choice** (it is the load-bearing unknown for the primary path and

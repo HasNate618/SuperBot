@@ -1,5 +1,13 @@
 # SONIC gate (C3i) and arm-override (C3j) — results
 
+> **Status 2026-10-24 — read §2.3 of this document through `research/c3m-results.md`.**
+> This document's conclusion that *"hold quality is a property of which reference motion is frozen"*
+> was **half right and half harness bug**. Right: a standing clip holds and a walking one does not.
+> Wrong: the 0.23–2.07 m drift was caused by freezing only the *anchor index* while the encoder's
+> **0.9 s lookahead kept walking** — the same pose with a flat horizon holds to 0.0085 m/s (36×
+> better), and a standing clip with anchor-only freezing is the **best** configuration measured
+> (1.9×10⁻⁴). The guardrail "don't quote 3.6 cm without the clip" should become **"don't quote a hold
+> without stating what the lookahead was doing."** C3j's arm-override verdict is unaffected and stands.
 **Date:** 2026-10-23
 **Model:** GEAR-SONIC default (`nvidia/GEAR-SONIC`, encoder 1762→64, decoder 994→29), on SONIC's own MuJoCo model
 **Scripts:** `spike/wbc/gate_common.py`, `spike/wbc/gate_c3i.py`, `spike/wbc/arm_override_c3j.py`
@@ -14,7 +22,7 @@
 ## 0. Verdicts
 
 | Step | Verdict | One line |
-|---|---|---|
+| --- | --- | --- |
 | **C3i-1** five-cycle soak | **PASS on survival, FAIL on the hold bar** | 5/5 cycles, 100 s, no fall — but the 10 s holds drift **0.23, 0.50, 0.28, 1.82, 2.07 m**, cumulative **4.89 m**. Not a freeze. |
 | **C3i-2** 60 s walk | **PASS** | **39.79 m** path in 60 s at **0.663 m/s**, yaw drift **−2.1°**, tilt max 9.5°, min z 0.719 m, no fall. This is a solid walk. |
 | **C3i-3** aim while walking | **PASS at the 10 cm gate, with an orientation caveat** | Fixed aim point 0° off-axis: **3.51 cm / 7.22°** position/orientation, max 7.19 cm. At **30° off-axis: 8.63 cm / 28.3°** — passes the gate, too coarse to be called aiming. |
@@ -30,7 +38,7 @@
 Program: walk 5 s → hold 10 s → walk 5 s, ×5, on `walk_forward_amateur_001__A001`, freeze frames `[250, 1250, 2250, 3250, 4250]`.
 
 | Cycle | Hold net (m) | Hold max exc (m) | Hold tilt max | Hold min z | Resume dist / ref | Re-lock (q-err) | Tilt max | Survived |
-|---:|---:|---:|---:|---:|---|---:|---:|---|
+| ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: | --- |
 | 0 | **2.070** | 2.070 | 5.65° | 0.746 | 2.939 / 3.132 | 4.14 s | 9.48° | yes |
 | 1 | **0.227** | 0.227 | 9.17° | 0.733 | 2.973 / 3.132 | 4.44 s | 10.35° | yes |
 | 2 | **0.497** | 0.509 | 5.60° | 0.751 | 3.021 / 3.105 | 4.70 s | 5.60° | yes |
@@ -53,7 +61,7 @@ Two secondary observations that matter more than they look:
 ## 2. C3i-2 — 60 s walk
 
 | Metric | Value |
-|---|---|
+| --- | --- |
 | Ticks | 3000 / 3000 (59.98 s) |
 | Path length | **39.79 m** |
 | Net displacement | 37.82 m |
@@ -78,7 +86,7 @@ This is the strongest result the project has produced for locomotion. Sixty seco
 A fixed world aim point for head + right wrist, commanded during walking. `wrist_rel` `[0.33, −0.06, 0.10]` m from the torso.
 
 | Case | Survived | Dist | Tilt max | Pos mean | Pos p95 | Pos max | Orn mean | Aim mean | Head aim mean |
-|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | **walk_aim_0deg** | yes | 6.48 m | 15.09° | **3.51 cm** | 5.63 cm | 7.19 cm | **7.22°** | 6.53° | 5.82° |
 | **walk_aim_30left** | yes | 6.36 m | 15.84° | **8.63 cm** | 12.58 cm | 13.58 cm | **28.33°** | 28.17° | 11.89° |
 
@@ -99,7 +107,7 @@ Variants: `policy` (baseline), `hard` (full override), `rate:N` (override with a
 ### 4.1 Holding (10 s, aim target)
 
 | Variant | Survived | Pos err | Orn err | Aim err | Head aim | IK ms |
-|---|---|---:|---:|---:|---:|---:|
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
 | **policy (baseline)** | yes | **1.14 cm** | 7.33° | 7.23° | 1.68° | — |
 | hard | yes | **14.40 cm** | 24.00° | 22.64° | 3.95° | 1.38 |
 | **orient** | yes | 2.79 cm | **4.15°** | 4.12° | 1.80° | 1.43 |
@@ -109,7 +117,7 @@ Variants: `policy` (baseline), `hard` (full override), `rate:N` (override with a
 ### 4.2 Walking, motion target (no aim point)
 
 | Variant | Survived | Net disp | Speed | Tilt max | Pos err | Orn err |
-|---|---|---:|---:|---:|---:|---:|
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
 | **policy** | yes | 6.357 m | 0.637 m/s | 18.21° | **2.63 cm** | **5.74°** |
 | hard | yes | 6.269 m | 0.628 m/s | 16.11° | **9.15 cm** | 11.07° |
 | int:0.5 | **FALL** | 5.446 m | 0.789 m/s | **64.69°** | 47.55 cm | 80.56° |
@@ -118,7 +126,7 @@ Variants: `policy` (baseline), `hard` (full override), `rate:N` (override with a
 ### 4.3 Walking, aim target
 
 | Variant | Survived | Dist | Tilt max | Pos err | Orn err | Aim err | Head aim |
-|---|---|---:|---:|---:|---:|---:|---:|
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | **policy (baseline)** | yes | 6.477 m | 15.09° | **3.51 cm** | 7.22° | 6.53° | 5.82° |
 | hard | yes | 6.518 m | 14.97° | **12.84 cm** | 22.40° | 19.55° | 4.73° |
 | rate:2.0 | yes | 6.566 m | 13.91° | 12.43 cm | 22.01° | 19.42° | 6.49° |

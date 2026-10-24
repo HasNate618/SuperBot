@@ -15,7 +15,9 @@ Two facts, both measured, both reduce the risk:
 
 `/home/nate/Downloads/Superhot-VR.rar` is **actually a ZIP** (compression method=store) and it is a **Windows** build, so it needs Proton. `extract_game.sh` unpacks it without touching the archive.
 
-`GE-Proton10-34` is installed at `~/.local/share/Steam/compatibilitytools.d/GE-Proton10-34`. `umu-run` is not installed, so the path is Steam → add as non-Steam game → force GE-Proton10-34.
+`GE-Proton10-34` is installed at `~/.local/share/Steam/compatibilitytools.d/GE-Proton10-34`. `umu-run` is not installed, so the path is Steam → add as non-Steam game → force a Proton build.
+
+**Measured 2026-10-24 — what actually worked differs from the above.** The game was extracted to `/home/nate/Games/SUPERHOT VR/` and launched through **`proton-cachyos-slr`**, not GE-Proton10-34. It reached a focused session on Monado with **no `XR_RUNTIME_JSON` launch option and no `PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES`**, because under Wine the *Windows* loader reads the prefix registry (`C:\openxr\wineopenxr64.json` → `wineopenxr.dll`) and that shim forwards to the host Linux loader. What it needs instead is a runtime pointer at **`~/.config/openxr/1/active_runtime.json`** — `/etc/xdg` is not visible inside the container, and `~/.local/share/openxr/1/` is not a searched path. The loader caches its runtime list per process, so **a game restart is mandatory** after adding it. **The launch must come from the Steam client UI:** `steam -applaunch` resolves the shortcut to a store AppID and fails `AppError_9`; `rungameid` reports `Unknown GameID type`; running the Proton entry point by hand fails `bwrap: execvp true`. Full results: `research/c0-results.md`.
 
 ## Order of operations
 
@@ -43,7 +45,7 @@ Modes: `hold` · `yaw` · `trigger` · `dodge` · `walk` · `clock`.
 Run them in this order. Stop at the first hard fail.
 
 | # | Question | How | Pass |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | 1 | Does the game bind to our runtime at all? | launch it, watch the headset view | non-black stereo view that responds to `--mode yaw` |
 | 2 | Does the view follow TCP poses? | `--mode yaw --yaw-deg 35 --duration 20` | the in-game view **rotates ±35°** and **keeps following**; it must not freeze when packets keep arriving |
 | 3 | Does input reach the game? | `--mode trigger --duration 20`, watch the pistol / UI | trigger registers (shot fired, or the UI reacts) |

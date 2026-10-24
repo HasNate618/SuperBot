@@ -9,7 +9,7 @@ This is the gate the whole artifact depends on. Everything before it (E1–E3, C
 ## 0. Scorecard
 
 | # | Measurement | Result |
-|---|---|---|
+| --- | --- | --- |
 | 1 | Game binds to our runtime | **PASS** — session reached `FOCUSED`, system `Monado: Remote HMD`, 58 runtime extensions |
 | 2 | View follows our poses | **PASS** — controlled A/B: 4.74 / 4.0% static vs 41.97 / 59.3% sweeping; operator saw the camera sweep |
 | 3 | Scripted trigger reaches the game | **not run** — needs a pistol in hand |
@@ -90,7 +90,7 @@ The game then ran its boot flow (`piOSBootFlowControl:PrepareNextScene(DeepLinkL
 A/B under identical workload, 3.4 s apart, same scene, same session. **Only the pose differs.**
 
 | Pose | Mean absolute pixel change | Pixels changed by >25 |
-|---|---|---|
+| --- | --- | --- |
 | Static (`--mode hold`) | 4.74 | 4.0% |
 | Sweeping (`--mode yaw --yaw-deg 35`) | **41.97** | **59.3%** |
 
@@ -99,7 +99,7 @@ A/B under identical workload, 3.4 s apart, same scene, same session. **Only the 
 ## 5. Measurement 4 — there are real pixels, and they were black before
 
 | Capture | Mean RGB | Near-black | Bright | Distinct colours |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | Before the fix (waiting screen) | (0.2, 0.2, 0.2) | **99.89%** | 0.06% | 32 |
 | After the fix (tutorial) | (174.7, 188.3, 198.0) | **0.00%** | 41.2% | 3175 |
 | Monado window region, after | (176.8, 190.5, 200.0) | 0.00% | 43.1% | 2245 |

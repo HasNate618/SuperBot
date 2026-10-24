@@ -1,5 +1,15 @@
 # Learned whole-body control for the G1 — SONIC measured, three candidates compared
 
+> **Status 2026-10-24 — superseded on two points, correct on the main one.**
+> The recommendation stands: SONIC default is the executor, and it has since been gated properly
+> (60 s walk, 5-cycle transitions, arm-override matrix). Two claims here are now known to be
+> artifacts: (a) the **"2.9–3.6 cm hold"** came from freezing `squat_001__A359` frame 0 with the
+> encoder lookahead *also* frozen — real, but not the same mechanism the C3i soak used, which is why
+> the soak drifted 0.23–2.07 m. The correct rule is in `research/c3m-results.md`: **the lookahead must
+> not contain walking**, and the best measured hold is a standing clip with an anchor-index freeze at
+> **RMS 1.3×10⁻⁴ m/s**. (b) The **arm-override fantasy** is dead: C3j measured the QP-on-SONIC hybrid
+> at 16 variants and it loses (12.84 cm / 22.40° vs 3.51 cm / 7.22°). See
+> `docs/2026-10-23-vr-bot-state-of-findings.md` for current status.
 **Date:** 2026-10-23
 **Agent:** OpenCode `wbc-policy`
 **Question:** can a released learned whole-body controller for the Unitree G1 (running headless in MuJoCo on this laptop, fed VR-style head/hand targets) satisfy requirements R1–R8, and which one should we adopt as the `BodyCommand` executor for vr-bot?
@@ -51,7 +61,7 @@ Converts a `robot_filtered/*.pkl` (30 fps, MuJoCo/hardware dof order) into the d
 ### 2.1 Hold (R2) — 20 s, squat motion, freeze frame 0
 
 | Model | disp (m) | max exc (m) | v_last5 (m/s) | z | up_z | poserr L/R/H (m) | ornerr L/R/H (°) | torso yaw |
-|---|---:|---:|---:|---:|---:|---|---|---:|
+| --- | ---: | ---: | ---: | ---: | ---: | --- | --- | ---: |
 | default | 0.036 | 0.075 | 0.00010 | 0.787 | 0.989 | 0.064/0.026/0.042 | 18.2/17.1/6.2 | +15.8 |
 | v11 | **0.029** | **0.056** | 0.00016 | 0.786 | 0.997 | 0.061/0.032/0.010 | 10.7/4.6/14.4 | +2.9 |
 | lowlat | 0.110 | 0.113 | 0.00007 | 0.790 | 0.998 | 0.094/0.116/0.002 | 31.7/32.4/16.4 | +0.9 |
@@ -61,7 +71,7 @@ Hold+aim conditions: wrists +0.15 x/+0.15 z each, head yaw +15°. **All three pa
 ### 2.2 Walk (R3) — 10 s, `walk_forward_amateur_001__A001`, start frame 600
 
 | Model | survived | z | up_z | poserr (m) | disp (m) | ref (m) | track poserr L/R/H (m) | track ornerr L/R/H (°) |
-|---|---|---:|---:|---:|---|---|---|---|
+| --- | --- | ---: | ---: | ---: | --- | --- | --- | --- |
 | default | yes | 0.733 | 0.994 | 0.271 | (0.00, −6.36) | (0.10, −6.10) | 0.036/0.026/0.035 | 8.6/5.7/5.8 |
 | v11 | yes | 0.749 | 0.998 | 0.306 | (−0.00, −5.81) | (0.10, −6.10) | 0.027/0.026/0.008 | 5.4/5.4/3.5 |
 | lowlat | yes | 0.746 | 0.996 | **0.170** | (−0.04, −6.01) | (0.10, −6.10) | 0.028/0.029/0.008 | 6.6/6.4/2.5 |
@@ -73,7 +83,7 @@ All three walk without falling. **lowlat tracks the reference path closest** (0.
 Same run, L/R wrist commanded +0.30 m forward.
 
 | Model | condition | survived | poserr (m) | track poserr L/R/H (m) | track ornerr L/R/H (°) |
-|---|---|---|---:|---|---|
+| --- | --- | --- | ---: | --- | --- |
 | default | L-fwd 0.30 | yes | 0.324 | 0.107/0.052/0.017 | 11.8/8.8/11.5 |
 | default | R-fwd 0.30 | yes | 0.367 | 0.054/0.099/0.016 | 12.7/13.0/11.8 |
 | v11 | L-fwd 0.30 | yes | 0.599 | 0.103/0.047/0.035 | 18.7/13.0/12.6 |
@@ -86,7 +96,7 @@ Same run, L/R wrist commanded +0.30 m forward.
 ### 2.4 Transitions (R4) — walk 4 s → hold (freeze frame 0) 4 s → walk 4 s
 
 | Model | survived | walk drift (m) | hold drift (m) | hold min z | hold min up | resume drift (m) |
-|---|---|---:|---:|---:|---:|---:|
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
 | default | yes | 2.55 | 0.20 | 0.758 | 0.995 | 1.86 |
 | v11 | yes | 2.34 | 0.16 | 0.768 | 0.990 | 1.53 |
 | lowlat | yes | 2.35 | 0.18 | 0.769 | 0.997 | 1.68 |
@@ -96,7 +106,7 @@ Same run, L/R wrist commanded +0.30 m forward.
 ### 2.5 Dodge (R5) — head lateral step ±0.20 m at t=1 s, 3 s
 
 | Model | side | head y @1.5 s (m) | Δ (m) | max |Δ| (m) | base drift (m) | min up_z |
-|---|---|---:|---:|---:|---:|---:|
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
 | default | left | +0.168 | +0.148 | 0.153 | 0.062 | 0.990 |
 | default | right | −0.151 | −0.170 | 0.180 | 0.065 | 0.990 |
 | v11 | left | +0.159 | +0.144 | 0.146 | 0.113 | 0.993 |
@@ -121,7 +131,7 @@ Wrist position at rest (default, no override): lw [0.130, 0.340, −0.214], rw [
 ### 2.7 Performance (R6)
 
 | Model | enc (ms) | dec (ms) | total (ms) | vs 20 ms budget |
-|---|---:|---:|---:|---|
+| --- | ---: | ---: | ---: | --- |
 | default | 3.79 | 2.99 | 6.78 | 3.0× headroom |
 | v11 | 5.70 | 8.62 | 14.32 | 1.4× headroom |
 | lowlat | not separately timed | — | — | assumed similar |
@@ -133,7 +143,7 @@ Sim runs ~0.9× realtime with default on CPU (5 s sim in 5.59 s wall). CPUExecut
 ## 3. Candidate survey
 
 | Controller | Source / license | DOF / action space | Input interface | Stand / hold | Walk | Arms while walking | VR head/hands | Runtime cost | Status here |
-|---|---|---|---|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | **GEAR-SONIC (default)** | NVlabs/GR00T-WholeBodyControl; code Apache 2.0, **weights NVIDIA Open Model License** | 29 (RL lower + IK upper, decoupled) | SMPL/G1/teleop; teleop = lower-body 10-frame + VR 3-point | 2.9–3.6 cm / 20 s (pass) | yes, 0.73 m/s, 6 m/10 s | survives, but wrist residual 5–10 cm, path err 0.32–0.37 m | yes, native (3-point VR) | 6.8 ms/tick CPU | **MEASURED** (this spike) |
 | GEAR-SONIC v1.1 | same repo/license, `sonic_v1_1/` | 29 | heading-normalised anchors, 10-frame step 5 | 2.9 cm (best) | yes, path err 0.31 m | survives, wrist residual 4–11 cm | yes | 14.3 ms/tick | **MEASURED** |
 | GEAR-SONIC low-latency | same repo/license, `low_latency/` | 29 | step-1 frames, body-frame anchors, smpl 4-frame | 11.0 cm (worst hold) | yes, path err 0.17 m (best) | survives, worst arm tracking | yes | not timed | **MEASURED** (obs layout partly guessed) |
@@ -159,7 +169,7 @@ Notes:
 ### 4.1 Requirement coverage (measured where tagged)
 
 | Req | Bar | SONIC default | Classical WBC | Notes |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | R1 arms/head commandable | wrist residual ≤3 cm, orient measured | **partial**: hold pos 4–6 cm, orient 17–23°; walk pos 5–10 cm, orient 8–19°; head y 0.15–0.18 m, z/x not tracked | reach ≤2.4 cm, aim ≤2.3°, punch 0.95 cm (stand only) | Classical wins precision; SONIC wins "while walking" |
 | R2 hold still | ≤5 cm net / 20 s | **pass** 3.6 cm, v 0.0001 m/s | **pass** 0.22 mm | both pass; classical 100× tighter |
 | R3 walk | ≥5 m, ≥0.3 m/s, 60 s | **pass** 6 m/10 s @0.64 m/s, no fall | **fail** (no single support) | SONIC clears this; classical does not |
@@ -242,7 +252,7 @@ Motion data: `spike/wbc/vendor/GR00T-WholeBodyControl/gear_sonic_deploy/referenc
 ## Appendix A — SONIC obs layout (default, teleop mode 1), offsets
 
 | Block | Dims | Offset |
-|---|---:|---:|
+| --- | ---: | ---: |
 | mode one-hot | 4 | 0 |
 | motion jp (10 frames × 29) | 290 | 4 |
 | motion jv (10 frames × 29) | 290 | 302 |

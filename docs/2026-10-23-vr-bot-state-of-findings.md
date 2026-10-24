@@ -1,9 +1,11 @@
-# vr-bot — state of findings, for solution research
+# vr-bot — state of findings
 
-**Date:** 2026-10-23
-**Purpose:** one shared ground-truth file so no researcher re-derives E1–E3 or C3. Read this before anything else. It states the goal *with no caveats*, what is proven, what is broken and why, and the pass criteria any proposed solution must meet.
+**Date:** 2026-10-23, revised **2026-10-24** after C3m and C0.
+**Purpose:** one shared ground-truth file so no researcher, builder or reader re-derives E1–E3, C3, C3m or C0. It states the goal *with no caveats*, what is proven, what is falsified, what is still open, and the pass criteria any proposal must meet.
 
 **Claim tags.** `MEASURED` = a local spike on this machine, file named. `CITED` = source URL. `ASSUMPTION` = reasoning, untested.
+
+**What changed in this revision.** The 10-23 version ended with *"what is missing is an executor that can honour [the command struct]"*. Since then: an executor was found and measured (**GEAR-SONIC**), a second was measured and is precise but cannot walk (**mink QP**), the hybrid of the two was measured and is **dead**, the earlier "hold" failure was traced to **our own harness**, and **C0** proved a commercial game accepts the pipe. §4's R1–R8 now carry measured status instead of being hypothetical, and §7 lists what is genuinely still open.
 
 ---
 
@@ -22,121 +24,206 @@ The project exists as a hiring artifact for **real-time controls and systems int
 
 ---
 
-## 1. What is already proven working (do not redo)
+## 1. What is proven working
 
 ### 1.1 The OpenXR injection pipe — E1, E2 `MEASURED`
-- Monado's `remote` driver exists in the installed build and accepts a client over **TCP 4242**. Protocol magic `mndrmt3\0`, **376-byte** `r_remote_data` packets. One client, hub binds `0.0.0.0`, **last pose freezes on disconnect**.
-- `P_OVERRIDE_ACTIVE_CONFIG=remote` is sufficient; **no `config_v0.json` is needed**. `IPC_EXIT_ON_DISCONNECT=off`, `XRT_NO_STDIN=1`.
-- `xrLocateViews` returned tracked poses at ±35° and 0.5 Hz in the spike. No SteamVR, no custom OpenVR driver.
-- Compositor must run with `XRT_COMPOSITOR_COMPUTE=false` (GRAPHICS queue) on this RTX 4060 / Wayland box. The compute compositor **and** `XRT_DEBUG_GUI=1` both SIGSEGV in the Wayland presentation queue-family check. `VK_DRIVER_FILES=/run/opengl-driver/share/vulkan/icd.d/nvidia_icd.json`.
-- Runtime: `/nix/store/89h2h18iz10aad69jpa2wvxmlhlg6k5i-monado-psvr2-psvr2-work-steamvr-2026-06-04` (Beyley PSVR2 fork).
+
+- Monado's `remote` driver accepts a client over **TCP 4242**. Magic `mndrmt3\0`, **376-byte** packets. One client, hub binds `0.0.0.0`, **last pose freezes on disconnect**.
+- `P_OVERRIDE_ACTIVE_CONFIG=remote` is sufficient; **no `config_v0.json`**. `IPC_EXIT_ON_DISCONNECT=off`, `XRT_NO_STDIN=1`.
+- Compositor must run with `XRT_COMPOSITOR_COMPUTE=false` (GRAPHICS queue). The compute compositor and `XRT_DEBUG_GUI=1` both **SIGSEGV** in the Wayland presentation queue-family check. `VK_DRIVER_FILES=/run/opengl-driver/share/vulkan/icd.d/nvidia_icd.json`.
+- Runtime: `monado-psvr2-psvr2-work-steamvr-2026-06-04` (Beyley PSVR2 fork).
 
 ### 1.2 Frame capture — E2 `MEASURED`
-- Working capture is **grim on the Monado window**: **36.9 fps**, window located via `hyprctl clients -j`, e.g. `grim -g "2624,341 1920x1080"`.
-- **Pose → pixel latency 30–59 ms (mid 44 ms)**, of which ~27 ms is grim overhead.
 
-### 1.3 The body→HMD bridge — E3 `MEASURED`
-- G1 stepped at 500 Hz PD with a 50 Hz pose publisher: **1001 packets in 20.02 s**. Packet positions/quats matched `mjData` exactly after frame conversion (**max error 0.0**).
+- Working capture is **grim on the Monado window** at **36.9 fps**, located via `hyprctl clients -j`.
+- **Pose → pixel latency 30–59 ms (mid 44 ms)**, ~27 ms of which is grim's own overhead.
+
+### 1.3 The body → HMD bridge — E3 `MEASURED`
+
+- G1 stepped at 500 Hz PD with a 50 Hz publisher: **1001 packets in 20.02 s**; positions/quats matched `mjData` after frame conversion with **max error 0.0**.
 - HMD yaw tracked torso to **0.0108°**. `hello_xr` followed.
-- Frame conversion: MuJoCo Z-up `wxyz` → OpenXR Y-up `xyzw`: `xr_x = -mj_y`, `xr_y = mj_z`, `xr_z = -mj_x`.
-- **Stationary body** (stiff stand PD at the `stand` keyframe, arms on DLS IK, ±35° waist look): base excursion **≤ 3.08 cm x / 0.59 cm y over 20 s**. This is the only configuration that has ever held still.
-- IK residuals on that body: **reach 4.3 cm, punch 13.5 cm**. Punch residual is a known limitation, not a success. **Wrist orientation error has never been measured.**
-- HMD height: **1.221 m** in `stand`, **1.170 m** in the policy pose `knees_bent`.
+- Frame conversion (MuJoCo Z-up `wxyz` → OpenXR Y-up `xyzw`): `xr_x = -mj_y`, `xr_y = mj_z`, `xr_z = -mj_x`.
+- HMD height **1.221 m** (`stand`), **1.170 m** (`knees_bent`).
 
-### 1.4 The robot
+### 1.4 The executor: GEAR-SONIC — C3i, C3j, C3m `MEASURED`
+
+`nvidia/GEAR-SONIC` (weights: **NVIDIA Open Model License**, not Apache), encoder 1762→64, decoder 994→29, **50 Hz policy / 500 Hz PD**, headless in `spike/wbc`. **6.8 ms/tick CPU, ~0.9× realtime.**
+
+| Capability | Measurement |
+| --- | --- |
+| **Walk** | **39.79 m path / 37.82 m net in 60 s**, 0.663 / 0.631 m/s, yaw drift **−2.10°**, path error mean 0.230 / max 0.554 m, tilt 9.48°, no fall |
+| **Hold** | **RMS velocity 1.3×10⁻⁴ m/s settled — 0.02% of walking speed; p95 2×10⁻⁴.** Pins Superhot's clock at its 0.005 floor |
+| **Walk → hold → walk** | **5/5 cycles, 100 s, no fall**, worst tilt 9.5°, cumulative hold 0.478 m, **walk resumes within ~0.2 m** of reference, re-lock 4.14–4.94 s |
+| **Dodge** | **0.15–0.18 m in < 0.5 s** |
+| **Aim while walking, ahead** | **3.51 cm / 7.22°** (p95 5.63 cm) |
+| **Aim while walking, 30° off-axis** | **8.63 cm / 28.33°** — the weak axis |
+| **Head yaw → torso yaw** | gain **~0.83**, saturating at **27–31°** |
+
+**The hold recipe matters and the obvious answer is wrong.** The ingredient is **whether the encoder's 0.9 s lookahead still contains walking**, not which freeze mode you pick. Anchor-only freeze of a walking clip: **3.93 m / 20 s at 0.20 m/s RMS**. Same pose with the horizon flattened: **0.11 m / 0.0085**. But a **standing clip with an anchor-index freeze** is the best configuration measured (**1.9×10⁻⁴**), and flattening its horizon *degrades* it (**0.0233**). Ship: **switch to `squat_001__A359` frame 0, anchor index held.**
+
+**Known limits of this executor:** wrists hold to **4–6 cm / 17–23°** and walk to **5–10 cm / 8–19°**; head tracks **y only** (0.15–0.18 m for a 0.20–0.30 m command) with **no head z/x and no pitch/roll**; arms float ~0.15 m off the body. Holds were measured to 20 s and cycling to 10 s per hold.
+
+### 1.5 The game accepts the pipe — C0 `MEASURED`
+
+`research/c0-results.md`.
+
+- Superhot VR reaches **`XR_SESSION_STATE_FOCUSED`** on a headset that does not exist (`System Properties: Name="Monado: Remote HMD"`, 58 runtime extensions), and its **view tracks our poses**: a ±35° sweep gives **41.97 mean pixel change / 59.3% of pixels vs 4.74 / 4.0% static — 9× over scene animation**. Operator saw the camera sweep.
+- Captures are real game content (**0.00% near-black, 3175 distinct colours**), and were **99.89% black** before the runtime pointer was fixed.
+- The blocking chain, for anyone repeating it: `/etc/xdg/openxr/1/active_runtime.json` is invisible inside the Proton container; the user-level path is `~/.config/openxr/1/active_runtime.json` (**not** `~/.local/share`); the loader caches its runtime list per process so **a restart is mandatory**; under Wine the path is prefix registry → `C:\openxr\wineopenxr64.json` → `wineopenxr.dll` → host loader.
+
+### 1.6 The robot
+
 - **29 actuated joints**: 12 leg, 3 waist, 14 arm. **No neck** — `head_link` is a rigid mesh inside `torso_link`. No camera. `left_shoulder_pitch` moves the EE 0.151 m.
-- Waist range: yaw **±2.618 rad**, roll/pitch **±0.52 rad**. The waist is the only "neck" available.
-- Menagerie vendored at `spike/e3/vendor/mujoco_menagerie/unitree_g1/`.
+- Waist: yaw **±2.618 rad**, roll/pitch **±0.52 rad**. The waist is the only "neck" available.
+- Menagerie at `spike/e3/vendor/mujoco_menagerie/unitree_g1/`.
 
 ---
 
-## 2. What is proven broken, and the root cause
+## 2. What is falsified, and why
 
-All of §2 was measured against the official MuJoCo Playground G1 walking policy (ONNX, sha256 `db2eb258494c1297c43d2b9ffa94cdbde97654c2a44cbab0b40fd4b990752a5b`, 903,543 B) on the **correct** collision model, `spike/c3/playground_g1/xmls/scene_mjx_feetonly_flat_terrain.xml`.
+Negative results are deliverables. Each of these was measured, not argued away.
 
-**Root cause, stated once: the policy is a 29-DoF joint-position *velocity tracker*. Its action space is the whole body, it owns every joint, and it was trained with no notion of an external upper-body authority. Every attempt to take joints back from it either destabilises the gait or is silently overridden by it.**
+### 2.1 A velocity-tracking locomotion policy is not a whole-body controller — C3a–C3h `MEASURED`
 
-| Finding | Number | Root cause |
-|---|---|---|
-| Walks straight, briefly | **+0.23° / 10 s**, 7.45 m, 0.743 m/s, max tilt 4.8° | works |
-| Does not stay straight | **−17.3° / 30 s** | no heading feedback in the policy |
-| Arms: hard wrist IK while walking | **FALL 4.84 s** (neutral), **3.39 s** (reach) | policy uses arms for balance; overriding them removes its own stabiliser |
-| Arms: hard wrist IK at **zero** command | **FALL 5.27 s** after 1.72 m base drift | not a speed problem — zero is already slower than any walk |
-| Arms: soft 15% blend | survives 30 s but **wrist never moves** (0.119 m residual, local-x never advances) | policy dominates the blend; not shared authority |
-| Look: waist override while walking | +34.6° arc achieved, but base does a **−185° U-turn in 10 s** | taking the waist costs the policy its own heading regulation |
-| Look + arms while walking | **FALL 2.95 s** | combined destabilisation |
-| Hold: best PI outer loop at zero command | **0.274 / 0.326 / 0.361 m at 20 / 60 / 120 s**, tilt 6.8°, **still stepping at 0.12 m/s RMS** | the policy has no stop; a loop can bound drift but not motion |
-| Walk → hold, gain-scheduled | **FALL 3.11–4.24 s** into the hold | no stopping behaviour to hand over to |
-| Walk → static stand pose (any ramp 0.05–2.0 s, incl. a 2 s and a 3 s brake, and a `knees_bent` pose) | **FALL 0.64–1.49 s, all variants** | static PD has no balance feedback and the policy never stops |
+All against the MuJoCo Playground G1 policy (ONNX, 903,543 B) on the **correct** collision model, `spike/c3/playground_g1/xmls/scene_mjx_feetonly_flat_terrain.xml`. **Root cause, stated once: it is a 29-DoF joint-position velocity tracker. Its action space is the whole body, it owns every joint, and it was trained with no notion of an external upper-body authority.**
 
-Superseded / corrected along the way, so nobody re-inherits them:
-- The archived "0.516 m/s verified" was the x-component of an **arc**; the arc was our **Menagerie** XML, not the policy. Same ONNX on the Playground XML curls **+0.23°/10 s** vs **+174.5°/10 s**. Model choice fixed it.
-- The old C3a/C3c arm and waist results were measured on the wrong XML and were re-run on the right one; the conclusions got **worse**, not better.
+| Finding | Number |
+| --- | --- |
+| Walks straight, briefly | +0.23° / 10 s, 7.45 m, 0.743 m/s |
+| Does not stay straight | **−17.3° / 30 s** |
+| Hard wrist IK while walking | **FALL 4.84 s** (neutral), **3.39 s** (reach) |
+| Hard wrist IK at **zero** command | **FALL 5.27 s** after 1.72 m drift — not a speed problem |
+| Soft 15% blend | survives, but **wrist never moves** (0.119 m residual) |
+| Waist look while walking | +34.6° arc, but base does a **−185° U-turn** |
+| Look + arms while walking | **FALL 2.95 s** |
+| Best zero-command PI loop | 0.274 / 0.326 / 0.361 m at 20 / 60 / 120 s, **still stepping at 0.12 m/s RMS** |
+| Walk → hold, gain-scheduled | **FALL 3.11–4.24 s** |
+| Walk → static stand, any ramp 0.05–2.0 s | **FALL 0.64–1.49 s, all variants** |
 
----
+### 2.2 The QP-on-SONIC hybrid is dead — C3j `MEASURED`
 
-## 3. Why this is a structural gap, not a tuning gap
+A mink QP that overrides SONIC's joints was tried in 16 variants. It fights the policy:
 
-Published whole-body humanoid systems do not bolt upper-body authority onto a locomotion policy. They train **one policy whose command space already includes the upper body**: HOVER/OmniH2O track head + two hands directly; HOMIE keeps **12 lower-body actions** and treats the upper body as a smooth, time-varying **disturbance it was trained to tolerate**; ExBody separates expressive upper body from stable lower body. Unitree's own `rt/arm_sdk` has the same failure recorded in the wild (forward lean, endless stepping).
+| Variant | Hold | Walking aim |
+| --- | --- | --- |
+| Baseline (no override) | 1.14 cm / 7.33° | 3.51 cm / 7.22° |
+| Hard arm override | **14.40 cm / 24.00°** | **12.84 cm / 22.40°** |
+| `rate:2.0` / `rate:6.0` | 12.43 / 13.08 cm — no help | — |
+| `blend:0.5` / `blend:0.75` | 4.88 / 7.49 cm | — |
+| **`orient` only (wrist rotation)** | 3.27 cm / **5.08°** | aim 4.42° — **the one variant that helps** |
+| `int:0.5`, `int:1.0` | **FALL** (tilt 64.7° / 74.8°) | **FALL** |
 
-`research/humanoid-command-space.md` already argued the correct native interface is a **masked, root-relative task-space command** (root velocity + yaw rate + height, head pose, two hand poses, closure, authority bitmask, TTL, termination) — not a verb enum. That interface is the right contract. What is missing is an **executor that can honour it**.
+`arm_track_err_final ≈ 0.23`: the IK never converged. **Only wrist-orientation override survives** (7.22° → 5.08° pointing), and is worth at most a polish, not a redesign.
 
-The general `BodyCommand` struct was never the expensive part. The expensive assumption was that a velocity-tracking locomotion checkpoint is a whole-body controller.
+### 2.3 The classical QP is precise but cannot walk — `research/wbc-classical-proposal.md` `MEASURED`
 
----
+mink floating-base QP at 50 Hz, `daqp`, 10×2 ms substeps.
 
-## 4. Hard requirements any solution must satisfy
+- **Very good at precision:** hold **0.22 mm / 20 s** (head 1.4 mm); look ±35° at **0.63°** error; reach **2.2–12.9 mm** single-arm; aim **0.18–2.34°**; punch **9.5 mm / 3.6°** (E3's DLS was 13.5 cm); solve **0.51–1.08 ms** mean.
+- **Structurally cannot walk:** weight-shift limit **0.10 m** (0.12 tips), single support tips in **1.3–1.6 s**, because it has no contact-force/CoP decision variable. Dodge 12.1–14.7 cm but **0.62–0.86 s** to peak.
+- **Reach envelope ~0.20 m.** A probe at **0.70 m** forward, eye level, came up **19.7–27.3 cm short**.
 
-A proposal is only useful if it meets **all** of these. Numbers are the pass bar; report failures as failures.
+**Verdict: the QP is a fine upper-body controller and not a body.** It cannot be composed onto SONIC (§2.2), so it is not currently in the executor.
 
-| # | Requirement | Pass bar | Why |
-|---|---|---|---|
-| R1 | **Arms and head are independently commandable** | wrist reaches a commanded point with residual **≤ 3 cm**, while the body walks and while it holds; wrist **orientation** error measured (never measured yet) | aiming, shooting, punching, grabbing |
-| R2 | **Holds still well enough to freeze time** | net base excursion **≤ ~5 cm** and continuous motion low enough that Superhot's clock stays near zero, over a **20 s** think | the VLM is slow; Superhot only advances when the player moves |
-| R3 | **Walks** | ≥ 5 m straight-ish (heading error bounded), ≥ 0.3 m/s, no fall in 60 s, recovers from a small push | traversal; and the whole hiring claim |
-| R4 | **Transitions in and out of hold do not fall** | 5 consecutive walk→hold→walk cycles, no fall, position recovered | every transition tried so far falls |
-| R5 | **Dodges** | a lateral or lean displacement of the *head* of order **10–25 cm** in < 500 ms, returning upright, without falling | Superhot's dodge is small; a waist/leg lean may be enough — needs in-game measurement of what the game actually requires |
-| R6 | **Runs on this machine, live** | 50 Hz control loop with Superhot + Monado + MuJoCo resident on one **8 GB RTX 4060 laptop** (Wayland, NixOS, Steam+Proton+gamescope) | a 200 Hz oracle that cannot run beside the game is not the demo |
-| R7 | **Honest** | every pose is `mjData` after `mj_step`; no game telemetry as control, no faked poses, no floating hands, no root teleport | the artifact's entire value |
-| R8 | **Completes a stage** | at least one early Superhot stage cleared end-to-end by the body + the brain, recorded | the literal goal |
+### 2.4 Retracted claims — do not re-inherit
 
-Unknowns that block honest answering and should be **measured, not assumed**:
-- What Superhot's clock actually does as a function of player motion (linear? thresholded? deadband?). If a small deadband exists, R2 may be far cheaper than it looks.
-- What hitboxes and dodge distances the game actually requires (R5).
-- ~~Whether Superhot under Proton accepts a synthetic HMD at all~~ — **C0 ran 2026-10-24 and passed** (`research/c0-results.md`): the game holds a focused session on `Monado: Remote HMD` and its view tracks our poses (9× pixel-change signal over static). Still unmeasured: trigger input, the clock floor in play, and The Fall's 0.70 m pistol/exit against a ~0.20 m reach envelope.
+- **"0.516 m/s verified"** was the x-component of an **arc**; the arc was our **Menagerie** XML, not the policy. Same ONNX: **+0.23°/10 s** on Playground vs **+174.5°/10 s** on Menagerie.
+- **"SONIC's hold is motion-dependent — quote 3.6 cm, or 0.23–2.07 m per hold."** Both were artifacts of freezing only the anchor index of a walking clip (§1.4).
+- **"Slow the walk until the arms survive."** Falsified by the zero-command fall at 5.27 s.
+- **"The Playground policy can be fixed."** It cannot; it has no stop and no upper-body authority.
 
 ---
 
-## 5. Candidate assets that exist and have not been evaluated here
+## 3. Why the gap was structural
 
-Not endorsements — a starting list for the researchers to check, verify and price.
+Published whole-body humanoids do not bolt upper-body authority onto a locomotion policy. They train **one policy whose command space already includes the upper body**: HOVER/OmniH2O track head + hands directly; HOMIE keeps **12 lower-body actions** and treats the upper body as a disturbance it was trained to tolerate; ExBody separates expressive upper body from stable lower body. Unitree's own `rt/arm_sdk` records the same failure in the wild.
 
-**Learned whole-body / loco-manipulation controllers**
-- **HOMIE / OpenHomie** — 12 lower-body actions, upper body as a trained disturbance; released ONNX (`homie/model_walk`, `homie/model_stand`) at `huggingface.co/datasets/Kashu7100/eden_policies`; upstream `github.com/InternRobotics/OpenHomie`; MuJoCo + Mink recipe at `github.com/cyugai/G1_AMO_control`; an mjlab port `github.com/Nagi-ovo/mjlab-homierl` with a `stand` mode (1/6 of the command schedule) and an upper-body disturbance curriculum.
-- **NVIDIA GEAR-SONIC / GR00T-WholeBodyControl** — released G1 ONNX encoder/decoder at `huggingface.co/nvidia/GEAR-SONIC`, 50 Hz, SMPL/G1/teleop inputs, **decoupled WBC (RL lower body + IK upper body)**; deployment is C++/TensorRT.
-- **HOVER** (`github.com/NVlabs/HOVER`) — OmniH2O-mode specialist tracks head + hands; **train-it-yourself** in Isaac Lab, MuJoCo sim2sim provided.
-- Others seen in the wild, unverified: Holosoma G1 29-DoF PPO, `humanoid_gpt`, HANDOFF, AnyBody, AMO, ExBody2, HugWBC, InternHumanoid.
-
-**Classical control**
-- Hierarchical QP whole-body control (cited at **0.42 ms on a 33-DoF humanoid**, IROS 2021) — CoM/contact/wrist/head priorities. Real robots do teleop this way.
-- mink (already in `spike/e3/.venv`), pinocchio / crocoddyl / OCS2 as alternatives.
-- Scripted gait + capture-point or LIPM balance; scripted ballistic dodge + PD recovery.
-
-**Existing local assets**
-- `spike/e1/remote_pose_client.py` — working remote-driver client.
-- `spike/e2/` — capture + latency evidence.
-- `spike/e3/body_bridge.py` — 500 Hz G1 stepper, 50 Hz pose publisher, DLS arm IK, waist look, scripted stand. **This is the fallback body and works.**
-- `spike/c3/` — the Playground policy harness and every C3 measurement.
-- Env: `spike/e3/.venv` (mujoco 3.17.0, mink 1.3.0, numpy 2.2.6, onnxruntime).
+`research/humanoid-command-space.md` argues the native interface is a **masked, root-relative task-space command** (root velocity + yaw rate + height, head pose, two hand poses, closure, authority bitmask, TTL, termination) — not a verb enum. **That contract survives unchanged.** What changed is that an executor now exists that honours most of it.
 
 ---
 
-## 6. Rules for any researcher using this file
+## 4. Requirements, with measured status
+
+The pass bars. `research/wbc-*.md` proposals are still judged against these.
+
+| # | Requirement | Pass bar | **Status 2026-10-24** |
+| --- | --- | --- | --- |
+| R1 | **Arms and head independently commandable** | wrist residual **≤ 3 cm** while walking and holding; orientation error measured | **PARTIAL** — 3.51 cm / 7.22° **ahead** (just over), **8.63 cm / 28.33° at 30° off-axis** (fails). Orientation now measured: 7.22° → 5.08° with wrist-orient override. Head y only, no pitch/roll |
+| R2 | **Holds still enough to freeze time** | ≤ ~5 cm net over a 20 s think | **MET with a stated caveat** — RMS **1.3×10⁻⁴ m/s**, but a one-time **8–12 cm settle** and a **0.13–0.18 m/s transient for 3–5 s** on entry. A think costs **~0.7 s of game time** |
+| R3 | **Walks** | ≥ 5 m, ≥ 0.3 m/s, 60 s no fall | **MET** — 39.79 m / 60 s at 0.663 m/s, yaw −2.10°, no fall. Push recovery untested |
+| R4 | **Transitions do not fall** | 5 consecutive walk→hold→walk | **MET** — 5/5, no fall, resumes within 0.2 m |
+| R5 | **Dodges** | head displacement 10–25 cm in < 500 ms, upright | **MET on displacement** — 0.15–0.18 m in < 0.5 s. What the *game* requires is unmeasured |
+| R6 | **Runs live on this machine** | 50 Hz beside Superhot + Monado + MuJoCo on an 8 GB RTX 4060 | **OPEN** — SONIC is 6.8 ms/tick (~0.9× realtime) headless; never run beside the game |
+| R7 | **Honest** | every pose is `mjData` after `mj_step` | **MET by construction** in E3/C3i–C3m. **Caveat for C0**: its poses were scripted constants built from measured geometry, so the game test was honest but not sim-driven |
+| R8 | **Completes a stage** | one early stage cleared end-to-end, recorded | **OPEN** — gated on C0-3/5/6 and C1–C5 |
+
+**The binding constraint is now R1's off-axis case.** At 30° off-axis the body cannot aim well, and it cannot be fixed by arm authority (§2.2). The design consequence is a rule, not a bug: **the body must turn to face its target rather than aim sideways.** Everything about "walk to a position, then aim" must be planned around that.
+
+---
+
+## 5. The game side — what is known
+
+From `research/wbc-game-proposal.md`, read from serialized assets of levels 0–5 `MEASURED`:
+
+- **Clock floor `TimeControl.minTimescale = 0.005`** — 0.5% speed, **not a pause**. `maxTimescale = 1.0`, `tickThreshold = 0.1`, `movementTick = (0.1, 0.1)`, `rotation = 0.05`. A 20 s think therefore costs ≈ 0.1 s of game time *if* the body is genuinely still. `MINIMAL_TIMESCALE_HIGHER` must **not** be enabled.
+- **First target is The Fall** (`CezaryVR_ReverseFall`): first enemy **1.41 m** ahead at eye level; **pistol and exit pyramid 0.70 m forward at eye level**. Scene order: The Fall → Cage Fight → Corridor → Dojo → Airport. Corridor needs 12.31 m of traversal (not a first target); Cage Fight's opening enemy is 0.90 m.
+- `Bullet.COLLISION_RADIUS` 0.03 m, `distanceCheckTimeTreshold` 2.5 m (sic — the game's own spelling), `maxHandsDistance` 2.0 m.
+
+**The open question that decides the demo:** the pistol and exit are at **0.70 m**, and the reliable reach envelope is **~0.20 m** (§2.3). Either the body walks closer before reaching — which makes the walk load-bearing inside a level — or the level is not playable by a standing body. This is a C0 measurement, not an assumption.
+
+---
+
+## 6. Decisions locked
+
+- **Monado `remote` driver** is the injection path. No custom OpenVR driver; SteamVR avoided.
+- **Superhot VR** is the first game and the first adapter. Its frozen clock legalises a 5–20 s brain.
+- **Native interface = `BodyCommand` / `BodyState`**, masked task-space with authority bitmask, TTL, termination. Game verbs are adapters, not the interface.
+- **Three loops, one socket**: body 50 Hz packets / 500 Hz PD; skills 10–30 Hz; brain 5–20 s. The VLM never writes joints or poses.
+- **`hold` is load-bearing and active**, never "send zero".
+- **Executor = GEAR-SONIC.** The Playground ONNX is off the critical path. The standalone QP is not a body. The QP-on-SONIC joint override is dead; **wrist-orientation-only override** is the one permitted refinement.
+- **Keep the G1.** No RP1 swap.
+- **Brain = MiniCPM5-2B on CPU via llama.cpp** — GPU is occupied by Superhot + Monado + MuJoCo on 8 GB. Measured: ~20 s p50 / 31 s p95 (3,932 MiB). MiMo-9B ~5 s p50 (7,346 MiB, does not fit beside the rest). LFM2.5-3B 0.21 s but degenerate (73% `navigate_to`).
+
+---
+
+## 7. What is still open
+
+Ordered by what blocks what. Each has a concrete next action.
+
+| # | Open item | Next action | Notes |
+| --- | --- | --- | --- |
+| 1 | **C0-3: trigger reaches the game** | `c0_client.py --mode trigger` with a pistol in hand | needs the tutorial cleared |
+| 2 | **C0-5: clock floor in practice** | hold vs walk, pixel-only clock-ratio protocol (`spike/c0/README.md`) | the 0.005 floor is read from assets; behaviour needs pixels |
+| 3 | **C0-6: The Fall's 0.70 m pistol/exit** | stand still in level 1 and ask what is visible and reachable | **biggest design risk** — 0.70 m vs 0.20 m envelope |
+| 4 | **R6: live co-residency** | SONIC + Monado + Superhot + grim resident, measure dropped ticks | 6.8 ms/tick and 0.9× realtime headless |
+| 5 | **R1 off-axis aiming** | plan movement so the body faces its target; measure at 0°, 15°, 30° after turning | do not attempt arm-authority fixes |
+| 6 | **Wrist orientation in the E3 body** | never measured on the 500 Hz bridge | E3 measured position only |
+| 7 | **Grab confirmation** | `maxHandsDistance` is 2.0 m — what closes a grab? | unknown |
+| 8 | **Scene memory** | enemy bearing/range plus staleness over a 5–20 s think | nothing designed yet |
+| 9 | **Hold under an arm or head command** | hold with a commanded wrist target, 20 s | holds were measured with arms idle |
+| 10 | **Holds longer than 20 s** | 60 s hold, watch for creep | untested |
+| 11 | **Does the 8–12 cm settle matter in game?** | observe in C0-5 | only visible with pixels |
+| 12 | **C3k: unify SONIC's model with Menagerie** | **deferred, probably unnecessary** — the two controllers are no longer composed | would only matter if the QP returns |
+
+---
+
+## 8. Current environment state
+
+As left by C0 on 2026-10-24:
+
+- `monado-service` running detached (`/tmp/c0-monado.log`), listening on 4242, holding `/run/user/1000/monado_comp_ipc`.
+- **`monado.socket` is stopped** and must stay stopped while our service owns the IPC path. A reboot restores it; to restore by hand, kill our service first.
+- `~/.config/openxr/1/active_runtime.json` exists — **this is the fix that makes Monado visible to Proton games.** Keep it.
+- `~/.local/share/openxr/1/active_runtime.json` is **inert** (not a searched path); safe to delete.
+- Superhot runs on the laptop panel (`eDP-1`); the working monitor (`DP-1`) is untouched.
+- Hyprland raises **"Application Not Responding"** for the Monado window because Monado blocks in `renderer_wait_for_present`. Cosmetic; kill the dialog.
+
+---
+
+## 9. Rules for anyone using this file
 
 - Tag every claim `MEASURED` / `CITED` / `ASSUMPTION`. A number without a tag is not a finding.
 - Prefer measuring to arguing. A one-hour MuJoCo experiment beats a paragraph of reasoning.
-- A negative result is a deliverable. Never sweep until something survives and report only that; report the tuning window and its fragility.
-- Do not assume a paper's number transfers. This project has already been bitten twice by inherited numbers and once by evaluating a policy on the wrong collision model before evaluating it on the right one.
-- Do not edit the design doc, other research files, `spike/e1`, `spike/e2`, or `spike/e3`. Write new files.
-- Do not touch NixOS, Monado systemd units, Steam, Proton, or Superhot.
-- The goal is not negotiable down to "a turret." A proposal that cannot reach R1–R5 should say so plainly and price what it would take.
+- **A negative result is a deliverable.** Never sweep until something survives and report only that; report the tuning window and its fragility.
+- Do not assume a paper's number transfers. This project has been bitten by inherited numbers twice, by evaluating a policy on the wrong collision model once, and by trusting a harness artifact once (§2.4).
+- The goal is not negotiable down to "a turret". A proposal that cannot reach R1–R5 should say so plainly and price what it would take.
