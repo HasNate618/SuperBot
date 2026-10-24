@@ -1,0 +1,5 @@
+ERROR: [Loader Message] Code 0 : loader_get_json: Failed to open JSON file /run/opengl-driver/share/vulkan/icd.d/nvidia_icd.x86_64.json
+ERROR: [Loader Message] Code 0 : vkCreateInstance: Found no drivers!
+Cannot create Vulkan instance.
+This problem is often caused by a faulty installation of the Vulkan driver or attempting to use a GPU that does not support Vulkan.
+ERROR at /build/source/vulkaninfo/./vulkaninfo.h:611:vkCreateInstance failed with ERROR_INCOMPATIBLE_DRIVER

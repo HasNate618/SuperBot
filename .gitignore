@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.ruff_cache/
+.pytest_cache/
+
+# Vendored upstream repositories. Each has its own .git and is 400+ MB;
+# fetch them per research/*.md rather than committing them.
+spike/*/vendor/
+spike/vendor/
+
+# Model weights (ONNX, 40–140 MB each).
+spike/*/weights/
+
+# Per-tick run streams. Summaries (*.json) are kept as evidence.
+*.jsonl
+
+# Transient logs
+*.log
+
+# Local editor / OS noise
+.DS_Store
+.swp
+
+# Per-tick run logs. Aggregated summaries (*_measurements.json, summary.json)
+# are committed instead; these regenerate by re-running the spike.
+spike/*/logs/*.csv
+
+# Regenerable captures and build outputs
+spike/e2/frames/
+spike/e1/include/
+spike/e1/xr_view_probe

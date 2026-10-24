@@ -1,0 +1,9 @@
+head0 [3.68744231e-03 2.48142505e-05 1.21913180e+00]
+wrist0 L [-0.01695908  0.22180134  0.7209036 ] R [-0.01695908 -0.22179134  0.7209036 ]
+base0 [0.   0.   0.79] com0 [3.28296237e-03 8.22609017e-05 6.91852381e-01]
+gun_eye_0.70       right res=27.29cm ori=9.58deg base_max=3.37cm tilt=4.66deg margin=3.11cm fall=False
+gun_eye_0.70       left  res=27.34cm ori=10.02deg base_max=3.40cm tilt=4.56deg margin=3.18cm fall=False
+pyramid_eye_0.70   right res=19.73cm ori=9.27deg base_max=6.68cm tilt=6.23deg margin=0.21cm fall=False
+pyramid_eye_0.70   left  res=20.08cm ori=9.06deg base_max=5.95cm tilt=6.10deg margin=0.83cm fall=False
+eye_0.80           right res=33.97cm ori=9.20deg base_max=4.29cm tilt=5.56deg margin=2.02cm fall=False
+eye_0.80           left  res=34.11cm ori=8.82deg base_max=4.08cm tilt=5.45deg margin=2.18cm fall=False

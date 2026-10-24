@@ -1,0 +1,21 @@
+== package ==
+/nix/store/89h2h18iz10aad69jpa2wvxmlhlg6k5i-monado-psvr2-psvr2-work-steamvr-2026-06-04
+/nix/store/89h2h18iz10aad69jpa2wvxmlhlg6k5i-monado-psvr2-psvr2-work-steamvr-2026-06-04/bin/monado-service
+
+== versions ==
+-r-xr-xr-x 2 root root 215448 Dec 31  1969 /nix/store/89h2h18iz10aad69jpa2wvxmlhlg6k5i-monado-psvr2-psvr2-work-steamvr-2026-06-04/lib/libmonado.so.25.1.0
+Monado(XRT) by Collabora et al
+
+== sha256 ==
+48791d3f114fa221ece554967c455443cd1ae2c3b0701b100dcf04e76ae1be21  /nix/store/89h2h18iz10aad69jpa2wvxmlhlg6k5i-monado-psvr2-psvr2-work-steamvr-2026-06-04/bin/monado-service
+6403a048e527aa173b6a78508680e5676c3bfee01d45ab8af39f839b149c7cdd  /nix/store/89h2h18iz10aad69jpa2wvxmlhlg6k5i-monado-psvr2-psvr2-work-steamvr-2026-06-04/lib/libmonado.so.25.1.0
+a11109fd2164817ca11fd7314d89c540c2e3beac0a210543f557c88c9f392acb  xr_view_probe
+
+== remote driver symbols/strings in monado-service ==
+/build/source/src/xrt/drivers/remote/r_hub.c
+Created remote
+mndrmt3
+Protocol version mismatch (expected 0x%08lx, got 0x%08lx
+remote_open_system
+r_hub_system_devices_destroy
+r_hub_system_devices_get_roles

@@ -1,0 +1,8 @@
+                                               #4  0x0000708a94955cb5 linux_udev_event_thread_main (libusb-1.0.so.0 + 0x15cb5)
+                                               #5  0x0000708a8f89ce53 start_thread (libc.so.6 + 0x9ce53)
+                                               #6  0x0000708a8f92407c __clone3 (libc.so.6 + 0x12407c)
+                                               ELF object binary architecture: AMD x86-64
+Oct 23 00:48:29 flow systemd[1984]: e2-monado.service: Main process exited, code=dumped, status=11/SEGV
+Oct 23 00:48:29 flow systemd[1984]: e2-monado.service: Failed with result 'core-dump'.
+Oct 23 00:49:20 flow systemd[1984]: Started [systemd-run] /run/wrappers/bin/monado-service.
+Oct 23 00:49:20 flow monado-service[191619]: DEBUG [u_metrics_init] No metrics file!

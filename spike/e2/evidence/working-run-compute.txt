@@ -1,0 +1,267 @@
+Oct 23 01:17:30 flow systemd[1984]: Started [systemd-run] /run/wrappers/bin/monado-service.
+Oct 23 01:17:30 flow monado-service[433808]: DEBUG [u_metrics_init] No metrics file!
+Oct 23 01:17:30 flow monado-service[433808]:  INFO [ipc_server_main_common] Monado(XRT) by Collabora et al 'GIT-NOTFOUND' starting up...
+Oct 23 01:17:30 flow monado-service[433808]: DEBUG [create_listen_socket] Created listening socket /run/user/1000/monado_comp_ipc.
+Oct 23 01:17:30 flow monado-service[433808]: DEBUG [init_listen_socket] Listening socket is fd 9
+Oct 23 01:17:30 flow monado-service[433808]:  INFO [print_linux_end_user_started_information]
+Oct 23 01:17:30 flow monado-service[433808]: ################################################################################
+Oct 23 01:17:30 flow monado-service[433808]: #                                                                              #
+Oct 23 01:17:30 flow monado-service[433808]: #                        The Monado service has started.                       #
+Oct 23 01:17:30 flow monado-service[433808]: #                                                                              #
+Oct 23 01:17:30 flow monado-service[433808]: ################################################################################
+Oct 23 01:17:30 flow monado-service[433808]: ERROR [p_udev_enumerate_hidraw] Unknown hidraw bus_type: '31', ignoring.
+Oct 23 01:17:30 flow monado-service[433808]: ERROR [p_udev_enumerate_hidraw] Unknown hidraw bus_type: '31', ignoring.
+Oct 23 01:17:30 flow monado-service[433808]: ERROR [u_config_json_get_remote_settings] No remote node
+Oct 23 01:17:30 flow monado-service[433808]:  INFO [p_create_system] Creating system:
+Oct 23 01:17:30 flow monado-service[433808]:         Builders:
+Oct 23 01:17:30 flow monado-service[433808]:                 qwerty: Qwerty devices builder
+Oct 23 01:17:30 flow monado-service[433808]:                 remote: Remote simulation devices builder
+Oct 23 01:17:30 flow monado-service[433808]:                 simulated: Simulated devices builder
+Oct 23 01:17:30 flow monado-service[433808]:                 rift: Oculus Rift
+Oct 23 01:17:30 flow monado-service[433808]:                 rift_s: Oculus Rift S
+Oct 23 01:17:30 flow monado-service[433808]:                 psvr2: PlayStation VR 2
+Oct 23 01:17:30 flow monado-service[433808]:                 rgb_tracking: RGB tracking based devices (PSVR, PSMV, ...)
+Oct 23 01:17:30 flow monado-service[433808]:                 simula: SimulaVR headset
+Oct 23 01:17:30 flow monado-service[433808]:                 steamvr: SteamVR proprietary wrapper (Vive, Index, Tundra trackers, etc.) devices builder
+Oct 23 01:17:30 flow monado-service[433808]:                 lighthouse: Lighthouse-tracked FLOSS (Vive, Index, Tundra trackers, etc.) devices builder
+Oct 23 01:17:30 flow monado-service[433808]:                 north_star: North Star headset
+Oct 23 01:17:30 flow monado-service[433808]:                 wmr: Windows Mixed Reality
+Oct 23 01:17:30 flow monado-service[433808]:                 xreal_air: Xreal Air
+Oct 23 01:17:30 flow monado-service[433808]:                 legacy: Legacy probing system
+Oct 23 01:17:30 flow monado-service[433808]:         Config selected remote
+Oct 23 01:17:30 flow monado-service[433808]:         Using builder remote: Remote simulation devices builder
+Oct 23 01:17:30 flow monado-service[433808]:         Got devices:
+Oct 23 01:17:30 flow monado-service[433808]:                 0: Remote HMD
+Oct 23 01:17:30 flow monado-service[433808]:                 1: Remote Left Controller
+Oct 23 01:17:30 flow monado-service[433808]:                 2: Remote Right Controller
+Oct 23 01:17:30 flow monado-service[433808]:         In roles:
+Oct 23 01:17:30 flow monado-service[433808]:                 head: Remote HMD (Remote HMD), view count: 2
+Oct 23 01:17:30 flow monado-service[433808]:                 eyes: <none> (<none>)
+Oct 23 01:17:30 flow monado-service[433808]:                 face: <none> (<none>)
+Oct 23 01:17:30 flow monado-service[433808]:                 left: Remote Left Controller (Remote Left Controller)
+Oct 23 01:17:30 flow monado-service[433808]:                 right: Remote Right Controller (Remote Right Controller)
+Oct 23 01:17:30 flow monado-service[433808]:                 gamepad: <none> (<none>)
+Oct 23 01:17:30 flow monado-service[433808]:                 hand_tracking.unobstructed.left: <none> (<none>)
+Oct 23 01:17:30 flow monado-service[433808]:                 hand_tracking.unobstructed.right: <none> (<none>)
+Oct 23 01:17:30 flow monado-service[433808]:                 hand_tracking.conforming.left: Remote Left Controller (Remote Left Controller)
+Oct 23 01:17:30 flow monado-service[433808]:                 hand_tracking.conforming.right: Remote Right Controller (Remote Right Controller)
+Oct 23 01:17:30 flow monado-service[433808]:         Result: XRT_SUCCESS
+Oct 23 01:17:30 flow monado-service[433808]: DEBUG [comp_main_create_system_compositor] Doing init 0x60608f084ae0
+Oct 23 01:17:30 flow monado-service[433808]:  INFO [setup_accept_fd] Listen address 0.0.0.0 on port 4242
+Oct 23 01:17:30 flow monado-service[433808]: DEBUG [check_vulkan_caps] Checking for NVIDIA vulkan driver.
+Oct 23 01:17:30 flow monado-service[433808]:  INFO [run_thread] Listening on port '4242'.
+Oct 23 01:17:30 flow monado-service[433808]: ERROR [_test_for_nvidia] NVIDIA: No allowlisted displays found!
+Oct 23 01:17:30 flow monado-service[433808]:         == Current Allowlist (9) ==
+Oct 23 01:17:30 flow monado-service[433808]:                 Sony SIE  HMD *08
+Oct 23 01:17:30 flow monado-service[433808]:                 HTC Corporation HTC-VIVE
+Oct 23 01:17:30 flow monado-service[433808]:                 HTC Corporation VIVE Pro
+Oct 23 01:17:30 flow monado-service[433808]:                 Oculus VR Inc. Rift
+Oct 23 01:17:30 flow monado-service[433808]:                 Valve Corporation Index HMD
+Oct 23 01:17:30 flow monado-service[433808]:                 Seiko/Epson SEC144A
+Oct 23 01:17:30 flow monado-service[433808]:                 HPN
+Oct 23 01:17:30 flow monado-service[433808]:                 Bigscreen, Inc. Beyond
+Oct 23 01:17:30 flow monado-service[433808]:                 PNP
+Oct 23 01:17:30 flow monado-service[433808]:         == Found Displays (0) ==
+Oct 23 01:17:30 flow monado-service[433808]:  INFO [comp_window_direct_wayland_init] No connector was chosen, will use first available connector
+Oct 23 01:17:30 flow monado-service[433808]:  INFO [_drm_lease_device_drm_fd] Available DRM lease device: /dev/dri/card1
+Oct 23 01:17:30 flow monado-service[433808]:  INFO [_drm_lease_device_drm_fd] Available DRM lease device: /dev/dri/card0
+Oct 23 01:17:30 flow monado-service[433808]:  INFO [comp_window_direct_wayland_init] Found no connectors available for direct mode
+Oct 23 01:17:30 flow monado-service[433808]: DEBUG [compositor_try_window] Target backend wayland initialized!
+Oct 23 01:17:30 flow monado-service[433808]: DEBUG [should_skip_optional_instance_ext] Skipping optional instance extension VK_EXT_display_surface_counter because VK_KHR_display is not enabled
+Oct 23 01:17:30 flow monado-service[433808]:  INFO [vk_log_extension_list] Vulkan instance extensions list(s):
+Oct 23 01:17:30 flow monado-service[433808]:         Enabled extensions:
+Oct 23 01:17:30 flow monado-service[433808]:                 VK_KHR_external_fence_capabilities        required
+Oct 23 01:17:30 flow monado-service[433808]:                 VK_KHR_external_memory_capabilities       required
+Oct 23 01:17:30 flow monado-service[433808]:                 VK_KHR_external_semaphore_capabilities    required
+Oct 23 01:17:30 flow monado-service[433808]:                 VK_KHR_get_physical_device_properties2    required
+Oct 23 01:17:30 flow monado-service[433808]:                 VK_KHR_surface                            required
+Oct 23 01:17:30 flow monado-service[433808]:                 VK_KHR_wayland_surface                    required
+Oct 23 01:17:30 flow monado-service[433808]:                 VK_EXT_debug_report                       required
+Oct 23 01:17:30 flow monado-service[433808]:                 VK_EXT_swapchain_colorspace               optional
+Oct 23 01:17:30 flow monado-service[433808]:         Not enabled optional extensions:
+Oct 23 01:17:30 flow monado-service[433808]:                 VK_EXT_display_surface_counter            skipped
+Oct 23 01:17:30 flow monado-service[433808]: DEBUG [select_physical_device] Choosing Vulkan device index
+Oct 23 01:17:30 flow monado-service[433808]: DEBUG [select_physical_device] Available GPUs
+Oct 23 01:17:30 flow monado-service[433808]: DEBUG [vk_print_device_info] GPU index 0
+Oct 23 01:17:30 flow monado-service[433808]:         name: NVIDIA GeForce RTX 4060 Laptop GPU
+Oct 23 01:17:30 flow monado-service[433808]:         vendor: 0x10de
+Oct 23 01:17:30 flow monado-service[433808]:         product: 0x28e0
+Oct 23 01:17:30 flow monado-service[433808]:         deviceType: VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU
+Oct 23 01:17:30 flow monado-service[433808]:         apiVersion: 1.4.341
+Oct 23 01:17:30 flow monado-service[433808]:         driverVersion: 0x988e4100
+Oct 23 01:17:30 flow monado-service[433808]: DEBUG [vk_print_device_info] Selected GPU: 0
+Oct 23 01:17:30 flow monado-service[433808]:         name: NVIDIA GeForce RTX 4060 Laptop GPU
+Oct 23 01:17:30 flow monado-service[433808]:         vendor: 0x10de
+Oct 23 01:17:30 flow monado-service[433808]:         product: 0x28e0
+Oct 23 01:17:30 flow monado-service[433808]:         deviceType: VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU
+Oct 23 01:17:30 flow monado-service[433808]:         apiVersion: 1.4.341
+Oct 23 01:17:30 flow monado-service[433808]:         driverVersion: 0x988e4100
+Oct 23 01:17:30 flow monado-service[433808]: DEBUG [should_skip_optional_device_ext] Skipping optional instance extension VK_EXT_display_control because VK_EXT_display_surface_counter instance ext is not enabled
+Oct 23 01:17:30 flow monado-service[433808]: DEBUG [vk_log_extension_list] Vulkan device extensions list(s):
+Oct 23 01:17:30 flow monado-service[433808]:         Enabled extensions:
+Oct 23 01:17:30 flow monado-service[433808]:                 VK_KHR_dedicated_allocation        required
+Oct 23 01:17:30 flow monado-service[433808]:                 VK_KHR_external_fence              required
+Oct 23 01:17:30 flow monado-service[433808]:                 VK_KHR_external_fence_fd           optional
+Oct 23 01:17:30 flow monado-service[433808]:                 VK_KHR_external_memory             required
+Oct 23 01:17:30 flow monado-service[433808]:                 VK_KHR_external_memory_fd          required
+Oct 23 01:17:30 flow monado-service[433808]:                 VK_KHR_external_semaphore          required
+Oct 23 01:17:30 flow monado-service[433808]:                 VK_KHR_external_semaphore_fd       optional
+Oct 23 01:17:30 flow monado-service[433808]:                 VK_KHR_format_feature_flags2       optional
+Oct 23 01:17:30 flow monado-service[433808]:                 VK_KHR_get_memory_requirements2    required
+Oct 23 01:17:30 flow monado-service[433808]:                 VK_KHR_global_priority             optional
+Oct 23 01:17:30 flow monado-service[433808]:                 VK_KHR_image_format_list           optional
+Oct 23 01:17:30 flow monado-service[433808]:                 VK_KHR_maintenance1                optional
+Oct 23 01:17:30 flow monado-service[433808]:                 VK_KHR_maintenance2                optional
+Oct 23 01:17:30 flow monado-service[433808]:                 VK_KHR_present_id                  optional
+Oct 23 01:17:30 flow monado-service[433808]:                 VK_KHR_present_wait                optional
+Oct 23 01:17:30 flow monado-service[433808]:                 VK_KHR_swapchain                   required
+Oct 23 01:17:30 flow monado-service[433808]:                 VK_KHR_synchronization2            optional
+Oct 23 01:17:30 flow monado-service[433808]:                 VK_KHR_timeline_semaphore          optional
+Oct 23 01:17:30 flow monado-service[433808]:                 VK_EXT_calibrated_timestamps       optional
+Oct 23 01:17:30 flow monado-service[433808]:                 VK_EXT_global_priority             optional
+Oct 23 01:17:30 flow monado-service[433808]:                 VK_EXT_robustness2                 optional
+Oct 23 01:17:30 flow monado-service[433808]:         Not enabled optional extensions:
+Oct 23 01:17:30 flow monado-service[433808]:                 VK_GOOGLE_display_timing           unsupported
+Oct 23 01:17:30 flow monado-service[433808]:                 VK_EXT_display_control             skipped
+Oct 23 01:17:30 flow monado-service[433808]: DEBUG [filter_device_features] Features:
+Oct 23 01:17:30 flow monado-service[433808]:         ext_fmt_resolve: 0
+Oct 23 01:17:30 flow monado-service[433808]:         null_descriptor: 0
+Oct 23 01:17:30 flow monado-service[433808]:         shader_image_gather_extended: 1
+Oct 23 01:17:30 flow monado-service[433808]:         shader_storage_image_write_without_format: 1
+Oct 23 01:17:30 flow monado-service[433808]:         storage_buffer_8bit_access: 0
+Oct 23 01:17:30 flow monado-service[433808]:         synchronization_2: 1
+Oct 23 01:17:30 flow monado-service[433808]:         timeline_semaphore: 1
+Oct 23 01:17:30 flow monado-service[433808]:         video_maintenance_1: 0
+Oct 23 01:17:30 flow monado-service[433808]:  INFO [create_device] Created device and GRAPHICS queue with QUEUE_GLOBAL_PRIORITY_REALTIME.
+Oct 23 01:17:30 flow monado-service[433808]:  INFO [vk_print_device_info] Device info:
+Oct 23 01:17:30 flow monado-service[433808]:         name: NVIDIA GeForce RTX 4060 Laptop GPU
+Oct 23 01:17:30 flow monado-service[433808]:         vendor: 0x10de
+Oct 23 01:17:30 flow monado-service[433808]:         product: 0x28e0
+Oct 23 01:17:30 flow monado-service[433808]:         deviceType: VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU
+Oct 23 01:17:30 flow monado-service[433808]:         apiVersion: 1.4.341
+Oct 23 01:17:30 flow monado-service[433808]:         driverVersion: 0x988e4100
+Oct 23 01:17:30 flow monado-service[433808]:  INFO [vk_print_queues_info] Selected Queues/Families:
+Oct 23 01:17:30 flow monado-service[433808]:         main_queue.queue: 0x60608f6b8740
+Oct 23 01:17:30 flow monado-service[433808]:         main_queue.index: 0
+Oct 23 01:17:30 flow monado-service[433808]:         main_queue.family_index: 0
+Oct 23 01:17:30 flow monado-service[433808]:         encode_queue.queue: (nil)
+Oct 23 01:17:30 flow monado-service[433808]:         encode_queue.index: -1
+Oct 23 01:17:30 flow monado-service[433808]:         encode_queue.family_index: -1
+Oct 23 01:17:30 flow monado-service[433808]:  INFO [vk_print_features_info] Features:
+Oct 23 01:17:30 flow monado-service[433808]:         timestamp_compute_and_graphics: true
+Oct 23 01:17:30 flow monado-service[433808]:         timestamp_period: 1.000000
+Oct 23 01:17:30 flow monado-service[433808]:         timestamp_valid_bits: 64
+Oct 23 01:17:30 flow monado-service[433808]:         timeline_semaphore: true
+Oct 23 01:17:30 flow monado-service[433808]:  INFO [vk_print_external_handles_info] Supported images:
+Oct 23 01:17:30 flow monado-service[433808]:         VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT:
+Oct 23 01:17:30 flow monado-service[433808]:                 color import=true export=true
+Oct 23 01:17:30 flow monado-service[433808]:                 depth import=true export=true
+Oct 23 01:17:30 flow monado-service[433808]:  INFO [vk_print_external_handles_info] Supported fences:
+Oct 23 01:17:30 flow monado-service[433808]:         VK_EXTERNAL_FENCE_HANDLE_TYPE_SYNC_FD_BIT: true
+Oct 23 01:17:30 flow monado-service[433808]:         VK_EXTERNAL_FENCE_HANDLE_TYPE_OPAQUE_FD_BIT: true
+Oct 23 01:17:30 flow monado-service[433808]:  INFO [vk_print_external_handles_info] Supported semaphores:
+Oct 23 01:17:30 flow monado-service[433808]:         VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT(binary): true
+Oct 23 01:17:30 flow monado-service[433808]:         VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT(binary): true
+Oct 23 01:17:30 flow monado-service[433808]:         VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT(timeline): false
+Oct 23 01:17:30 flow monado-service[433808]:         VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT(timeline): true
+Oct 23 01:17:30 flow monado-service[433808]: DEBUG [fill_in_results] Selected 0 with uuid: dd d6 73 1f f4 64 7c af 54 ea e1 02 13 9a 04 62
+Oct 23 01:17:30 flow monado-service[433808]: DEBUG [fill_in_results] Suggest 0 with uuid: dd d6 73 1f f4 64 7c af 54 ea e1 02 13 9a 04 62 to clients
+Oct 23 01:17:30 flow monado-service[433808]: DEBUG [render_shaders_load] Shaders loaded!
+Oct 23 01:17:30 flow monado-service[433808]:  INFO [render_resources_init] New renderer initialized!
+Oct 23 01:17:30 flow monado-service[433808]: DEBUG [create_image] create_image: Use dedicated allocation: 1 (preferred: 1, required: 0)
+Oct 23 01:17:30 flow monado-service[433808]: DEBUG [create_image] create_image: Use dedicated allocation: 1 (preferred: 1, required: 0)
+Oct 23 01:17:30 flow monado-service[433808]: DEBUG [create_image] create_image: Use dedicated allocation: 1 (preferred: 1, required: 0)
+Oct 23 01:17:30 flow monado-service[433808]: DEBUG [create_image] create_image: Use dedicated allocation: 1 (preferred: 1, required: 0)
+Oct 23 01:17:30 flow monado-service[433808]: DEBUG [create_image] create_image: Use dedicated allocation: 1 (preferred: 1, required: 0)
+Oct 23 01:17:30 flow monado-service[433808]: DEBUG [create_image] create_image: Use dedicated allocation: 1 (preferred: 1, required: 0)
+Oct 23 01:17:30 flow monado-service[433808]: DEBUG [create_image] create_image: Use dedicated allocation: 1 (preferred: 1, required: 0)
+Oct 23 01:17:30 flow monado-service[433808]: DEBUG [create_image] create_image: Use dedicated allocation: 1 (preferred: 1, required: 0)
+Oct 23 01:17:30 flow monado-service[433808]: DEBUG [renderer_ensure_images_and_renderings] Creating images and renderings (force_recreate: false).
+Oct 23 01:17:30 flow monado-service[433808]:  INFO [u_pc_fake_create] Created pacer (non-feedback version aka "fake")
+Oct 23 01:17:30 flow monado-service[433808]:         estimated_frame_period: 16.666666ms
+Oct 23 01:17:30 flow monado-service[433808]:         percentage: 20.000000%
+Oct 23 01:17:30 flow monado-service[433808]:         min_comp_time: 3.000000ms
+Oct 23 01:17:30 flow monado-service[433808]:         comp_time: 3.333333ms
+Oct 23 01:17:30 flow monado-service[433808]: DEBUG [find_surface_format] VkSurfaceFormatKHR
+Oct 23 01:17:30 flow monado-service[433808]:         picked: [format = VK_FORMAT_B8G8R8A8_SRGB, colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR]
+Oct 23 01:17:30 flow monado-service[433808]:         preferred: [format = VK_FORMAT_B8G8R8A8_SRGB, colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR]
+Oct 23 01:17:30 flow monado-service[433808]:  INFO [vk_print_surface_info] VkSurfaceKHR info:
+Oct 23 01:17:30 flow monado-service[433808]:         caps.minImageCount: 2
+Oct 23 01:17:30 flow monado-service[433808]:         caps.maxImageCount: 8
+Oct 23 01:17:30 flow monado-service[433808]:         caps.currentExtent: 4294967295x4294967295
+Oct 23 01:17:30 flow monado-service[433808]:         caps.minImageExtent: 1x1
+Oct 23 01:17:30 flow monado-service[433808]:         caps.maxImageExtent: 16384x16384
+Oct 23 01:17:30 flow monado-service[433808]:         caps.maxImageArrayLayers: 1
+Oct 23 01:17:30 flow monado-service[433808]:         caps.supportedTransforms:
+Oct 23 01:17:30 flow monado-service[433808]:                 VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR
+Oct 23 01:17:30 flow monado-service[433808]:         caps.currentTransform: VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR
+Oct 23 01:17:30 flow monado-service[433808]:         caps.supportedCompositeAlpha:
+Oct 23 01:17:30 flow monado-service[433808]:                 VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR
+Oct 23 01:17:30 flow monado-service[433808]:                 VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR
+Oct 23 01:17:30 flow monado-service[433808]:         caps.supportedUsageFlags:
+Oct 23 01:17:30 flow monado-service[433808]:                 VK_IMAGE_USAGE_TRANSFER_SRC_BIT
+Oct 23 01:17:30 flow monado-service[433808]:                 VK_IMAGE_USAGE_TRANSFER_DST_BIT
+Oct 23 01:17:30 flow monado-service[433808]:                 VK_IMAGE_USAGE_SAMPLED_BIT
+Oct 23 01:17:30 flow monado-service[433808]:                 VK_IMAGE_USAGE_STORAGE_BIT
+Oct 23 01:17:30 flow monado-service[433808]:                 VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
+Oct 23 01:17:30 flow monado-service[433808]:                 VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT
+Oct 23 01:17:30 flow monado-service[433808]:         present_modes(4):
+Oct 23 01:17:30 flow monado-service[433808]:                 VK_PRESENT_MODE_MAILBOX_KHR
+Oct 23 01:17:30 flow monado-service[433808]:                 VK_PRESENT_MODE_FIFO_LATEST_READY_KHR
+Oct 23 01:17:30 flow monado-service[433808]:                 VK_PRESENT_MODE_FIFO_KHR
+Oct 23 01:17:30 flow monado-service[433808]:                 VK_PRESENT_MODE_IMMEDIATE_KHR
+Oct 23 01:17:30 flow monado-service[433808]:         shared_present_caps.sharedPresentSupportedUsageFlags:
+Oct 23 01:17:30 flow monado-service[433808]:         formats(38):
+Oct 23 01:17:30 flow monado-service[433808]:                 [format = VK_FORMAT_R16G16B16A16_SFLOAT, colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR]
+Oct 23 01:17:30 flow monado-service[433808]:                 [format = VK_FORMAT_R16G16B16A16_SFLOAT, colorSpace = VK_COLOR_SPACE_PASS_THROUGH_EXT]
+Oct 23 01:17:30 flow monado-service[433808]:                 [format = VK_FORMAT_R16G16B16A16_SFLOAT, colorSpace = VK_COLOR_SPACE_DISPLAY_P3_NONLINEAR_EXT]
+Oct 23 01:17:30 flow monado-service[433808]:                 [format = VK_FORMAT_R16G16B16A16_SFLOAT, colorSpace = VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT]
+Oct 23 01:17:30 flow monado-service[433808]:                 [format = VK_FORMAT_R16G16B16A16_SFLOAT, colorSpace = VK_COLOR_SPACE_DISPLAY_P3_LINEAR_EXT]
+Oct 23 01:17:30 flow monado-service[433808]:                 [format = VK_FORMAT_R16G16B16A16_SFLOAT, colorSpace = VK_COLOR_SPACE_BT709_LINEAR_EXT]
+Oct 23 01:17:30 flow monado-service[433808]:                 [format = VK_FORMAT_R16G16B16A16_SFLOAT, colorSpace = VK_COLOR_SPACE_BT709_NONLINEAR_EXT]
+Oct 23 01:17:30 flow monado-service[433808]:                 [format = VK_FORMAT_R16G16B16A16_SFLOAT, colorSpace = VK_COLOR_SPACE_BT2020_LINEAR_EXT]
+Oct 23 01:17:30 flow monado-service[433808]:                 [format = VK_FORMAT_R16G16B16A16_SFLOAT, colorSpace = VK_COLOR_SPACE_ADOBERGB_LINEAR_EXT]
+Oct 23 01:17:30 flow monado-service[433808]:                 [format = VK_FORMAT_R16G16B16A16_SFLOAT, colorSpace = VK_COLOR_SPACE_EXTENDED_SRGB_NONLINEAR_EXT]
+Oct 23 01:17:30 flow monado-service[433808]:                 [format = VK_FORMAT_A2R10G10B10_UNORM_PACK32, colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR]
+Oct 23 01:17:30 flow monado-service[433808]:                 [format = VK_FORMAT_A2R10G10B10_UNORM_PACK32, colorSpace = VK_COLOR_SPACE_PASS_THROUGH_EXT]
+Oct 23 01:17:30 flow monado-service[433808]:                 [format = VK_FORMAT_A2R10G10B10_UNORM_PACK32, colorSpace = VK_COLOR_SPACE_DISPLAY_P3_NONLINEAR_EXT]
+Oct 23 01:17:30 flow monado-service[433808]:                 [format = VK_FORMAT_A2R10G10B10_UNORM_PACK32, colorSpace = VK_COLOR_SPACE_BT709_NONLINEAR_EXT]
+Oct 23 01:17:30 flow monado-service[433808]:                 [format = VK_FORMAT_A2R10G10B10_UNORM_PACK32, colorSpace = VK_COLOR_SPACE_HDR10_ST2084_EXT]
+Oct 23 01:17:30 flow monado-service[433808]:                 [format = VK_FORMAT_A2R10G10B10_UNORM_PACK32, colorSpace = VK_COLOR_SPACE_HDR10_HLG_EXT]
+Oct 23 01:17:30 flow monado-service[433808]:                 [format = VK_FORMAT_A2B10G10R10_UNORM_PACK32, colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR]
+Oct 23 01:17:30 flow monado-service[433808]:                 [format = VK_FORMAT_A2B10G10R10_UNORM_PACK32, colorSpace = VK_COLOR_SPACE_PASS_THROUGH_EXT]
+Oct 23 01:17:30 flow monado-service[433808]:                 [format = VK_FORMAT_A2B10G10R10_UNORM_PACK32, colorSpace = VK_COLOR_SPACE_DISPLAY_P3_NONLINEAR_EXT]
+Oct 23 01:17:30 flow monado-service[433808]:                 [format = VK_FORMAT_A2B10G10R10_UNORM_PACK32, colorSpace = VK_COLOR_SPACE_BT709_NONLINEAR_EXT]
+Oct 23 01:17:30 flow monado-service[433808]:                 [format = VK_FORMAT_A2B10G10R10_UNORM_PACK32, colorSpace = VK_COLOR_SPACE_HDR10_ST2084_EXT]
+Oct 23 01:17:30 flow monado-service[433808]:                 [format = VK_FORMAT_A2B10G10R10_UNORM_PACK32, colorSpace = VK_COLOR_SPACE_HDR10_HLG_EXT]
+Oct 23 01:17:30 flow monado-service[433808]:                 [format = VK_FORMAT_B8G8R8A8_SRGB, colorSpace = VK_COLOR_SPACE_SRGB_NONLINE
+Oct 23 01:17:30 flow monado-service[433808]:  INFO [vk_print_swapchain_create_info] VkSwapchainCreateInfoKHR:
+Oct 23 01:17:30 flow monado-service[433808]:         surface: 60608f8d0ba0
+Oct 23 01:17:30 flow monado-service[433808]:         minImageCount: 2
+Oct 23 01:17:30 flow monado-service[433808]:         imageFormat: VK_FORMAT_B8G8R8A8_SRGB
+Oct 23 01:17:30 flow monado-service[433808]:         imageColorSpace: VK_COLOR_SPACE_SRGB_NONLINEAR_KHR
+Oct 23 01:17:30 flow monado-service[433808]:         imageExtent: {1920, 1080}
+Oct 23 01:17:30 flow monado-service[433808]:         imageArrayLayers: 1
+Oct 23 01:17:30 flow monado-service[433808]:         imageUsage:
+Oct 23 01:17:30 flow monado-service[433808]:                 VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
+Oct 23 01:17:30 flow monado-service[433808]:         imageSharingMode: VK_SHARING_MODE_EXCLUSIVE
+Oct 23 01:17:30 flow monado-service[433808]:         queueFamilyIndexCount: 0
+Oct 23 01:17:30 flow monado-service[433808]:         preTransform: VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR
+Oct 23 01:17:30 flow monado-service[433808]:         compositeAlpha: VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR
+Oct 23 01:17:30 flow monado-service[433808]:         presentMode: VK_PRESENT_MODE_FIFO_KHR
+Oct 23 01:17:30 flow monado-service[433808]:         clipped: VK_TRUE
+Oct 23 01:17:30 flow monado-service[433808]:         oldSwapchain: 0
+Oct 23 01:17:30 flow monado-service[433808]:  INFO [comp_target_swapchain_create_images] Not using vblank event thread!
+Oct 23 01:17:30 flow monado-service[433808]: DEBUG [renderer_create_renderings_and_fences] Allocating 2 Command Buffers.
+Oct 23 01:17:30 flow monado-service[433808]:  WARN [comp_window_peek_create] Peek window cannot be enabled on compute compositor
+Oct 23 01:17:30 flow monado-service[433808]: DEBUG [comp_main_create_system_compositor] Done 0x60608f084ae0
+Oct 23 01:17:30 flow monado-service[433808]: DEBUG [vk_csci_is_format_supported] Format 'VK_FORMAT_R16G16B16_UNORM' cannot be sampled from in optimal layout!
+Oct 23 01:17:30 flow monado-service[433808]: DEBUG [vk_csci_is_format_supported] Format 'VK_FORMAT_R16G16B16_SFLOAT' cannot be sampled from in optimal layout!
+Oct 23 01:17:30 flow monado-service[433808]: DEBUG [vk_csci_is_format_supported] Format 'VK_FORMAT_R8G8B8_SRGB' cannot be sampled from in optimal layout!
+Oct 23 01:17:30 flow monado-service[433808]: DEBUG [vk_csci_is_format_supported] Format 'VK_FORMAT_R8G8B8_UNORM' cannot be sampled from in optimal layout!
+Oct 23 01:17:30 flow monado-service[433808]: DEBUG [vk_csci_is_format_supported] Format 'VK_FORMAT_B8G8R8_UNORM' cannot be sampled from in optimal layout!
+Oct 23 01:17:30 flow monado-service[433808]:  INFO [comp_vulkan_formats_log] Supported formats:
+Oct 23 01:17:30 flow monado-service[433808]:         VK_FORMAT_R16G16B16A16_UNORM: true
+Oct 23 01:17:30 flow monado-service[433808]:         VK_FORMAT_R16G16B16A16_SFLOAT: true
+Oct 23 01:17:30 flow monado-service[433808]:         VK_FORMAT_R16G16B16_UNORM: false
+Oct 23 01:17:30 flow monado-service[433808]:         VK_FORMAT_R16G16B16_SFLOAT: false

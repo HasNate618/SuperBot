@@ -1,0 +1,129 @@
+                                               Module libopencv_video.so.413 without build-id.
+                                               Module libopencv_imgcodecs.so.413 without build-id.
+                                               Module libopencv_videoio.so.413 without build-id.
+                                               Module libopencv_highgui.so.413 without build-id.
+                                               Module libjpeg.so.62 without build-id.
+                                               Module libSDL2-2.0.so.0 without build-id.
+                                               Module libvulkan.so.1 without build-id.
+                                               Module libdrm.so.2 without build-id.
+                                               Module libxcb.so.1 without build-id.
+                                               Module libX11.so.6 without build-id.
+                                               Module libX11-xcb.so.1 without build-id.
+                                               Module libxcb-randr.so.0 without build-id.
+                                               Module libsurvive.so.0 without build-id.
+                                               Module libz.so.1 without build-id.
+                                               Module librealsense2.so.2.57 without build-id.
+                                               Module libhidapi-libusb.so.0 without build-id.
+                                               Module libbluetooth.so.3 without build-id.
+                                               Module libusb-1.0.so.0 without build-id.
+                                               Module libuvc.so.0 without build-id.
+                                               Module libbsd.so.0 without build-id.
+                                               Module monado-service without build-id.
+                                               Stack trace of thread 157970:
+                                               #0  0x0000596084bdcb17 comp_renderer_draw (monado-service + 0x122b17)
+                                               #1  0x0000596084bd957d compositor_layer_commit (monado-service + 0x11f57d)
+                                               #2  0x0000596084c0c32e thread_func (monado-service + 0x15232e)
+                                               #3  0x000076dbb469ce53 start_thread (libc.so.6 + 0x9ce53)
+                                               #4  0x000076dbb472407c __clone3 (libc.so.6 + 0x12407c)
+                                               
+                                               Stack trace of thread 157962:
+                                               #0  0x000076dbb46a5a02 __syscall_cancel_arch (libc.so.6 + 0xa5a02)
+                                               #1  0x000076dbb469910c __internal_syscall_cancel (libc.so.6 + 0x9910c)
+                                               #2  0x000076dbb469988c __futex_abstimed_wait_common (libc.so.6 + 0x9988c)
+                                               #3  0x000076dbb469c500 pthread_cond_timedwait@@GLIBC_2.3.2 (libc.so.6 + 0x9c500)
+                                               #4  0x000076db00bf522c n/a (libnvidia-glcore.so.610.57.04 + 0x9f522c)
+                                               #5  0x000076db01045e11 n/a (libnvidia-glcore.so.610.57.04 + 0xe45e11)
+                                               #6  0x000076db00bf53e4 n/a (libnvidia-glcore.so.610.57.04 + 0x9f53e4)
+                                               #7  0x000076dbb469ce53 start_thread (libc.so.6 + 0x9ce53)
+                                               #8  0x000076dbb472407c __clone3 (libc.so.6 + 0x12407c)
+                                               
+                                               Stack trace of thread 157936:
+                                               #0  0x000076dbb46a5a02 __syscall_cancel_arch (libc.so.6 + 0xa5a02)
+                                               #1  0x000076dbb469910c __internal_syscall_cancel (libc.so.6 + 0x9910c)
+                                               #2  0x000076dbb4699184 __syscall_cancel (libc.so.6 + 0x99184)
+                                               #3  0x000076dbb47161ce __poll (libc.so.6 + 0x1161ce)
+                                               #4  0x000076dbb9447cb5 linux_udev_event_thread_main (libusb-1.0.so.0 + 0x15cb5)
+                                               #5  0x000076dbb469ce53 start_thread (libc.so.6 + 0x9ce53)
+                                               #6  0x000076dbb472407c __clone3 (libc.so.6 + 0x12407c)
+                                               
+                                               Stack trace of thread 157937:
+                                               #0  0x000076dbb46a5a02 __syscall_cancel_arch (libc.so.6 + 0xa5a02)
+                                               #1  0x000076dbb469910c __internal_syscall_cancel (libc.so.6 + 0x9910c)
+                                               #2  0x000076dbb4699184 __syscall_cancel (libc.so.6 + 0x99184)
+                                               #3  0x000076dbb4721652 __select (libc.so.6 + 0x121652)
+                                               #4  0x0000596084c6a1c2 wait_for_read_and_to_continue (monado-service + 0x1b01c2)
+                                               #5  0x0000596084c6ad71 run_thread.part.0 (monado-service + 0x1b0d71)
+                                               #6  0x0000596084c6b1dc run_thread (monado-service + 0x1b11dc)
+                                               #7  0x000076dbb469ce53 start_thread (libc.so.6 + 0x9ce53)
+                                               #8  0x000076dbb472407c __clone3 (libc.so.6 + 0x12407c)
+                                               
+                                               Stack trace of thread 157963:
+                                               #0  0x000076dbb46a5a02 __syscall_cancel_arch (libc.so.6 + 0xa5a02)
+                                               #1  0x000076dbb469910c __internal_syscall_cancel (libc.so.6 + 0x9910c)
+                                               #2  0x000076dbb469988c __futex_abstimed_wait_common (libc.so.6 + 0x9988c)
+                                               #3  0x000076dbb469c2ee pthread_cond_wait@@GLIBC_2.3.2 (libc.so.6 + 0x9c2ee)
+                                               #4  0x000076db00bf51cc n/a (libnvidia-glcore.so.610.57.04 + 0x9f51cc)
+                                               #5  0x000076db0104013e n/a (libnvidia-glcore.so.610.57.04 + 0xe4013e)
+                                               #6  0x000076db00bf53e4 n/a (libnvidia-glcore.so.610.57.04 + 0x9f53e4)
+                                               #7  0x000076dbb469ce53 start_thread (libc.so.6 + 0x9ce53)
+                                               #8  0x000076dbb472407c __clone3 (libc.so.6 + 0x12407c)
+                                               
+                                               Stack trace of thread 157929:
+                                               #0  0x000076dbb46a5a02 __syscall_cancel_arch (libc.so.6 + 0xa5a02)
+                                               #1  0x000076dbb469910c __internal_syscall_cancel (libc.so.6 + 0x9910c)
+                                               #2  0x000076dbb46eb6c2 clock_nanosleep@GLIBC_2.2.5 (libc.so.6 + 0xeb6c2)
+                                               #3  0x000076dbb46f7d47 __nanosleep (libc.so.6 + 0xf7d47)
+                                               #4  0x0000596084afccc6 ipc_server_main_common (monado-service + 0x42cc6)
+                                               #5  0x0000596084afd0b1 ipc_server_main (monado-service + 0x430b1)
+                                               #6  0x0000596084ae9e56 main (monado-service + 0x2fe56)
+                                               #7  0x000076dbb462b285 __libc_start_call_main (libc.so.6 + 0x2b285)
+                                               #8  0x000076dbb462b338 __libc_start_main@@GLIBC_2.34 (libc.so.6 + 0x2b338)
+                                               #9  0x0000596084aec3d5 _start (monado-service + 0x323d5)
+                                               
+                                               Stack trace of thread 157966:
+                                               #0  0x000076dbb46a5a02 __syscall_cancel_arch (libc.so.6 + 0xa5a02)
+                                               #1  0x000076dbb469910c __internal_syscall_cancel (libc.so.6 + 0x9910c)
+                                               #2  0x000076dbb469988c __futex_abstimed_wait_common (libc.so.6 + 0x9988c)
+                                               #3  0x000076dbb469c500 pthread_cond_timedwait@@GLIBC_2.3.2 (libc.so.6 + 0x9c500)
+                                               #4  0x000076db00bf522c n/a (libnvidia-glcore.so.610.57.04 + 0x9f522c)
+                                               #5  0x000076db0102c9dd n/a (libnvidia-glcore.so.610.57.04 + 0xe2c9dd)
+                                               #6  0x000076db00bf53e4 n/a (libnvidia-glcore.so.610.57.04 + 0x9f53e4)
+                                               #7  0x000076dbb469ce53 start_thread (libc.so.6 + 0x9ce53)
+                                               #8  0x000076dbb472407c __clone3 (libc.so.6 + 0x12407c)
+                                               
+                                               Stack trace of thread 157969:
+                                               #0  0x000076dbb46a5a02 __syscall_cancel_arch (libc.so.6 + 0xa5a02)
+                                               #1  0x000076dbb469910c __internal_syscall_cancel (libc.so.6 + 0x9910c)
+                                               #2  0x000076dbb469988c __futex_abstimed_wait_common (libc.so.6 + 0x9988c)
+                                               #3  0x000076dbb469c500 pthread_cond_timedwait@@GLIBC_2.3.2 (libc.so.6 + 0x9c500)
+                                               #4  0x000076db00bf522c n/a (libnvidia-glcore.so.610.57.04 + 0x9f522c)
+                                               #5  0x000076db01171e09 n/a (libnvidia-glcore.so.610.57.04 + 0xf71e09)
+                                               #6  0x000076db01154be6 n/a (libnvidia-glcore.so.610.57.04 + 0xf54be6)
+                                               #7  0x000076db00bf53e4 n/a (libnvidia-glcore.so.610.57.04 + 0x9f53e4)
+                                               #8  0x000076dbb469ce53 start_thread (libc.so.6 + 0x9ce53)
+                                               #9  0x000076dbb472407c __clone3 (libc.so.6 + 0x12407c)
+                                               
+                                               Stack trace of thread 157965:
+                                               #0  0x000076dbb46a5a02 __syscall_cancel_arch (libc.so.6 + 0xa5a02)
+                                               #1  0x000076dbb469910c __internal_syscall_cancel (libc.so.6 + 0x9910c)
+                                               #2  0x000076dbb469988c __futex_abstimed_wait_common (libc.so.6 + 0x9988c)
+                                               #3  0x000076dbb469c500 pthread_cond_timedwait@@GLIBC_2.3.2 (libc.so.6 + 0x9c500)
+                                               #4  0x000076db00bf522c n/a (libnvidia-glcore.so.610.57.04 + 0x9f522c)
+                                               #5  0x000076db01053792 n/a (libnvidia-glcore.so.610.57.04 + 0xe53792)
+                                               #6  0x000076db00bf53e4 n/a (libnvidia-glcore.so.610.57.04 + 0x9f53e4)
+                                               #7  0x000076dbb469ce53 start_thread (libc.so.6 + 0x9ce53)
+                                               #8  0x000076dbb472407c __clone3 (libc.so.6 + 0x12407c)
+                                               
+                                               Stack trace of thread 157938:
+                                               #0  0x000076dbb46a5a02 __syscall_cancel_arch (libc.so.6 + 0xa5a02)
+                                               #1  0x000076dbb469910c __internal_syscall_cancel (libc.so.6 + 0x9910c)
+                                               #2  0x000076dbb4699184 __syscall_cancel (libc.so.6 + 0x99184)
+                                               #3  0x000076dbb4716776 ppoll (libc.so.6 + 0x116776)
+                                               #4  0x000076db04cb5180 SDL_IOReady (libSDL3.so.0 + 0x2b5180)
+                                               #5  0x000076db04ca10c0 Wayland_CursorThreadFunc (libSDL3.so.0 + 0x2a10c0)
+                                               #6  0x000076db04b43866 SDL_RunThread (libSDL3.so.0 + 0x143866)
+                                               #7  0x000076db04cfb479 RunThread (libSDL3.so.0 + 0x2fb479)
+                                               #8  0x000076dbb469ce53 start_thread (libc.so.6 + 0x9ce53)
+                                               #9  0x000076dbb472407c __clone3 (libc.so.6 + 0x12407c)
+                                               ELF object binary architecture: AMD x86-64
+Oct 23 00:45:28 flow systemd[1984]: e2-monado.service: Main process exited, code=dumped, status=11/SEGV

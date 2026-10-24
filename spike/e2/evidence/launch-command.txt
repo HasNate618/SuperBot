@@ -1,0 +1,27 @@
+# Working E2 transient unit (graphics/render compositor on NVIDIA)
+
+systemd-run --user --unit=e2-monado --collect \
+  -p Environment=IPC_EXIT_ON_DISCONNECT=off \
+  -p Environment=XRT_NO_STDIN=1 \
+  -p Environment=P_OVERRIDE_ACTIVE_CONFIG=remote \
+  -p Environment=XRT_COMPOSITOR_COMPUTE=false \
+  -p Environment=XRT_COMPOSITOR_LOG=debug \
+  -p Environment=XRT_LOG=debug \
+  -p Environment=REMOTE_LOG=debug \
+  -p Environment=VK_DRIVER_FILES=/run/opengl-driver/share/vulkan/icd.d/nvidia_icd.json \
+  /run/wrappers/bin/monado-service
+
+# Debug-GUI attempt (failed):
+#   same as above but XRT_COMPOSITOR_COMPUTE=true and XRT_DEBUG_GUI=1
+#
+# Compute-compositor attempt (failed):
+#   same as above but with XRT_COMPOSITOR_COMPUTE omitted entirely
+
+# App:
+# XR_RUNTIME_JSON=/run/current-system/sw/share/openxr/1/openxr_monado.json \
+#   /nix/store/4z8ibn91k9r6yismm2nrcnl19b1v9rp7-openxr-loader-1.1.54/bin/hello_xr -g Vulkan2
+#
+# Pose stream:
+# python3 -u spike/e2/remote_pose_client_e2.py --mode step \
+#   --step-period 2.0 --yaw-deg 25 --duration 26 --hz 120 \
+#   --log /tmp/e2_pose_meas.csv
