@@ -7,6 +7,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from vrbot.config import load_config
 from vrbot.preview import PreviewCapture, _smoke_http, atomic_replace, crop_filter, newest_png
@@ -302,6 +303,23 @@ class SmokeHttpTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as raw:
             cfg = load_config(None, env={})
             self.assertFalse(_smoke_http(cfg, Path(raw) / "latest.jpg"))
+
+    def test_smoke_http_bind_failure_returns_false(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            latest = Path(raw) / "latest.jpg"
+            latest.write_bytes(b"JPEGDATA")
+            cfg = load_config(None, env={})
+            with mock.patch(
+                "vrbot.dashboard.DashboardServer",
+                side_effect=OSError("bind failed"),
+            ):
+                self.assertFalse(_smoke_http(cfg, latest))
+            self.assertFalse(
+                any(
+                    thread.name == "vrbot-smoke-http" and thread.is_alive()
+                    for thread in threading.enumerate()
+                )
+            )
 
 
 if __name__ == "__main__":

@@ -198,6 +198,8 @@ class SessionManager:
             self._state = State.STARTING
             self._last_error = None
             self._survivors = []
+            self._handles = {}
+            self._game_pids = []
             self._stop_event.clear()
             self._idle.clear()
         try:
@@ -422,7 +424,7 @@ class SessionManager:
         if self._startup_deadline is None:
             return configured
         remaining = self._startup_deadline - time.monotonic()
-        return max(0.1, min(configured, remaining))
+        return max(0.0, min(configured, remaining))
 
     def _sleep_abort(self, seconds: float) -> None:
         deadline = time.monotonic() + max(0.0, seconds)
@@ -678,39 +680,36 @@ class SessionManager:
 
     def _step(self, name: str, log_name: str, action: Callable[[], None], fallback_log_name: str | None = None) -> None:
         try:
+            self._abort_if_stopped()
             action()
+            self._abort_if_stopped()
         except Aborted:
             raise
         except Exception as exc:
             tail = self._step_tail(log_name)
+            tail_log = log_name
             if not tail and fallback_log_name is not None:
                 tail = self._step_tail(fallback_log_name)
+                tail_log = fallback_log_name
             message = f"{name} failed: {exc}"
             if tail:
-                message += f"\n--- {log_name} tail ---\n{tail}"
+                message += f"\n--- {tail_log} tail ---\n{tail}"
             raise StartupError(message) from exc
 
     def _step_tail(self, name: str) -> str:
         try:
             path = self._log(name)
-        except StartupError:
+            return self.runner.tail(path, 200)
+        except Exception:
             return ""
-        return self.runner.tail(path, 200)
 
     def _startup(self) -> None:
-        self._abort_if_stopped()
         self._step("monado", "monado", self._start_monado)
-        self._abort_if_stopped()
         self._step("weston", "weston", self._start_weston, "weston-stdout")
-        self._abort_if_stopped()
         self._step("preview", "session", self._start_preview)
-        self._abort_if_stopped()
         self._step("pose", "pose", lambda: self._start_pose(self._mode))
-        self._abort_if_stopped()
         self._step("steam", "steam", self._start_steam)
-        self._abort_if_stopped()
         self._step("game", "monado", self._launch_game)
-        self._abort_if_stopped()
 
     def _start_worker(self) -> None:
         with self._lifecycle_lock:
@@ -803,61 +802,71 @@ class SessionManager:
         return handle
 
     def _cleanup(self) -> None:
-        deadline = time.monotonic() + self.cfg.timeouts.stop_sec
-
-        def budget(cap: float) -> float:
-            return max(0.1, min(cap, deadline - time.monotonic()))
-
-        stopped: dict[str, ProcessHandle] = {}
-        stopped["pose"] = self._stop_handle("pose", budget(2))
-        if "steam" in self._handles:
-            try:
-                self.runner.run(
-                    [self.cfg.paths.steam_bin, "-shutdown"],
-                    env=self._steam_env(),
-                    cwd=Path.home(),
-                    timeout=budget(20.0),
-                )
-            except Exception:
-                pass
-        stopped["steam"] = self._stop_handle("steam", budget(5))
-        for pid in list(self._game_pids):
-            self.runner.kill_pid(pid)
-        self._game_pids = []
-        for pid in self.runner.pids_by_argv0(self._game_argv0()):
-            self.runner.kill_pid(pid)
-        stopped["weston"] = self._stop_handle("weston", budget(5))
-        stopped["monado"] = self._stop_handle("monado", budget(5))
-        monado = stopped["monado"]
-        if monado is None or not monado.alive():
-            self.runner.remove_stale_socket(self.runtime_dir / "monado_comp_ipc")
-        if self._preview is not None:
-            try:
-                self._preview.stop(budget(5))
-            except Exception:
-                pass
-            self._preview = None
-        survivors: list[str] = []
         try:
-            if self.runner.pids_by_argv0(self._game_argv0()):
-                survivors.append("game")
-        except Exception:
-            pass
-        for name in ("pose", "steam", "weston", "monado"):
-            handle = stopped.get(name)
-            if handle is None:
-                continue
+            deadline = time.monotonic() + self.cfg.timeouts.stop_sec
+
+            def budget(cap: float) -> float:
+                return max(0.0, min(cap, deadline - time.monotonic()))
+
+            stopped: dict[str, ProcessHandle] = {}
+            stopped["pose"] = self._stop_handle("pose", budget(2))
+            if "steam" in self._handles:
+                try:
+                    self.runner.run(
+                        [self.cfg.paths.steam_bin, "-shutdown"],
+                        env=self._steam_env(),
+                        cwd=Path.home(),
+                        timeout=budget(20.0),
+                    )
+                except Exception:
+                    pass
+            stopped["steam"] = self._stop_handle("steam", budget(5))
+            for pid in list(self._game_pids):
+                self.runner.kill_pid(pid)
+            self._game_pids = []
+            for pid in self.runner.pids_by_argv0(self._game_argv0()):
+                self.runner.kill_pid(pid)
+            stopped["weston"] = self._stop_handle("weston", budget(5))
+            stopped["monado"] = self._stop_handle("monado", budget(5))
+            monado = stopped["monado"]
+            if monado is None or not monado.alive():
+                self.runner.remove_stale_socket(self.runtime_dir / "monado_comp_ipc")
+            if self._preview is not None:
+                try:
+                    self._preview.stop(budget(5))
+                except Exception:
+                    pass
+                self._preview = None
+            survivors: list[str] = []
             try:
-                if handle.alive() or handle.group_alive():
-                    survivors.append(name)
+                if self.runner.pids_by_argv0(self._game_argv0()):
+                    survivors.append("game")
             except Exception:
                 pass
-        with self._lock:
-            self._survivors = survivors
-        if survivors:
-            self._session_log("warning: surviving processes: " + ", ".join(survivors))
-        self.runner.remove_pointer()
-        self._pointer = {}
-        self._handles.clear()
-        self._display = None
-        self._session_log("cleanup complete")
+            for name in ("pose", "steam", "weston", "monado"):
+                handle = stopped.get(name)
+                if handle is None:
+                    continue
+                try:
+                    if handle.alive() or handle.group_alive():
+                        survivors.append(name)
+                except Exception:
+                    pass
+            with self._lock:
+                self._survivors = survivors
+            if survivors:
+                self._session_log("warning: surviving processes: " + ", ".join(survivors))
+        finally:
+            try:
+                self.runner.remove_pointer()
+            except Exception:
+                pass
+            self._pointer = {}
+            with self._lock:
+                self._handles.clear()
+            self._game_pids = []
+            self._display = None
+            try:
+                self._session_log("cleanup complete")
+            except Exception:
+                pass

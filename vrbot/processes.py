@@ -63,6 +63,7 @@ class ProcessHandle:
             pass
 
     def stop(self, timeout: float = 5.0) -> None:
+        grace = 0.5
         deadline = time.monotonic() + max(0.0, timeout)
         self.signal_group(signal.SIGTERM)
         while self._group_alive() and time.monotonic() < deadline:
@@ -71,12 +72,13 @@ class ProcessHandle:
             time.sleep(0.05)
         if self._group_alive():
             self.signal_group(signal.SIGKILL)
-            while self._group_alive() and time.monotonic() < deadline:
+            kill_deadline = time.monotonic() + grace
+            while self._group_alive() and time.monotonic() < kill_deadline:
                 if self._popen is not None:
                     self._popen.poll()
                 time.sleep(0.05)
         if self._popen is not None:
-            remaining = max(0.0, deadline - time.monotonic())
+            remaining = max(0.0, deadline - time.monotonic()) + grace
             try:
                 self._popen.wait(timeout=remaining)
             except subprocess.TimeoutExpired:
@@ -216,21 +218,29 @@ class ProcessRunner:
         )
 
     def process_name_running(self, name: str) -> bool:
-        result = subprocess.run(
-            ["pgrep", "-x", name],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        try:
+            result = subprocess.run(
+                ["pgrep", "-x", name],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+            )
+        except (subprocess.TimeoutExpired, OSError):
+            return False
         return result.returncode == 0
 
     def systemd_unit_active(self, unit: str) -> bool:
-        result = subprocess.run(
-            ["systemctl", "--user", "is-active", "--quiet", unit],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        try:
+            result = subprocess.run(
+                ["systemctl", "--user", "is-active", "--quiet", unit],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+            )
+        except (subprocess.TimeoutExpired, OSError):
+            return False
         return result.returncode == 0
 
     def port_in_use(self, host: str, port: int) -> bool:

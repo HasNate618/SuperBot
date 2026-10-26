@@ -569,6 +569,44 @@ class OrchestratorTests(unittest.TestCase):
         last_error = self.manager.snapshot()["last_error"]
         self.assertIn("weston failed", last_error)
         self.assertIn("weston stdout detail", last_error)
+        self.assertIn("--- weston-stdout tail ---", last_error)
+        self.assertNotIn("--- weston tail ---", last_error)
+
+    def test_startup_timeout_at_step_boundary_includes_step_and_tail(self) -> None:
+        self.manager.cfg = replace(
+            self.cfg,
+            launch=replace(self.cfg.launch, startup_timeout_sec=0.05),
+        )
+
+        def slow_wait_port(host, port, timeout, abort=None) -> None:
+            self.manager._log("monado").write_text("monado startup detail\n")
+            time.sleep(0.15)
+
+        with (
+            patch.object(self.runner, "wait_port", side_effect=slow_wait_port),
+            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+        ):
+            self.manager.start()
+            self.assertTrue(self.manager.wait_idle(2))
+        last_error = self.manager.snapshot()["last_error"]
+        self.assertEqual(self.manager.state_value(), "failed")
+        self.assertIn("monado failed", last_error)
+        self.assertIn("startup timeout exceeded", last_error)
+        self.assertIn("monado startup detail", last_error)
+
+    def test_startup_tail_read_failure_keeps_original_error(self) -> None:
+        self.runner.fail_at = "wait_port"
+        with (
+            patch.object(self.runner, "tail", side_effect=RuntimeError("tail boom")),
+            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+        ):
+            self.manager.start()
+            self.assertTrue(self.manager.wait_idle(2))
+        last_error = self.manager.snapshot()["last_error"]
+        self.assertEqual(self.manager.state_value(), "failed")
+        self.assertIn("monado failed", last_error)
+        self.assertIn("monado port timeout", last_error)
+        self.assertNotIn("tail boom", last_error)
 
     def test_startup_timeout_bounds_slow_step(self) -> None:
         self.manager.cfg = replace(
@@ -639,6 +677,40 @@ class OrchestratorTests(unittest.TestCase):
         self.manager._survivors = ["steam"]
         self.start()
         self.assertEqual(self.manager.snapshot()["survivors"], [])
+
+    def test_start_resets_stale_handles_and_game_pids(self) -> None:
+        self.manager._handles = {"ghost": FakeHandle("ghost", 900)}
+        self.manager._game_pids = [777]
+        self.manager._survivors = ["ghost"]
+        self.start()
+        self.assertNotIn("ghost", self.manager._handles)
+        self.assertNotIn(777, self.manager._game_pids)
+        self.assertEqual(self.manager.snapshot()["survivors"], [])
+
+    def test_cleanup_failure_still_clears_state(self) -> None:
+        self.runner.fail_at = "wait_port"
+        original_remove = self.runner.remove_stale_socket
+        calls = 0
+
+        def flaky_remove(path):
+            nonlocal calls
+            calls += 1
+            if calls >= 2:
+                raise RuntimeError("cleanup boom")
+            return original_remove(path)
+
+        with (
+            patch.object(self.runner, "remove_stale_socket", side_effect=flaky_remove),
+            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+        ):
+            self.manager.start()
+            self.assertTrue(self.manager.wait_idle(2))
+        snapshot = self.manager.snapshot()
+        self.assertEqual(snapshot["state"], "failed")
+        self.assertIsNone(self.runner.pointer)
+        self.assertEqual(self.manager._handles, {})
+        self.assertEqual(self.manager._game_pids, [])
+        self.assertEqual(snapshot["survivors"], [])
 
     def test_stop_after_final_startup_checkpoint_ends_stopped(self) -> None:
         reached = threading.Event()

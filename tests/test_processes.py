@@ -3,8 +3,10 @@ from __future__ import annotations
 import collections
 import json
 import os
+import shutil
 import signal
 import socket
+import subprocess
 import tempfile
 import threading
 import time
@@ -12,7 +14,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from vrbot.processes import Aborted, ProcessRunner, tail_stream, tail_text
+from vrbot.processes import Aborted, ProcessHandle, ProcessRunner, tail_stream, tail_text
 
 
 class ProcessTests(unittest.TestCase):
@@ -158,6 +160,60 @@ class ProcessTests(unittest.TestCase):
                 except ProcessLookupError:
                     pass
                 handle.stop(timeout=1)
+
+    def test_stop_reaps_with_grace_after_term_budget_exhausted(self) -> None:
+        handle = ProcessHandle("fake", 123, 123, Path("/tmp/fake.log"))
+        popen = mock.Mock()
+        popen.returncode = None
+        handle._popen = popen
+        with (
+            mock.patch.object(handle, "signal_group") as signal_group,
+            mock.patch.object(handle, "_group_alive", side_effect=[True, True, False]),
+        ):
+            handle.stop(0.0)
+        signal_group.assert_any_call(signal.SIGTERM)
+        signal_group.assert_any_call(signal.SIGKILL)
+        popen.wait.assert_called_once()
+        self.assertGreater(popen.wait.call_args.kwargs["timeout"], 0.0)
+
+    def test_stop_reaps_sigterm_ignoring_group_after_kill_grace(self) -> None:
+        bash = shutil.which("bash")
+        if bash is None:
+            self.skipTest("bash not available")
+        with tempfile.TemporaryDirectory() as raw:
+            base = Path(raw)
+            popen = subprocess.Popen(
+                [bash, "-c", 'trap "" TERM; while :; do sleep 0.1; done'],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+            handle = ProcessHandle("stubborn", popen.pid, popen.pid, base / "stubborn.log", popen)
+            try:
+                started = time.monotonic()
+                handle.stop(0.3)
+                elapsed = time.monotonic() - started
+                self.assertLess(elapsed, 2.0)
+                self.assertFalse(handle.group_alive())
+                self.assertFalse(handle.alive())
+                self.assertIsNotNone(popen.returncode)
+            finally:
+                try:
+                    os.killpg(handle.pgid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                try:
+                    popen.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    pass
+
+    def test_process_probes_fail_closed_on_timeout(self) -> None:
+        runner = ProcessRunner(Path("/tmp/pointer.json"))
+        timeout = subprocess.TimeoutExpired(["probe"], 5)
+        with mock.patch("vrbot.processes.subprocess.run", side_effect=timeout):
+            self.assertFalse(runner.process_name_running("steam"))
+            self.assertFalse(runner.systemd_unit_active("monado.service"))
 
     def test_wait_port_aborts_when_event_set(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
