@@ -211,6 +211,9 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(set(self.runner.handles), {"monado", "weston", "steam", "pose"})
         self.assertTrue(self.preview.started)
         self.assertIsNotNone(self.runner.pointer)
+        snapshot = self.manager.snapshot()
+        self.assertIsNotNone(snapshot["session_id"])
+        self.assertIsNotNone(snapshot["started_at"])
 
     def test_snapshot_reports_health(self) -> None:
         self.start()
@@ -308,6 +311,36 @@ class OrchestratorTests(unittest.TestCase):
             handle.write("\n")
         self.assertEqual(self.manager.snapshot()["openxr_client"], "Unity Application")
 
+    def test_snapshot_does_not_advance_offset_when_parser_feed_fails(self) -> None:
+        self.start()
+        log_path = self.manager.log_path("monado")
+        assert log_path is not None
+        log_path.write_text(
+            " INFO [client_connected] Client 1 connected\n"
+            "\tapplication_name: 'APP A'\n"
+        )
+        self.assertEqual(self.manager.snapshot()["openxr_client"], "APP A")
+        parser = self.manager._openxr_parser
+        real_feed = parser.feed
+        calls = 0
+
+        def failing_feed(text: str) -> str | None:
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise RuntimeError("parser failure")
+            return real_feed(text)
+
+        with log_path.open("a") as handle:
+            handle.write(
+                " INFO [client_connected] Client 2 connected\n"
+                "\tapplication_name: 'APP B'\n"
+            )
+        with patch.object(parser, "feed", side_effect=failing_feed):
+            with self.assertRaises(RuntimeError):
+                self.manager.snapshot()
+        self.assertEqual(self.manager.snapshot()["openxr_client"], "APP B")
+
     def test_snapshot_resets_openxr_state_after_truncation(self) -> None:
         self.start()
         log_path = self.manager.log_path("monado")
@@ -341,6 +374,24 @@ class OrchestratorTests(unittest.TestCase):
         )
         self.assertEqual(self.manager.snapshot()["openxr_client"], "APP B")
 
+    def test_snapshot_detects_same_size_rewrite_with_identical_tail(self) -> None:
+        self.start()
+        log_path = self.manager.log_path("monado")
+        assert log_path is not None
+        filler = ("z" * 63 + "\n") * 4
+        log_path.write_text(
+            "[client_connected] Client 1 connected\n"
+            "\tapplication_name: 'APP A'\n"
+            + filler
+        )
+        self.assertEqual(self.manager.snapshot()["openxr_client"], "APP A")
+        log_path.write_text(
+            "[client_connected] Client 1 connected\n"
+            "\tapplication_name: 'APP B'\n"
+            + filler
+        )
+        self.assertEqual(self.manager.snapshot()["openxr_client"], "APP B")
+
     def test_snapshot_hides_previous_openxr_client_while_start_prepares(self) -> None:
         self.start()
         log_path = self.manager.log_path("monado")
@@ -371,7 +422,10 @@ class OrchestratorTests(unittest.TestCase):
             try:
                 self.assertTrue(entered.wait(2))
                 self.assertEqual(self.manager.state_value(), "starting")
-                self.assertIsNone(self.manager.snapshot()["openxr_client"])
+                snapshot = self.manager.snapshot()
+                self.assertIsNone(snapshot["openxr_client"])
+                self.assertIsNone(snapshot["session_id"])
+                self.assertIsNone(snapshot["started_at"])
             finally:
                 release.set()
                 thread.join(2)
@@ -387,6 +441,8 @@ class OrchestratorTests(unittest.TestCase):
         )
         self.assertEqual(self.manager.snapshot()["openxr_client"], "OLD APP")
         self.assertIsNotNone(self.manager.snapshot()["session_dir"])
+        self.assertIsNotNone(self.manager.snapshot()["session_id"])
+        self.assertIsNotNone(self.manager.snapshot()["started_at"])
         self.manager.stop()
         self.assertTrue(self.manager.wait_idle(2))
 
@@ -398,6 +454,8 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(snapshot["state"], "failed")
         self.assertIsNone(snapshot["openxr_client"])
         self.assertIsNone(snapshot["session_dir"])
+        self.assertIsNone(snapshot["session_id"])
+        self.assertIsNone(snapshot["started_at"])
         self.assertIsNone(self.manager.preview_path())
 
     def test_snapshot_clears_openxr_client_after_stop(self) -> None:
@@ -618,6 +676,16 @@ class OpenXRTests(unittest.TestCase):
         self.assertEqual(parser.value(), "X")
         parser.feed(" INFO [client_disconnected] Client 1 disconnected\n")
         self.assertIsNone(parser.value())
+
+    def test_incremental_parser_caps_unterminated_buffer(self) -> None:
+        parser = _OpenXRLogParser()
+        parser.feed("x" * (1024 * 1024 + 128))
+        self.assertLessEqual(len(parser._buffer), 1024 * 1024)
+        parser.feed(
+            "\n INFO [client_connected] Client 1 connected\n"
+            "\tapplication_name: 'Unity Application'\n"
+        )
+        self.assertEqual(parser.value(), "Unity Application")
 
 
 if __name__ == "__main__":

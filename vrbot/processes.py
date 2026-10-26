@@ -92,63 +92,54 @@ class ProcessHandle:
 def tail_stream(handle: IO[bytes], lines: int = 200, block_size: int = 8192) -> str:
     if lines <= 0:
         return ""
-    while True:
+    text = ""
+    for _ in range(3):
         try:
-            handle.seek(0, os.SEEK_END)
-            size = handle.tell()
+            initial = os.fstat(handle.fileno())
+            size = initial.st_size
             if size == 0:
-                return ""
-            handle.seek(size - 1)
-            trailing_newline = handle.read(1) == b"\n"
+                text = ""
+            else:
+                handle.seek(size - 1)
+                trailing_newline = handle.read(1) == b"\n"
+                target = lines + 1 if trailing_newline else lines
+                position = size
+                newlines = 0
+                chunks: list[bytes] = []
+                while position > 0 and newlines < target:
+                    read_size = min(block_size, position)
+                    position -= read_size
+                    handle.seek(position)
+                    chunk = handle.read(read_size)
+                    if not chunk and position > 0:
+                        break
+                    chunks.append(chunk)
+                    newlines += chunk.count(b"\n")
+                data = b"".join(reversed(chunks))
+                search_end = len(data)
+                remaining = target
+                start = 0
+                while remaining > 0:
+                    index = data.rfind(b"\n", 0, search_end)
+                    if index < 0:
+                        start = 0
+                        break
+                    search_end = index
+                    remaining -= 1
+                    if remaining == 0:
+                        start = index + 1
+                text = data[start:].decode("utf-8", errors="replace")
+                text = text.replace("\r\n", "\n").replace("\r", "\n")
+                if text.endswith("\n"):
+                    text = text[:-1]
+                if text:
+                    text = "\n".join(text.split("\n")[-lines:])
+            final = os.fstat(handle.fileno())
         except OSError:
             return ""
-        target = lines + 1 if trailing_newline else lines
-        position = size
-        newlines = 0
-        chunks: list[bytes] = []
-        restart = False
-        while position > 0 and newlines < target:
-            read_size = min(block_size, position)
-            position -= read_size
-            try:
-                handle.seek(position)
-                chunk = handle.read(read_size)
-            except OSError:
-                return ""
-            if not chunk and position > 0:
-                try:
-                    new_size = os.fstat(handle.fileno()).st_size
-                except OSError:
-                    return ""
-                if new_size != size:
-                    restart = True
-                    break
-                return ""
-            chunks.append(chunk)
-            newlines += chunk.count(b"\n")
-        if restart:
-            continue
-        break
-    data = b"".join(reversed(chunks))
-    search_end = len(data)
-    remaining = target
-    start = 0
-    while remaining > 0:
-        index = data.rfind(b"\n", 0, search_end)
-        if index < 0:
-            start = 0
-            break
-        search_end = index
-        remaining -= 1
-        if remaining == 0:
-            start = index + 1
-    text = data[start:].decode("utf-8", errors="replace")
-    text = text.replace("\r\n", "\n").replace("\r", "\n")
-    if text.endswith("\n"):
-        text = text[:-1]
-    if not text:
-        return ""
-    return "\n".join(text.split("\n")[-lines:])
+        if final.st_ino == initial.st_ino and final.st_size == initial.st_size:
+            return text
+    return text
 
 
 def tail_text(path: Path, lines: int = 200, block_size: int = 8192) -> str:

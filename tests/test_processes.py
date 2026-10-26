@@ -236,40 +236,45 @@ class ProcessTests(unittest.TestCase):
                         "gamma\ndelta\nepsilon",
                     )
 
-    def test_tail_stream_restarts_after_shrink_during_read(self) -> None:
+    def test_tail_stream_returns_consistent_state_after_shrink_during_read(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             path = Path(raw) / "log.txt"
-            path.write_text("old " * 100)
-            real = path.open("rb")
+            old = "x\n" * 500
+            new = "y\n" * 450
+            for block_size in (1, 3, 16, 8192):
+                with self.subTest(block_size=block_size):
+                    path.write_text(old)
+                    real = path.open("rb")
 
-            class ShrinkingHandle:
-                def __init__(self, handle, path) -> None:
-                    self.handle = handle
-                    self.path = path
-                    self.reads = 0
-                    self.shrunk = False
+                    class ShrinkingHandle:
+                        def __init__(self, handle, path) -> None:
+                            self.handle = handle
+                            self.path = path
+                            self.shrunk = False
 
-                def seek(self, *args):
-                    return self.handle.seek(*args)
+                        def seek(self, *args):
+                            return self.handle.seek(*args)
 
-                def tell(self):
-                    return self.handle.tell()
+                        def tell(self):
+                            return self.handle.tell()
 
-                def fileno(self):
-                    return self.handle.fileno()
+                        def fileno(self):
+                            return self.handle.fileno()
 
-                def read(self, amount: int = -1):
-                    self.reads += 1
-                    if self.reads == 2 and not self.shrunk:
-                        self.shrunk = True
-                        self.path.write_text("NEW\n")
-                    return self.handle.read(amount)
+                        def read(self, amount: int = -1):
+                            data = self.handle.read(amount)
+                            if not self.shrunk and b"x" in data:
+                                self.shrunk = True
+                                self.path.write_text(new)
+                            return data
 
-            handle = ShrinkingHandle(real, path)
-            try:
-                self.assertEqual(tail_stream(handle, 5, block_size=16), "NEW")
-            finally:
-                real.close()
+                    handle = ShrinkingHandle(real, path)
+                    try:
+                        text = tail_stream(handle, 100, block_size=block_size)
+                    finally:
+                        real.close()
+                    self.assertTrue(text)
+                    self.assertEqual(set(text.splitlines()), {"y"})
 
     def test_tail_text_preserves_blank_lines_and_missing_final_newline(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
@@ -335,6 +340,9 @@ class ProcessTests(unittest.TestCase):
 
                 def tell(self):
                     return self.handle.tell()
+
+                def fileno(self):
+                    return self.handle.fileno()
 
                 def read(self, amount: int = -1):
                     nonlocal bytes_read

@@ -40,6 +40,8 @@ class StartupError(RuntimeError):
 
 
 class _OpenXRLogParser:
+    _MAX_BUFFER = 1024 * 1024
+
     def __init__(self) -> None:
         self._active: dict[str, str | None] = {}
         self._pending: str | None = None
@@ -49,6 +51,8 @@ class _OpenXRLogParser:
         self._buffer += text
         lines = self._buffer.split("\n")
         self._buffer = lines.pop()
+        if len(self._buffer) > self._MAX_BUFFER:
+            self._buffer = self._buffer[-self._MAX_BUFFER:]
         for line in lines:
             self.consume(line)
         return self.value()
@@ -148,6 +152,7 @@ class SessionManager:
         self._openxr_offset = 0
         self._openxr_inode: int | None = None
         self._openxr_path: Path | None = None
+        self._openxr_head = b""
         self._openxr_mark = b""
 
     def state_value(self) -> str:
@@ -183,9 +188,12 @@ class SessionManager:
             if self._state not in (State.STOPPED, State.FAILED):
                 raise ConflictError("session is not stopped")
             self._reset_openxr()
+            self._session_id = None
             self._session_dir = None
+            self._started_at = None
             self._preview = None
             self._display = None
+            self._socket_name = None
             self._state = State.STARTING
             self._last_error = None
             self._stop_event.clear()
@@ -344,6 +352,7 @@ class SessionManager:
         self._openxr_offset = 0
         self._openxr_inode = None
         self._openxr_path = None
+        self._openxr_head = b""
         self._openxr_mark = b""
 
     def _openxr_client(self, path: Path) -> str | None:
@@ -357,16 +366,21 @@ class SessionManager:
                 or stat_result.st_ino != self._openxr_inode
                 or stat_result.st_size < self._openxr_offset
             )
-            if not reset and self._openxr_offset > 0 and self._openxr_mark:
+            if not reset and self._openxr_offset > 0:
+                head = self._openxr_head
                 mark = self._openxr_mark
                 try:
                     with path.open("rb") as handle:
-                        handle.seek(self._openxr_offset - len(mark))
-                        probe = handle.read(len(mark))
+                        if head:
+                            handle.seek(0)
+                            if handle.read(len(head)) != head:
+                                reset = True
+                        if not reset and mark:
+                            handle.seek(self._openxr_offset - len(mark))
+                            if handle.read(len(mark)) != mark:
+                                reset = True
                 except OSError:
                     return None
-                if probe != mark:
-                    reset = True
             if reset:
                 self._reset_openxr_locked()
                 self._openxr_inode = stat_result.st_ino
@@ -378,9 +392,13 @@ class SessionManager:
                         chunk = handle.read(64 * 1024)
                         if not chunk:
                             break
+                        start = self._openxr_offset
+                        text = self._openxr_decoder.decode(chunk)
+                        self._openxr_parser.feed(text)
                         self._openxr_offset += len(chunk)
+                        if len(self._openxr_head) < 64 and start == len(self._openxr_head):
+                            self._openxr_head = (self._openxr_head + chunk)[:64]
                         self._openxr_mark = (self._openxr_mark + chunk)[-64:]
-                        self._openxr_parser.feed(self._openxr_decoder.decode(chunk))
             except OSError:
                 return None
             return self._openxr_parser.value()
