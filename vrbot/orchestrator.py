@@ -246,10 +246,7 @@ class SessionManager:
         openxr_client = None
         monado_log = self.log_path("monado")
         if monado_log is not None:
-            try:
-                openxr_client = parse_openxr_client(monado_log.read_text(errors="replace"))
-            except OSError:
-                openxr_client = None
+            openxr_client = parse_openxr_client(self.runner.tail(monado_log, 200))
         if preview is not None:
             preview_status = preview.status()
         else:

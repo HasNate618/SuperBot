@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import http.client
 import json
 import tempfile
 import threading
+import time
 import unittest
 import urllib.error
 import urllib.request
 from pathlib import Path
+from unittest.mock import patch
 
 from vrbot.config import load_config
 from vrbot.dashboard import DashboardServer
@@ -125,7 +128,22 @@ class DashboardTests(unittest.TestCase):
             with urllib.request.urlopen(request, timeout=5) as response:
                 return response.status, response.read()
         except urllib.error.HTTPError as exc:
-            return exc.code, exc.read()
+            try:
+                return exc.code, exc.read()
+            finally:
+                exc.close()
+
+    def raw_request(self, method: str, path: str, headers: dict[str, str] | None = None):
+        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=2)
+        try:
+            connection.putrequest(method, path)
+            for name, value in (headers or {}).items():
+                connection.putheader(name, value)
+            connection.endheaders()
+            response = connection.getresponse()
+            return response.status, response.read()
+        finally:
+            connection.close()
 
     def test_state(self) -> None:
         status, body = self.request("GET", "/api/state")
@@ -171,6 +189,7 @@ class DashboardTests(unittest.TestCase):
         self.manager.state = "running"
         status, _ = self.request("POST", "/api/session/mode", {"mode": "yaw"})
         self.assertEqual(status, 200)
+        self.assertEqual(self.manager.mode, "yaw")
         status, _ = self.request("POST", "/api/session/mode", {"mode": "nope"})
         self.assertEqual(status, 400)
         status, _ = self.request("POST", "/api/session/kill", {"target": "game"})
@@ -187,9 +206,85 @@ class DashboardTests(unittest.TestCase):
         status, _ = self.request("GET", "/api/logs/nope")
         self.assertEqual(status, 404)
 
+    def test_logs_reject_traversal(self) -> None:
+        self.manager.logs["monado"].write_text("secret")
+        for path in ("/api/logs/../monado", "/api/logs/%2e%2e%2fmonado"):
+            with self.subTest(path=path):
+                status, body = self.raw_request("GET", path)
+                self.assertEqual(status, 404)
+                self.assertNotIn(b"secret", body)
+
+    def test_logs_returns_last_200_lines(self) -> None:
+        self.manager.logs["monado"].write_text("\n".join(f"line {index}" for index in range(250)))
+        status, body = self.request("GET", "/api/logs/monado")
+        self.assertEqual(status, 200)
+        lines = body.decode().splitlines()
+        self.assertEqual(len(lines), 200)
+        self.assertEqual(lines[0], "line 50")
+        self.assertEqual(lines[-1], "line 249")
+
     def test_malformed_json(self) -> None:
         status, _ = self.request("POST", "/api/session/mode", raw=b"{")
         self.assertEqual(status, 400)
+
+    def test_negative_content_length_returns_400(self) -> None:
+        status, _ = self.raw_request(
+            "POST",
+            "/api/session/mode",
+            {"Content-Type": "application/json", "Content-Length": "-1"},
+        )
+        self.assertEqual(status, 400)
+
+    def test_mode_exception_returns_500(self) -> None:
+        self.manager.state = "running"
+        with patch.object(self.manager, "set_mode", side_effect=RuntimeError("boom")):
+            status, body = self.request("POST", "/api/session/mode", {"mode": "yaw"})
+        self.assertEqual(status, 500)
+        self.assertEqual(json.loads(body)["error"], "boom")
+
+    def test_kill_exception_returns_500(self) -> None:
+        self.manager.state = "running"
+        with patch.object(self.manager, "kill", side_effect=RuntimeError("boom")):
+            status, body = self.request("POST", "/api/session/kill", {"target": "game"})
+        self.assertEqual(status, 500)
+        self.assertEqual(json.loads(body)["error"], "boom")
+
+    def test_stop_exception_returns_500(self) -> None:
+        with patch.object(self.manager, "stop", side_effect=RuntimeError("boom")):
+            status, body = self.request("POST", "/api/session/stop")
+        self.assertEqual(status, 500)
+        self.assertEqual(json.loads(body)["error"], "boom")
+
+    def test_frame_read_failure_returns_404(self) -> None:
+        self.manager.latest.mkdir()
+        status, _ = self.request("GET", "/api/frame.jpg")
+        self.assertEqual(status, 404)
+
+    def test_preview_stopped_returns_404(self) -> None:
+        self.manager.state = "stopped"
+        status, body = self.request("GET", "/preview.mjpg")
+        self.assertEqual(status, 404)
+        self.assertIn("error", json.loads(body))
+
+    def _assert_stream_ends_after(self, state: str) -> None:
+        self.manager.state = "running"
+        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=2)
+        try:
+            connection.request("GET", "/preview.mjpg")
+            response = connection.getresponse()
+            self.assertEqual(response.status, 200)
+            self.manager.state = state
+            started = time.monotonic()
+            self.assertEqual(response.read(), b"")
+            self.assertLess(time.monotonic() - started, 2)
+        finally:
+            connection.close()
+
+    def test_preview_stream_ends_when_session_stops(self) -> None:
+        self._assert_stream_ends_after("stopped")
+
+    def test_preview_stream_ends_when_session_is_stopping(self) -> None:
+        self._assert_stream_ends_after("stopping")
 
     def test_unknown_route(self) -> None:
         status, _ = self.request("GET", "/nope")

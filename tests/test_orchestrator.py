@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import collections
 import json
 import os
 import subprocess
@@ -150,7 +151,15 @@ class FakeRunner:
         self.pointer = None
 
     def tail(self, path, lines=200):
-        return ""
+        try:
+            with Path(path).open("r", errors="replace") as handle:
+                data = collections.deque(handle, maxlen=lines)
+        except OSError:
+            return ""
+        text = "".join(data)
+        if text.endswith("\n"):
+            text = text[:-1]
+        return text
 
 
 class OrchestratorTests(unittest.TestCase):
@@ -216,6 +225,20 @@ class OrchestratorTests(unittest.TestCase):
         self.assertTrue(snapshot["processes"]["game"]["alive"])
         self.assertEqual(snapshot["preview"]["width"], 1280)
         self.assertTrue(snapshot["player_log"].endswith("Player.log"))
+
+    def test_snapshot_uses_bounded_monado_tail(self) -> None:
+        self.start()
+        log_path = self.manager.log_path("monado")
+        assert log_path is not None
+        log_path.write_text("ignored")
+        text = (
+            " INFO [client_connected] Client 1 connected\n"
+            "\tapplication_name: 'Unity Application'\n"
+        )
+        with patch.object(self.runner, "tail", return_value=text) as tail:
+            snapshot = self.manager.snapshot()
+        tail.assert_called_once_with(log_path, 200)
+        self.assertEqual(snapshot["openxr_client"], "Unity Application")
 
     def test_host_steam_blocks_start(self) -> None:
         self.runner.host_steam = True

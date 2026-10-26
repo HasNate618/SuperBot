@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import collections
 import json
+import select
 import signal
+import socket
+import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 from .config import Config
 from .orchestrator import ConflictError, PreflightError, SessionManager
@@ -20,11 +24,17 @@ class DashboardServer(ThreadingHTTPServer):
         self.manager = manager
         self.config = config
         self.static_dir = Path(static_dir)
+        self.shutdown_event = threading.Event()
         super().__init__(address, DashboardHandler)
+
+    def shutdown(self) -> None:
+        self.shutdown_event.set()
+        super().shutdown()
 
 
 class DashboardHandler(BaseHTTPRequestHandler):
     server_version = "vrbot/0.1"
+    timeout = 10
 
     def log_message(self, format, *args) -> None:
         return
@@ -41,13 +51,21 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return self._json(self.server.manager.snapshot())
         if path == "/api/frame.jpg":
             latest = self.server.manager.preview_path()
-            if latest is None or not latest.exists():
+            if latest is None:
                 return self._error(404, "no preview frame")
-            return self._bytes(200, latest.read_bytes(), "image/jpeg")
+            try:
+                data = latest.read_bytes()
+            except OSError:
+                return self._error(404, "no preview frame")
+            return self._bytes(200, data, "image/jpeg")
         if path == "/preview.mjpg":
             return self._mjpeg()
         if path.startswith("/api/logs/"):
-            return self._log(path.rsplit("/", 1)[-1])
+            name = path[len("/api/logs/"):]
+            decoded = unquote(name)
+            if "/" in decoded or "\\" in decoded or decoded in (".", ".."):
+                return self._error(404, "unknown log")
+            return self._log(name)
         return self._error(404, "not found")
 
     def do_POST(self) -> None:
@@ -63,7 +81,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return self._error(500, str(exc))
             return self._json({"accepted": True}, status=202)
         if path == "/api/session/stop":
-            self.server.manager.stop()
+            try:
+                self.server.manager.stop()
+            except Exception as exc:
+                return self._error(500, str(exc))
             return self._json({"accepted": True}, status=202)
         try:
             body = self._read_body()
@@ -76,6 +97,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return self._error(400, str(exc))
             except ConflictError as exc:
                 return self._error(409, str(exc))
+            except Exception as exc:
+                return self._error(500, str(exc))
             return self._json({"mode": body.get("mode")})
         if path == "/api/session/kill":
             try:
@@ -84,6 +107,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return self._error(400, str(exc))
             except ConflictError as exc:
                 return self._error(409, str(exc))
+            except Exception as exc:
+                return self._error(500, str(exc))
             return self._json({"killed": body.get("target")})
         return self._error(404, "not found")
 
@@ -92,6 +117,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length", "0") or 0)
         except ValueError as exc:
             raise ValueError("invalid Content-Length") from exc
+        if length < 0:
+            raise ValueError("invalid Content-Length")
         if length > 1_000_000:
             raise ValueError("request body too large")
         raw = self.rfile.read(length) if length else b""
@@ -132,21 +159,25 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if path is None:
             return self._error(404, "unknown log")
         try:
-            lines = path.read_text(errors="replace").splitlines()
+            with path.open("r", encoding="utf-8", errors="replace") as handle:
+                lines = collections.deque(handle, maxlen=200)
         except OSError:
             return self._error(404, "log not found")
-        data = "\n".join(lines[-200:]).encode()
+        data = "\n".join("".join(lines).splitlines()).encode()
         self._bytes(200, data, "text/plain; charset=utf-8")
 
     def _mjpeg(self) -> None:
+        if self.server.manager.state_value() in ("stopped", "failed"):
+            return self._error(404, "session is not running")
         self.send_response(200)
         self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
+        self.connection.settimeout(5)
         boundary = b"--frame\r\n"
         interval = 1.0 / max(1.0, self.server.config.preview.fps)
-        while True:
-            if self.server.manager.state_value() in ("stopped", "failed"):
+        while self.server.manager.state_value() == "running":
+            if self.server.shutdown_event.is_set() or self._peer_closed():
                 break
             latest = self.server.manager.preview_path()
             data = None
@@ -163,9 +194,18 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     self.wfile.write(data)
                     self.wfile.write(b"\r\n")
                     self.wfile.flush()
-                except (BrokenPipeError, ConnectionResetError):
+                except OSError:
                     break
             time.sleep(interval)
+
+    def _peer_closed(self) -> bool:
+        try:
+            readable, _, _ = select.select([self.connection], [], [], 0)
+            if not readable:
+                return False
+            return self.connection.recv(1, socket.MSG_PEEK) == b""
+        except (OSError, ValueError):
+            return True
 
 
 def run_dashboard(cfg: Config) -> None:
@@ -184,5 +224,6 @@ def run_dashboard(cfg: Config) -> None:
         server.serve_forever(poll_interval=0.5)
     finally:
         manager.stop()
-        manager.wait_idle(70)
+        if not manager.wait_idle(70):
+            print("vrbot dashboard: session did not stop within 70s", file=sys.stderr)
         server.server_close()
