@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import os
 import shutil
 import tomllib
@@ -86,7 +87,7 @@ DEFAULTS: dict[str, dict[str, Any]] = {
     "launch": {
         "shortcut_id": "18251483899710406656",
         "proton_app_id": "4249504744",
-        "steam_extra_args": ["-cef-disable-gpu"],
+        "steam_extra_args": ("-cef-disable-gpu",),
         "steam_settle_sec": 60.0,
         "steam_ready_timeout_sec": 120.0,
         "game_process_timeout_sec": 60.0,
@@ -163,7 +164,7 @@ def _validate(cfg: Config) -> None:
         raise ConfigError("preview width and height must be positive")
     if cfg.preview.panel_height < 0 or cfg.preview.panel_height >= cfg.preview.height:
         raise ConfigError("preview.panel_height must be >= 0 and less than preview.height")
-    if cfg.preview.fps <= 0:
+    if cfg.preview.fps <= 0 or not math.isfinite(cfg.preview.fps):
         raise ConfigError("preview.fps must be positive")
     if not 1 <= cfg.preview.jpeg_quality <= 100:
         raise ConfigError("preview.jpeg_quality must be between 1 and 100")
@@ -176,7 +177,8 @@ def _validate(cfg: Config) -> None:
         "openxr_client_timeout_sec",
         "startup_timeout_sec",
     ):
-        if getattr(cfg.launch, field_name) <= 0:
+        value = getattr(cfg.launch, field_name)
+        if value <= 0 or not math.isfinite(value):
             raise ConfigError(f"launch.{field_name} must be positive")
     for field_name in (
         "monado_startup_sec",
@@ -184,7 +186,8 @@ def _validate(cfg: Config) -> None:
         "pose_handshake_sec",
         "stop_sec",
     ):
-        if getattr(cfg.timeouts, field_name) <= 0:
+        value = getattr(cfg.timeouts, field_name)
+        if value <= 0 or not math.isfinite(value):
             raise ConfigError(f"timeouts.{field_name} must be positive")
 
 
@@ -193,13 +196,23 @@ def load_config(
     env: Mapping[str, str] | None = None,
     base_dir: Path | str | None = None,
 ) -> Config:
-    base = Path(base_dir or Path.cwd())
+    base = Path.cwd()
     file_data: dict[str, Any] = {}
+    candidate: Path | None = None
     if path is not None:
         candidate = Path(path)
-        if candidate.exists():
-            with candidate.open("rb") as handle:
+        if not candidate.exists():
+            raise ConfigError(f"config file not found: {candidate}")
+        with candidate.open("rb") as handle:
+            try:
                 file_data = tomllib.load(handle)
+            except tomllib.TOMLDecodeError as exc:
+                raise ConfigError(f"invalid TOML in {candidate}: {exc}") from exc
+
+    if base_dir is not None:
+        base = Path(base_dir)
+    elif candidate is not None:
+        base = candidate.parent
 
     unknown_sections = set(file_data) - set(DEFAULTS)
     if unknown_sections:

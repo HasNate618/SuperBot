@@ -18,6 +18,11 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(cfg.launch.shortcut_id, "18251483899710406656")
         self.assertTrue(cfg.paths.pose_client.endswith("spike/c0/c0_client.py"))
 
+    def test_steam_extra_args_default_is_tuple(self) -> None:
+        cfg = load_config(None, env={})
+        self.assertIsInstance(cfg.launch.steam_extra_args, tuple)
+        self.assertEqual(cfg.launch.steam_extra_args, ("-cef-disable-gpu",))
+
     def test_toml_and_env_overrides(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             path = Path(raw) / "config.toml"
@@ -32,6 +37,34 @@ class ConfigTests(unittest.TestCase):
             path.write_text("[preview]\nnope = 1\n")
             with self.assertRaises(ConfigError):
                 load_config(path, env={})
+
+    def test_malformed_toml_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "config.toml"
+            path.write_text("[preview\nfps = 6\n")
+            with self.assertRaises(ConfigError):
+                load_config(path, env={})
+
+    def test_missing_explicit_config_path_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "missing.toml"
+            with self.assertRaises(ConfigError):
+                load_config(path, env={})
+
+    def test_relative_paths_resolve_from_config_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            base = Path(raw)
+            path = base / "config.toml"
+            path.write_text('[paths]\npose_client = "pose.py"\n')
+            cfg = load_config(path, env={})
+            self.assertEqual(cfg.paths.pose_client, str((base / "pose.py").resolve()))
+
+    def test_explicit_base_dir_wins_for_relative_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as raw, tempfile.TemporaryDirectory() as other:
+            path = Path(raw) / "config.toml"
+            path.write_text('[paths]\npose_client = "pose.py"\n')
+            cfg = load_config(path, env={}, base_dir=other)
+            self.assertEqual(cfg.paths.pose_client, str((Path(other) / "pose.py").resolve()))
 
     def test_unknown_env_key_is_rejected(self) -> None:
         with self.assertRaises(ConfigError):
@@ -50,6 +83,25 @@ class ConfigTests(unittest.TestCase):
             path.write_text("[preview]\npanel_height = 720\n")
             with self.assertRaises(ConfigError):
                 load_config(path, env={})
+
+    def test_non_finite_floats_are_rejected(self) -> None:
+        float_env_keys = [
+            "VRBOT_PREVIEW_FPS",
+            "VRBOT_LAUNCH_STEAM_SETTLE_SEC",
+            "VRBOT_LAUNCH_STEAM_READY_TIMEOUT_SEC",
+            "VRBOT_LAUNCH_GAME_PROCESS_TIMEOUT_SEC",
+            "VRBOT_LAUNCH_OPENXR_CLIENT_TIMEOUT_SEC",
+            "VRBOT_LAUNCH_STARTUP_TIMEOUT_SEC",
+            "VRBOT_TIMEOUTS_MONADO_STARTUP_SEC",
+            "VRBOT_TIMEOUTS_WESTON_STARTUP_SEC",
+            "VRBOT_TIMEOUTS_POSE_HANDSHAKE_SEC",
+            "VRBOT_TIMEOUTS_STOP_SEC",
+        ]
+        for env_key in float_env_keys:
+            for raw in ("nan", "inf", "-inf"):
+                with self.subTest(env_key=env_key, raw=raw):
+                    with self.assertRaises(ConfigError):
+                        load_config(None, env={env_key: raw})
 
     def test_weston_siblings_are_derived(self) -> None:
         cfg = load_config(
