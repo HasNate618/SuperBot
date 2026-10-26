@@ -88,6 +88,8 @@ class PreviewCapture:
         self.log = log or (lambda message: None)
         self._capture_root = self.work_dir / "preview-capture"
         self._thread: threading.Thread | None = None
+        self._state = "new"
+        self._state_lock = threading.Lock()
         self._lock = threading.Lock()
         self._frames = 0
         self._errors = 0
@@ -97,18 +99,28 @@ class PreviewCapture:
         self._started_monotonic = time.monotonic()
 
     def start(self) -> None:
-        if self._thread is not None:
-            raise RuntimeError("preview capture already started")
-        self.publish_path.parent.mkdir(parents=True, exist_ok=True)
-        self._started_monotonic = time.monotonic()
-        self._thread = threading.Thread(target=self._run, name="vrbot-preview", daemon=True)
-        self._thread.start()
+        with self._state_lock:
+            if self._state != "new" or self.stop_event.is_set():
+                raise RuntimeError("preview capture already started")
+            self.publish_path.parent.mkdir(parents=True, exist_ok=True)
+            self._started_monotonic = time.monotonic()
+            thread = threading.Thread(target=self._run, name="vrbot-preview", daemon=True)
+            try:
+                thread.start()
+            except BaseException:
+                self._state = "new"
+                raise
+            self._thread = thread
+            self._state = "started"
 
     def stop(self, timeout: float = 5.0) -> None:
-        self.stop_event.set()
-        if self._thread is not None:
-            self._thread.join(timeout)
-            if self._thread.is_alive():
+        with self._state_lock:
+            self._state = "stopped"
+            self.stop_event.set()
+            thread = self._thread
+        if thread is not None:
+            thread.join(timeout)
+            if thread.is_alive():
                 self.log("preview: capture thread did not stop within timeout")
 
     def status(self) -> dict:
@@ -200,7 +212,7 @@ class PreviewCapture:
             if tmp is not None:
                 try:
                     tmp.unlink()
-                except FileNotFoundError:
+                except OSError:
                     pass
 
     def _warn(self, message: str) -> None:
@@ -307,7 +319,7 @@ def preview_smoke(cfg: Config) -> int:
                 work_dir=work,
                 publish_path=work / "latest.jpg",
                 stop_event=loop_stop,
-                log=lambda message: None,
+                log=print,
             )
             capture.start()
             time.sleep(2)

@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import subprocess
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -45,6 +46,22 @@ class ExplodingCapture(PreviewCapture):
 class TimeoutRun:
     def __call__(self, argv, **kwargs):
         raise subprocess.TimeoutExpired(argv, kwargs.get("timeout", 5))
+
+
+class BlockingCapture(PreviewCapture):
+    def _run(self) -> None:
+        self.stop_event.wait(2)
+
+
+class DirectoryOutputRun(FakeRun):
+    def __call__(self, argv, **kwargs):
+        argv = list(argv)
+        if argv[0] == "magick":
+            self.calls.append((argv, kwargs))
+            out = Path(argv[-1][4:])
+            out.mkdir()
+            return subprocess.CompletedProcess(argv, 1, "", "magick failed")
+        return super().__call__(argv, **kwargs)
 
 
 class PreviewTests(unittest.TestCase):
@@ -143,6 +160,44 @@ class PreviewTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "already started"):
                 capture.start()
 
+    def test_concurrent_start_allows_only_one(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            base = Path(raw)
+            capture = self.make_capture(
+                base,
+                FakeRun(),
+                capture_type=BlockingCapture,
+            )
+            barrier = threading.Barrier(8)
+            results: list[object] = [None] * 8
+
+            def attempt(index: int) -> None:
+                barrier.wait()
+                try:
+                    capture.start()
+                except Exception as exc:
+                    results[index] = exc
+
+            threads = [threading.Thread(target=attempt, args=(index,)) for index in range(8)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(5)
+            self.assertTrue(all(not thread.is_alive() for thread in threads))
+            self.assertEqual(sum(result is None for result in results), 1)
+            self.assertEqual(sum(isinstance(result, RuntimeError) for result in results), 7)
+            capture.stop(timeout=2)
+
+    def test_stop_before_start_prevents_start(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            base = Path(raw)
+            capture = self.make_capture(base, FakeRun())
+            capture.stop()
+            self.assertIsNone(capture._thread)
+            with self.assertRaisesRegex(RuntimeError, "already started"):
+                capture.start()
+            self.assertIsNone(capture._thread)
+
     def test_stop_joins_thread(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             base = Path(raw)
@@ -193,6 +248,7 @@ class PreviewTests(unittest.TestCase):
             magick_call = next(call for call in run.calls if call[0][0] == "magick")
             self.assertIn("1280x688+0+32", magick_call[0])
             self.assertTrue(magick_call[0][-1].startswith("jpg:"))
+            self.assertEqual(list(base.glob("latest.jpg*.tmp")), [])
 
     def test_failed_frame_keeps_previous_frame(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
@@ -218,6 +274,13 @@ class PreviewTests(unittest.TestCase):
             self.assertEqual((base / "latest.jpg").read_bytes(), before)
             self.assertEqual(capture.status()["errors"], 1)
             self.assertEqual(list(base.glob("latest.jpg*.tmp")), [])
+
+    def test_tmp_cleanup_oserror_does_not_escape(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            base = Path(raw)
+            capture = self.make_capture(base, DirectoryOutputRun())
+            self.assertFalse(capture.capture_once())
+            self.assertEqual(capture.status()["errors"], 1)
 
 
 if __name__ == "__main__":
