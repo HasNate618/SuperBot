@@ -165,11 +165,9 @@ class SessionManager:
             if self._state == State.STOPPING:
                 return
             self._stop_event.set()
-            if self._state == State.STARTING:
-                self._set_state(State.STOPPING)
-                return
             self._idle.clear()
-            self._set_state(State.STOPPING)
+            self._state = State.STOPPING
+            self._condition.notify_all()
             self._thread = threading.Thread(target=self._stop_worker, name="vrbot-stop", daemon=True)
         self._thread.start()
 
@@ -561,6 +559,9 @@ class SessionManager:
         with self._lifecycle_lock:
             self._startup_deadline = time.monotonic() + self.cfg.launch.startup_timeout_sec
             try:
+                with self._lock:
+                    if self._state == State.STOPPED:
+                        return
                 self._startup()
             except Aborted:
                 self._cleanup_safe()
@@ -569,15 +570,28 @@ class SessionManager:
                 self._last_error = str(exc)
                 self._session_log(f"startup failed: {exc}")
                 self._cleanup_safe()
-                self._set_state(State.STOPPED if self._stop_event.is_set() else State.FAILED)
+                with self._lock:
+                    stopped = self._stop_event.is_set() or self._state != State.STARTING
+                    if not stopped:
+                        self._state = State.FAILED
+                        self._condition.notify_all()
+                if stopped:
+                    self._set_state(State.STOPPED)
             else:
                 with self._lock:
-                    self._started_at = datetime.now(timezone.utc)
-                self._set_state(State.RUNNING)
-                self._monitor_thread = threading.Thread(
-                    target=self._monitor_worker, name="vrbot-monitor", daemon=True
-                )
-                self._monitor_thread.start()
+                    stopped = self._stop_event.is_set() or self._state != State.STARTING
+                    if not stopped:
+                        self._started_at = datetime.now(timezone.utc)
+                        self._state = State.RUNNING
+                        self._condition.notify_all()
+                if stopped:
+                    self._cleanup_safe()
+                    self._set_state(State.STOPPED)
+                else:
+                    self._monitor_thread = threading.Thread(
+                        target=self._monitor_worker, name="vrbot-monitor", daemon=True
+                    )
+                    self._monitor_thread.start()
             finally:
                 self._startup_deadline = None
                 self._idle.set()
@@ -610,6 +624,9 @@ class SessionManager:
 
     def _stop_worker(self) -> None:
         with self._lifecycle_lock:
+            with self._lock:
+                if self._state != State.STOPPING:
+                    return
             try:
                 self._cleanup_safe()
             finally:

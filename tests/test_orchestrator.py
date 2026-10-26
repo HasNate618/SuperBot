@@ -266,6 +266,96 @@ class OrchestratorTests(unittest.TestCase):
         self.assertIsNone(self.runner.pointer)
         self.assertTrue(self.preview.stopped)
 
+    def test_stop_after_final_startup_checkpoint_ends_stopped(self) -> None:
+        reached = threading.Event()
+        release = threading.Event()
+        cleanup_calls: list[bool] = []
+        original_startup = self.manager._startup
+        original_cleanup = self.manager._cleanup
+
+        def paused_startup() -> None:
+            original_startup()
+            reached.set()
+            self.assertTrue(release.wait(2))
+
+        def counting_cleanup() -> None:
+            cleanup_calls.append(True)
+            original_cleanup()
+
+        with (
+            patch.object(self.manager, "_startup", side_effect=paused_startup),
+            patch.object(self.manager, "_cleanup", side_effect=counting_cleanup),
+            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+        ):
+            self.manager.start()
+            self.assertTrue(reached.wait(2))
+            self.manager.stop()
+            release.set()
+            self.assertTrue(self.manager.wait_idle(2))
+        self.assertEqual(self.manager.state_value(), "stopped")
+        self.assertEqual(len(cleanup_calls), 1)
+        self.assertTrue(self.preview.stopped)
+        self.assertIsNone(self.runner.pointer)
+
+    def test_stop_during_starting_cleans_up_once(self) -> None:
+        entered = threading.Event()
+        release = threading.Event()
+        cleanup_calls: list[bool] = []
+        original_cleanup = self.manager._cleanup
+
+        def blocking_wait_port(host, port, timeout, abort=None) -> None:
+            entered.set()
+            release.wait(2)
+
+        def counting_cleanup() -> None:
+            cleanup_calls.append(True)
+            original_cleanup()
+
+        with (
+            patch.object(self.runner, "wait_port", side_effect=blocking_wait_port),
+            patch.object(self.manager, "_cleanup", side_effect=counting_cleanup),
+            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+        ):
+            self.manager.start()
+            self.assertTrue(entered.wait(2))
+            self.manager.stop()
+            release.set()
+            self.assertTrue(self.manager.wait_idle(2))
+        self.assertEqual(self.manager.state_value(), "stopped")
+        self.assertEqual(len(cleanup_calls), 1)
+        self.assertFalse(self.preview.started)
+        self.assertIsNone(self.runner.pointer)
+
+    def test_stop_before_start_worker_cleans_up_once(self) -> None:
+        allow = threading.Event()
+        finished = threading.Event()
+        cleanup_calls: list[bool] = []
+        original_start_worker = self.manager._start_worker
+        original_cleanup = self.manager._cleanup
+
+        def delayed_start_worker() -> None:
+            self.assertTrue(allow.wait(2))
+            original_start_worker()
+            finished.set()
+
+        def counting_cleanup() -> None:
+            cleanup_calls.append(True)
+            original_cleanup()
+
+        with (
+            patch.object(self.manager, "_start_worker", side_effect=delayed_start_worker),
+            patch.object(self.manager, "_cleanup", side_effect=counting_cleanup),
+            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+        ):
+            self.manager.start()
+            self.manager.stop()
+            allow.set()
+            self.assertTrue(finished.wait(2))
+            self.assertTrue(self.manager.wait_idle(2))
+        self.assertEqual(self.manager.state_value(), "stopped")
+        self.assertEqual(len(cleanup_calls), 1)
+        self.assertIsNone(self.runner.pointer)
+
     def test_mode_switch_restarts_pose_only(self) -> None:
         self.start()
         old_pose = self.runner.handles["pose"]
