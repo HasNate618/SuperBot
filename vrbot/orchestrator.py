@@ -61,10 +61,21 @@ class _OpenXRLogParser:
         return self.value()
 
     def value(self) -> str | None:
-        for name in reversed(list(self._active.values())):
+        parser = self
+        if self._buffer:
+            parser = self._clone()
+            parser.consume(parser._buffer)
+        for name in reversed(list(parser._active.values())):
             if name:
                 return name
         return None
+
+    def _clone(self) -> _OpenXRLogParser:
+        clone = _OpenXRLogParser()
+        clone._active = dict(self._active)
+        clone._pending = self._pending
+        clone._buffer = self._buffer
+        return clone
 
     def consume(self, line: str) -> None:
         match = re.search(r"\[client_connected\]\s+Client\s+(\d+)\s+connected", line)
@@ -137,6 +148,7 @@ class SessionManager:
         self._openxr_offset = 0
         self._openxr_inode: int | None = None
         self._openxr_path: Path | None = None
+        self._openxr_mark = b""
 
     def state_value(self) -> str:
         with self._lock:
@@ -171,6 +183,9 @@ class SessionManager:
             if self._state not in (State.STOPPED, State.FAILED):
                 raise ConflictError("session is not stopped")
             self._reset_openxr()
+            self._session_dir = None
+            self._preview = None
+            self._display = None
             self._state = State.STARTING
             self._last_error = None
             self._stop_event.clear()
@@ -279,9 +294,10 @@ class SessionManager:
             "exe": Path(self.cfg.paths.game_exe).name,
         }
         openxr_client = None
-        monado_log = self.log_path("monado")
-        if monado_log is not None:
-            openxr_client = self._openxr_client(monado_log)
+        if state in ("starting", "running", "stopping"):
+            monado_log = self.log_path("monado")
+            if monado_log is not None:
+                openxr_client = self._openxr_client(monado_log)
         if preview is not None:
             preview_status = preview.status()
         else:
@@ -320,11 +336,15 @@ class SessionManager:
 
     def _reset_openxr(self) -> None:
         with self._openxr_lock:
-            self._openxr_parser = _OpenXRLogParser()
-            self._openxr_decoder = codecs.getincrementaldecoder("utf-8")("replace")
-            self._openxr_offset = 0
-            self._openxr_inode = None
-            self._openxr_path = None
+            self._reset_openxr_locked()
+
+    def _reset_openxr_locked(self) -> None:
+        self._openxr_parser = _OpenXRLogParser()
+        self._openxr_decoder = codecs.getincrementaldecoder("utf-8")("replace")
+        self._openxr_offset = 0
+        self._openxr_inode = None
+        self._openxr_path = None
+        self._openxr_mark = b""
 
     def _openxr_client(self, path: Path) -> str | None:
         with self._openxr_lock:
@@ -332,25 +352,37 @@ class SessionManager:
                 stat_result = path.stat()
             except OSError:
                 return None
-            if (
+            reset = (
                 path != self._openxr_path
                 or stat_result.st_ino != self._openxr_inode
                 or stat_result.st_size < self._openxr_offset
-            ):
-                self._openxr_parser = _OpenXRLogParser()
-                self._openxr_decoder = codecs.getincrementaldecoder("utf-8")("replace")
-                self._openxr_offset = 0
+            )
+            if not reset and self._openxr_offset > 0 and self._openxr_mark:
+                mark = self._openxr_mark
+                try:
+                    with path.open("rb") as handle:
+                        handle.seek(self._openxr_offset - len(mark))
+                        probe = handle.read(len(mark))
+                except OSError:
+                    return None
+                if probe != mark:
+                    reset = True
+            if reset:
+                self._reset_openxr_locked()
                 self._openxr_inode = stat_result.st_ino
                 self._openxr_path = path
             try:
                 with path.open("rb") as handle:
                     handle.seek(self._openxr_offset)
-                    chunk = handle.read()
-                    self._openxr_offset = handle.tell()
+                    while True:
+                        chunk = handle.read(64 * 1024)
+                        if not chunk:
+                            break
+                        self._openxr_offset += len(chunk)
+                        self._openxr_mark = (self._openxr_mark + chunk)[-64:]
+                        self._openxr_parser.feed(self._openxr_decoder.decode(chunk))
             except OSError:
                 return None
-            if chunk:
-                self._openxr_parser.feed(self._openxr_decoder.decode(chunk))
             return self._openxr_parser.value()
 
     def _set_state(self, state: State) -> None:

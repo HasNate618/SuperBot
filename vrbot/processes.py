@@ -89,30 +89,46 @@ class ProcessHandle:
         self._handles = ()
 
 
-def tail_text(path: Path, lines: int = 200, block_size: int = 8192) -> str:
+def tail_stream(handle: IO[bytes], lines: int = 200, block_size: int = 8192) -> str:
     if lines <= 0:
         return ""
-    try:
-        with open(path, "rb") as handle:
+    while True:
+        try:
             handle.seek(0, os.SEEK_END)
             size = handle.tell()
             if size == 0:
                 return ""
             handle.seek(size - 1)
             trailing_newline = handle.read(1) == b"\n"
-            target = lines + 1 if trailing_newline else lines
-            position = size
-            newlines = 0
-            chunks: list[bytes] = []
-            while position > 0 and newlines < target:
-                read_size = min(block_size, position)
-                position -= read_size
+        except OSError:
+            return ""
+        target = lines + 1 if trailing_newline else lines
+        position = size
+        newlines = 0
+        chunks: list[bytes] = []
+        restart = False
+        while position > 0 and newlines < target:
+            read_size = min(block_size, position)
+            position -= read_size
+            try:
                 handle.seek(position)
                 chunk = handle.read(read_size)
-                chunks.append(chunk)
-                newlines += chunk.count(b"\n")
-    except OSError:
-        return ""
+            except OSError:
+                return ""
+            if not chunk and position > 0:
+                try:
+                    new_size = os.fstat(handle.fileno()).st_size
+                except OSError:
+                    return ""
+                if new_size != size:
+                    restart = True
+                    break
+                return ""
+            chunks.append(chunk)
+            newlines += chunk.count(b"\n")
+        if restart:
+            continue
+        break
     data = b"".join(reversed(chunks))
     search_end = len(data)
     remaining = target
@@ -133,6 +149,16 @@ def tail_text(path: Path, lines: int = 200, block_size: int = 8192) -> str:
     if not text:
         return ""
     return "\n".join(text.split("\n")[-lines:])
+
+
+def tail_text(path: Path, lines: int = 200, block_size: int = 8192) -> str:
+    if lines <= 0:
+        return ""
+    try:
+        with open(path, "rb") as handle:
+            return tail_stream(handle, lines, block_size)
+    except OSError:
+        return ""
 
 
 class ProcessRunner:

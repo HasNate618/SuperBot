@@ -16,6 +16,7 @@ from vrbot.orchestrator import (
     ConflictError,
     PreflightError,
     SessionManager,
+    _OpenXRLogParser,
     parse_openxr_client,
 )
 
@@ -240,6 +241,47 @@ class OrchestratorTests(unittest.TestCase):
                 handle.write(f"chatter {index}\n")
         self.assertEqual(self.manager.snapshot()["openxr_client"], "Unity Application")
 
+    def test_snapshot_reads_openxr_log_in_bounded_chunks(self) -> None:
+        self.start()
+        log_path = self.manager.log_path("monado")
+        assert log_path is not None
+        log_path.write_text(
+            "chatter\n" * 20000
+            + " INFO [client_connected] Client 1 connected\n"
+            + "\tapplication_name: 'Unity Application'\n"
+        )
+        reads: list[int] = []
+        real_open = Path.open
+
+        class CountingHandle:
+            def __init__(self, handle) -> None:
+                self.handle = handle
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args) -> None:
+                self.handle.close()
+
+            def seek(self, *args):
+                return self.handle.seek(*args)
+
+            def tell(self):
+                return self.handle.tell()
+
+            def read(self, amount: int = -1):
+                reads.append(amount)
+                return self.handle.read(amount)
+
+        def counting_open(path, *args, **kwargs):
+            return CountingHandle(real_open(path, *args, **kwargs))
+
+        with patch.object(Path, "open", counting_open):
+            client = self.manager.snapshot()["openxr_client"]
+        self.assertEqual(client, "Unity Application")
+        self.assertTrue(reads)
+        self.assertTrue(all(0 <= amount <= 65536 for amount in reads))
+
     def test_snapshot_clears_openxr_client_on_disconnect(self) -> None:
         self.start()
         log_path = self.manager.log_path("monado")
@@ -261,7 +303,7 @@ class OrchestratorTests(unittest.TestCase):
         self.assertIsNone(self.manager.snapshot()["openxr_client"])
         with log_path.open("a") as handle:
             handle.write("ected\n\tapplication_name: 'Unity Application'")
-        self.assertIsNone(self.manager.snapshot()["openxr_client"])
+        self.assertEqual(self.manager.snapshot()["openxr_client"], "Unity Application")
         with log_path.open("a") as handle:
             handle.write("\n")
         self.assertEqual(self.manager.snapshot()["openxr_client"], "Unity Application")
@@ -282,6 +324,94 @@ class OrchestratorTests(unittest.TestCase):
             "\tapplication_name: 'Other App'\n"
         )
         self.assertEqual(self.manager.snapshot()["openxr_client"], "Other App")
+
+    def test_snapshot_detects_truncate_and_regrow(self) -> None:
+        self.start()
+        log_path = self.manager.log_path("monado")
+        assert log_path is not None
+        log_path.write_text(
+            " INFO [client_connected] Client 1 connected\n"
+            "\tapplication_name: 'APP A'\n"
+        )
+        self.assertEqual(self.manager.snapshot()["openxr_client"], "APP A")
+        log_path.write_text(
+            " INFO [client_connected] Client 2 connected\n"
+            "\tapplication_name: 'APP B'\n"
+            + "chatter\n" * 40
+        )
+        self.assertEqual(self.manager.snapshot()["openxr_client"], "APP B")
+
+    def test_snapshot_hides_previous_openxr_client_while_start_prepares(self) -> None:
+        self.start()
+        log_path = self.manager.log_path("monado")
+        assert log_path is not None
+        log_path.write_text(
+            " INFO [client_connected] Client 1 connected\n"
+            "\tapplication_name: 'OLD APP'\n"
+        )
+        self.assertEqual(self.manager.snapshot()["openxr_client"], "OLD APP")
+        self.manager.stop()
+        self.assertTrue(self.manager.wait_idle(2))
+
+        entered = threading.Event()
+        release = threading.Event()
+        original_preflight = self.manager._preflight
+
+        def blocking_preflight() -> None:
+            entered.set()
+            self.assertTrue(release.wait(2))
+            original_preflight()
+
+        with (
+            patch.object(self.manager, "_preflight", side_effect=blocking_preflight),
+            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+        ):
+            thread = threading.Thread(target=self.manager.start, daemon=True)
+            thread.start()
+            try:
+                self.assertTrue(entered.wait(2))
+                self.assertEqual(self.manager.state_value(), "starting")
+                self.assertIsNone(self.manager.snapshot()["openxr_client"])
+            finally:
+                release.set()
+                thread.join(2)
+        self.assertTrue(self.manager.wait_idle(2))
+
+    def test_failed_preflight_clears_previous_session_paths(self) -> None:
+        self.start()
+        log_path = self.manager.log_path("monado")
+        assert log_path is not None
+        log_path.write_text(
+            " INFO [client_connected] Client 1 connected\n"
+            "\tapplication_name: 'OLD APP'\n"
+        )
+        self.assertEqual(self.manager.snapshot()["openxr_client"], "OLD APP")
+        self.assertIsNotNone(self.manager.snapshot()["session_dir"])
+        self.manager.stop()
+        self.assertTrue(self.manager.wait_idle(2))
+
+        self.runner.host_steam = True
+        with patch("vrbot.orchestrator.missing_requirements", return_value=[]):
+            with self.assertRaises(PreflightError):
+                self.manager.start()
+        snapshot = self.manager.snapshot()
+        self.assertEqual(snapshot["state"], "failed")
+        self.assertIsNone(snapshot["openxr_client"])
+        self.assertIsNone(snapshot["session_dir"])
+        self.assertIsNone(self.manager.preview_path())
+
+    def test_snapshot_clears_openxr_client_after_stop(self) -> None:
+        self.start()
+        log_path = self.manager.log_path("monado")
+        assert log_path is not None
+        log_path.write_text(
+            " INFO [client_connected] Client 1 connected\n"
+            "\tapplication_name: 'Unity Application'\n"
+        )
+        self.assertEqual(self.manager.snapshot()["openxr_client"], "Unity Application")
+        self.manager.stop()
+        self.assertTrue(self.manager.wait_idle(2))
+        self.assertIsNone(self.manager.snapshot()["openxr_client"])
 
     def test_snapshot_resets_openxr_state_after_rotation(self) -> None:
         self.start()
@@ -477,6 +607,17 @@ class OpenXRTests(unittest.TestCase):
             "\tapplication_name: 'Unity Application'"
         )
         self.assertEqual(parse_openxr_client(log), "Unity Application")
+
+    def test_incremental_parser_reports_unterminated_application_line(self) -> None:
+        parser = _OpenXRLogParser()
+        parser.feed(" INFO [client_connected] Client 1 connected\n")
+        self.assertIsNone(parser.value())
+        parser.feed("\tapplication_name: 'X'")
+        self.assertEqual(parser.value(), "X")
+        parser.feed("\n")
+        self.assertEqual(parser.value(), "X")
+        parser.feed(" INFO [client_disconnected] Client 1 disconnected\n")
+        self.assertIsNone(parser.value())
 
 
 if __name__ == "__main__":

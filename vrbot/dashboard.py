@@ -13,7 +13,7 @@ from urllib.parse import unquote, urlparse
 
 from .config import Config
 from .orchestrator import ConflictError, PreflightError, SessionManager
-from .processes import tail_text
+from .processes import tail_stream
 
 
 class DashboardServer(ThreadingHTTPServer):
@@ -162,11 +162,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if path is None:
             return self._error(404, "unknown log")
         try:
-            with path.open("rb"):
-                pass
+            with path.open("rb") as handle:
+                data = tail_stream(handle).encode()
         except OSError:
             return self._error(404, "log not found")
-        data = tail_text(path).encode()
         self._bytes(200, data, "text/plain; charset=utf-8")
 
     def _mjpeg(self) -> None:

@@ -215,6 +215,15 @@ class DashboardTests(unittest.TestCase):
                 self.assertEqual(status, 404)
                 self.assertNotIn(b"secret", body)
 
+    def test_logs_missing_or_unreadable_returns_404(self) -> None:
+        path = self.manager.logs["monado"]
+        path.unlink()
+        status, _ = self.request("GET", "/api/logs/monado")
+        self.assertEqual(status, 404)
+        path.mkdir()
+        status, _ = self.request("GET", "/api/logs/monado")
+        self.assertEqual(status, 404)
+
     def test_logs_returns_last_200_lines(self) -> None:
         self.manager.logs["monado"].write_text("\n".join(f"line {index}" for index in range(250)))
         status, body = self.request("GET", "/api/logs/monado")

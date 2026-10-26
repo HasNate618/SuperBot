@@ -12,7 +12,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from vrbot.processes import Aborted, ProcessRunner, tail_text
+from vrbot.processes import Aborted, ProcessRunner, tail_stream, tail_text
 
 
 class ProcessTests(unittest.TestCase):
@@ -224,6 +224,52 @@ class ProcessTests(unittest.TestCase):
             self.assertEqual(tail_text(path, 2), "d\ne")
             self.assertEqual(tail_text(path, 5), "a\nb\nc\nd\ne")
             self.assertEqual(tail_text(path, 50), "a\nb\nc\nd\ne")
+
+    def test_tail_stream_matches_across_block_sizes(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "log.txt"
+            path.write_text("alpha\nbeta\ngamma\ndelta\nepsilon")
+            for block_size in (1, 3, 16):
+                with path.open("rb") as handle:
+                    self.assertEqual(
+                        tail_stream(handle, 3, block_size=block_size),
+                        "gamma\ndelta\nepsilon",
+                    )
+
+    def test_tail_stream_restarts_after_shrink_during_read(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "log.txt"
+            path.write_text("old " * 100)
+            real = path.open("rb")
+
+            class ShrinkingHandle:
+                def __init__(self, handle, path) -> None:
+                    self.handle = handle
+                    self.path = path
+                    self.reads = 0
+                    self.shrunk = False
+
+                def seek(self, *args):
+                    return self.handle.seek(*args)
+
+                def tell(self):
+                    return self.handle.tell()
+
+                def fileno(self):
+                    return self.handle.fileno()
+
+                def read(self, amount: int = -1):
+                    self.reads += 1
+                    if self.reads == 2 and not self.shrunk:
+                        self.shrunk = True
+                        self.path.write_text("NEW\n")
+                    return self.handle.read(amount)
+
+            handle = ShrinkingHandle(real, path)
+            try:
+                self.assertEqual(tail_stream(handle, 5, block_size=16), "NEW")
+            finally:
+                real.close()
 
     def test_tail_text_preserves_blank_lines_and_missing_final_newline(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
