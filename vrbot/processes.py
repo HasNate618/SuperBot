@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import collections
 import json
 import os
 import signal
@@ -40,38 +41,44 @@ class ProcessHandle:
             return True
         return True
 
+    def _group_alive(self) -> bool:
+        if self.pgid <= 0:
+            return False
+        try:
+            os.killpg(self.pgid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        return True
+
     def signal_group(self, sig: int) -> None:
+        if self.pgid <= 0:
+            return
         try:
             os.killpg(self.pgid, sig)
-        except ProcessLookupError:
+        except (ProcessLookupError, PermissionError):
             pass
 
     def stop(self, timeout: float = 5.0) -> None:
-        if not self.alive():
-            self._close()
-            return
         self.signal_group(signal.SIGTERM)
-        done = False
+        deadline = time.monotonic() + timeout
+        while self._group_alive() and time.monotonic() < deadline:
+            if self._popen is not None:
+                self._popen.poll()
+            time.sleep(0.05)
+        if self._group_alive():
+            self.signal_group(signal.SIGKILL)
+            kill_deadline = time.monotonic() + 5.0
+            while self._group_alive() and time.monotonic() < kill_deadline:
+                if self._popen is not None:
+                    self._popen.poll()
+                time.sleep(0.05)
         if self._popen is not None:
             try:
-                self._popen.wait(timeout=timeout)
-                done = True
+                self._popen.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 pass
-        else:
-            deadline = time.monotonic() + timeout
-            while time.monotonic() < deadline:
-                if not self.alive():
-                    done = True
-                    break
-                time.sleep(0.1)
-        if not done and self.alive():
-            self.signal_group(signal.SIGKILL)
-            if self._popen is not None:
-                try:
-                    self._popen.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    pass
         self._close()
 
     def _close(self) -> None:
@@ -121,8 +128,7 @@ class ProcessRunner:
             for handle in handles:
                 handle.close()
             raise
-        pgid = os.getpgid(popen.pid)
-        return ProcessHandle(name, popen.pid, pgid, log_path, popen, tuple(handles))
+        return ProcessHandle(name, popen.pid, popen.pid, log_path, popen, tuple(handles))
 
     def run(
         self,
@@ -178,16 +184,33 @@ class ProcessRunner:
         raise TimeoutError(f"timed out waiting for {host}:{port}")
 
     def wait_log(self, path: Path, needle: str, timeout: float, abort=None) -> None:
+        path = Path(path)
         deadline = time.monotonic() + timeout
+        offset = 0
+        carry = ""
+        carry_len = max(len(needle) - 1, 0)
         while time.monotonic() < deadline:
             if abort is not None and abort.is_set():
                 raise Aborted("session stop requested")
             try:
-                text = Path(path).read_text(errors="replace")
+                size = path.stat().st_size
             except OSError:
-                text = ""
-            if needle in text:
+                size = 0
+            if size < offset:
+                offset = 0
+                carry = ""
+            try:
+                with path.open("rb") as handle:
+                    handle.seek(offset)
+                    chunk = handle.read()
+                    offset = handle.tell()
+            except OSError:
+                chunk = b""
+            text = chunk.decode(errors="replace")
+            window = carry + text
+            if needle in window:
                 return
+            carry = window[-carry_len:] if carry_len else ""
             time.sleep(0.25)
         raise TimeoutError(f"timed out waiting for {needle!r} in {path}")
 
@@ -240,7 +263,7 @@ class ProcessRunner:
     def kill_pid(self, pid: int) -> None:
         try:
             os.kill(pid, signal.SIGKILL)
-        except ProcessLookupError:
+        except (ProcessLookupError, PermissionError):
             pass
 
     def debug_scene_graph(self, debug_bin: str, env: dict[str, str], timeout: float = 5.0) -> str | None:
@@ -260,14 +283,20 @@ class ProcessRunner:
             return False
         if not stat.S_ISSOCK(mode):
             return False
-        path.unlink()
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            return False
         return True
 
     def read_pointer(self) -> dict | None:
         try:
-            return json.loads(self.pointer_path.read_text())
-        except (OSError, json.JSONDecodeError):
+            data = json.loads(self.pointer_path.read_text())
+        except (OSError, ValueError):
             return None
+        if not isinstance(data, dict):
+            return None
+        return data
 
     def write_pointer(self, data: dict) -> None:
         self.pointer_path.parent.mkdir(parents=True, exist_ok=True)
@@ -282,8 +311,14 @@ class ProcessRunner:
             pass
 
     def tail(self, path: Path, lines: int = 200) -> str:
+        if lines <= 0:
+            return ""
         try:
-            data = Path(path).read_text(errors="replace").splitlines()
+            with Path(path).open("r", errors="replace") as handle:
+                data = collections.deque(handle, maxlen=lines)
         except OSError:
             return ""
-        return "\n".join(data[-lines:])
+        text = "".join(data)
+        if text.endswith("\n"):
+            text = text[:-1]
+        return text
