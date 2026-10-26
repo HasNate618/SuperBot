@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import collections
 import json
 import os
 import signal
@@ -88,6 +87,52 @@ class ProcessHandle:
             except OSError:
                 pass
         self._handles = ()
+
+
+def tail_text(path: Path, lines: int = 200, block_size: int = 8192) -> str:
+    if lines <= 0:
+        return ""
+    try:
+        with open(path, "rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            size = handle.tell()
+            if size == 0:
+                return ""
+            handle.seek(size - 1)
+            trailing_newline = handle.read(1) == b"\n"
+            target = lines + 1 if trailing_newline else lines
+            position = size
+            newlines = 0
+            chunks: list[bytes] = []
+            while position > 0 and newlines < target:
+                read_size = min(block_size, position)
+                position -= read_size
+                handle.seek(position)
+                chunk = handle.read(read_size)
+                chunks.append(chunk)
+                newlines += chunk.count(b"\n")
+    except OSError:
+        return ""
+    data = b"".join(reversed(chunks))
+    search_end = len(data)
+    remaining = target
+    start = 0
+    while remaining > 0:
+        index = data.rfind(b"\n", 0, search_end)
+        if index < 0:
+            start = 0
+            break
+        search_end = index
+        remaining -= 1
+        if remaining == 0:
+            start = index + 1
+    text = data[start:].decode("utf-8", errors="replace")
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    if text.endswith("\n"):
+        text = text[:-1]
+    if not text:
+        return ""
+    return "\n".join(text.split("\n")[-lines:])
 
 
 class ProcessRunner:
@@ -331,14 +376,4 @@ class ProcessRunner:
             pass
 
     def tail(self, path: Path, lines: int = 200) -> str:
-        if lines <= 0:
-            return ""
-        try:
-            with Path(path).open("r", errors="replace") as handle:
-                data = collections.deque(handle, maxlen=lines)
-        except OSError:
-            return ""
-        text = "".join(data)
-        if text.endswith("\n"):
-            text = text[:-1]
-        return text
+        return tail_text(path, lines)

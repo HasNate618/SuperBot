@@ -226,19 +226,76 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(snapshot["preview"]["width"], 1280)
         self.assertTrue(snapshot["player_log"].endswith("Player.log"))
 
-    def test_snapshot_uses_bounded_monado_tail(self) -> None:
+    def test_snapshot_keeps_openxr_client_across_log_growth(self) -> None:
         self.start()
         log_path = self.manager.log_path("monado")
         assert log_path is not None
-        log_path.write_text("ignored")
-        text = (
+        log_path.write_text(
             " INFO [client_connected] Client 1 connected\n"
             "\tapplication_name: 'Unity Application'\n"
         )
-        with patch.object(self.runner, "tail", return_value=text) as tail:
-            snapshot = self.manager.snapshot()
-        tail.assert_called_once_with(log_path, 200)
-        self.assertEqual(snapshot["openxr_client"], "Unity Application")
+        self.assertEqual(self.manager.snapshot()["openxr_client"], "Unity Application")
+        with log_path.open("a") as handle:
+            for index in range(300):
+                handle.write(f"chatter {index}\n")
+        self.assertEqual(self.manager.snapshot()["openxr_client"], "Unity Application")
+
+    def test_snapshot_clears_openxr_client_on_disconnect(self) -> None:
+        self.start()
+        log_path = self.manager.log_path("monado")
+        assert log_path is not None
+        log_path.write_text(
+            " INFO [client_connected] Client 1 connected\n"
+            "\tapplication_name: 'Unity Application'\n"
+        )
+        self.assertEqual(self.manager.snapshot()["openxr_client"], "Unity Application")
+        with log_path.open("a") as handle:
+            handle.write(" INFO [client_disconnected] Client 1 disconnected\n")
+        self.assertIsNone(self.manager.snapshot()["openxr_client"])
+
+    def test_snapshot_parses_openxr_client_split_across_polls(self) -> None:
+        self.start()
+        log_path = self.manager.log_path("monado")
+        assert log_path is not None
+        log_path.write_text(" INFO [client_connected] Client 1 conn")
+        self.assertIsNone(self.manager.snapshot()["openxr_client"])
+        with log_path.open("a") as handle:
+            handle.write("ected\n\tapplication_name: 'Unity Application'")
+        self.assertIsNone(self.manager.snapshot()["openxr_client"])
+        with log_path.open("a") as handle:
+            handle.write("\n")
+        self.assertEqual(self.manager.snapshot()["openxr_client"], "Unity Application")
+
+    def test_snapshot_resets_openxr_state_after_truncation(self) -> None:
+        self.start()
+        log_path = self.manager.log_path("monado")
+        assert log_path is not None
+        log_path.write_text(
+            " INFO [client_connected] Client 1 connected\n"
+            "\tapplication_name: 'Unity Application'\n"
+        )
+        self.assertEqual(self.manager.snapshot()["openxr_client"], "Unity Application")
+        log_path.write_text("")
+        self.assertIsNone(self.manager.snapshot()["openxr_client"])
+        log_path.write_text(
+            " INFO [client_connected] Client 2 connected\n"
+            "\tapplication_name: 'Other App'\n"
+        )
+        self.assertEqual(self.manager.snapshot()["openxr_client"], "Other App")
+
+    def test_snapshot_resets_openxr_state_after_rotation(self) -> None:
+        self.start()
+        log_path = self.manager.log_path("monado")
+        assert log_path is not None
+        log_path.write_text(
+            " INFO [client_connected] Client 1 connected\n"
+            "\tapplication_name: 'Unity Application'\n"
+        )
+        self.assertEqual(self.manager.snapshot()["openxr_client"], "Unity Application")
+        rotated = log_path.with_name("monado.log.rotated")
+        rotated.write_text("chatter " * 40)
+        os.replace(rotated, log_path)
+        self.assertIsNone(self.manager.snapshot()["openxr_client"])
 
     def test_host_steam_blocks_start(self) -> None:
         self.runner.host_steam = True
@@ -413,6 +470,13 @@ class OpenXRTests(unittest.TestCase):
             " INFO [client_disconnected] Client 1 disconnected\n"
         )
         self.assertIsNone(parse_openxr_client(log))
+
+    def test_parser_handles_final_line_without_newline(self) -> None:
+        log = (
+            " INFO [client_connected] Client 1 connected\n"
+            "\tapplication_name: 'Unity Application'"
+        )
+        self.assertEqual(parse_openxr_client(log), "Unity Application")
 
 
 if __name__ == "__main__":

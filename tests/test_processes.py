@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import collections
 import json
 import os
 import signal
@@ -11,7 +12,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from vrbot.processes import Aborted, ProcessRunner
+from vrbot.processes import Aborted, ProcessRunner, tail_text
 
 
 class ProcessTests(unittest.TestCase):
@@ -216,12 +217,112 @@ class ProcessTests(unittest.TestCase):
             self.assertEqual(runner.tail(path, 0), "")
             self.assertEqual(runner.tail(path, -1), "")
 
+    def test_tail_text_returns_last_lines(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "log.txt"
+            path.write_text("a\nb\nc\nd\ne\n")
+            self.assertEqual(tail_text(path, 2), "d\ne")
+            self.assertEqual(tail_text(path, 5), "a\nb\nc\nd\ne")
+            self.assertEqual(tail_text(path, 50), "a\nb\nc\nd\ne")
+
+    def test_tail_text_preserves_blank_lines_and_missing_final_newline(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "log.txt"
+            path.write_text("a\n\nc")
+            self.assertEqual(tail_text(path, 2), "\nc")
+            self.assertEqual(tail_text(path, 3), "a\n\nc")
+
+    def test_tail_text_replaces_invalid_utf8(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "log.txt"
+            path.write_bytes(b"ok\n\xff\xfe\nlast")
+            self.assertEqual(tail_text(path, 2), "\ufffd\ufffd\nlast")
+
+    def test_tail_text_missing_file_and_nonpositive_lines(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "missing.log"
+            self.assertEqual(tail_text(path, 5), "")
+            self.assertEqual(tail_text(path, 0), "")
+            self.assertEqual(tail_text(path, -1), "")
+
+    def test_tail_text_matches_reference_semantics(self) -> None:
+        contents = (
+            "",
+            "\n",
+            "one",
+            "one\n",
+            "a\nb\nc\n",
+            "a\nb\nc",
+            "a\n\nb\n",
+            "a\n\n\n",
+            "a\r\nb\r\nc\r\n",
+            "a\rb\rc\r",
+        )
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "log.txt"
+            for content in contents:
+                for count in (1, 2, 5):
+                    with self.subTest(content=content, count=count):
+                        path.write_text(content)
+                        self.assertEqual(tail_text(path, count), self._reference_tail(path, count))
+
+    def test_tail_text_reads_bounded_bytes(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "large.log"
+            path.write_text(("x" * 79 + "\n") * 20000)
+            size = path.stat().st_size
+            real_open = open
+            bytes_read = 0
+
+            class CountingFile:
+                def __init__(self, handle) -> None:
+                    self.handle = handle
+
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, *args) -> None:
+                    self.handle.close()
+
+                def seek(self, *args):
+                    return self.handle.seek(*args)
+
+                def tell(self):
+                    return self.handle.tell()
+
+                def read(self, amount: int = -1):
+                    nonlocal bytes_read
+                    data = self.handle.read(amount)
+                    bytes_read += len(data)
+                    return data
+
+            def counting_open(*args, **kwargs):
+                return CountingFile(real_open(*args, **kwargs))
+
+            with mock.patch("builtins.open", side_effect=counting_open):
+                text = tail_text(path, 200)
+            self.assertEqual(len(text.splitlines()), 200)
+            self.assertLess(bytes_read, size // 10)
+
     def test_pointer_is_json_on_disk(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             pointer = Path(raw) / "pointer.json"
             runner = ProcessRunner(pointer)
             runner.write_pointer({"a": 1})
             self.assertEqual(json.loads(pointer.read_text()), {"a": 1})
+
+    def _reference_tail(self, path: Path, lines: int) -> str:
+        if lines <= 0:
+            return ""
+        try:
+            with path.open("r", errors="replace") as handle:
+                data = collections.deque(handle, maxlen=lines)
+        except OSError:
+            return ""
+        text = "".join(data)
+        if text.endswith("\n"):
+            text = text[:-1]
+        return text
 
     def _wait_log_in_thread(
         self,

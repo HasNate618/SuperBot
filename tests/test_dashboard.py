@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import http.client
 import json
+import socket
 import tempfile
 import threading
 import time
@@ -12,7 +13,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from vrbot.config import load_config
-from vrbot.dashboard import DashboardServer
+from vrbot.dashboard import DashboardHandler, DashboardServer
 from vrbot.orchestrator import ConflictError, MODES, PreflightError
 
 
@@ -235,25 +236,68 @@ class DashboardTests(unittest.TestCase):
         )
         self.assertEqual(status, 400)
 
-    def test_mode_exception_returns_500(self) -> None:
+    def test_mode_exception_returns_500_without_detail(self) -> None:
         self.manager.state = "running"
         with patch.object(self.manager, "set_mode", side_effect=RuntimeError("boom")):
             status, body = self.request("POST", "/api/session/mode", {"mode": "yaw"})
         self.assertEqual(status, 500)
-        self.assertEqual(json.loads(body)["error"], "boom")
+        self.assertEqual(json.loads(body)["error"], "internal server error")
+        self.assertNotIn(b"boom", body)
 
-    def test_kill_exception_returns_500(self) -> None:
+    def test_kill_exception_returns_500_without_detail(self) -> None:
         self.manager.state = "running"
         with patch.object(self.manager, "kill", side_effect=RuntimeError("boom")):
             status, body = self.request("POST", "/api/session/kill", {"target": "game"})
         self.assertEqual(status, 500)
-        self.assertEqual(json.loads(body)["error"], "boom")
+        self.assertEqual(json.loads(body)["error"], "internal server error")
+        self.assertNotIn(b"boom", body)
 
-    def test_stop_exception_returns_500(self) -> None:
+    def test_stop_exception_returns_500_without_detail(self) -> None:
         with patch.object(self.manager, "stop", side_effect=RuntimeError("boom")):
             status, body = self.request("POST", "/api/session/stop")
         self.assertEqual(status, 500)
-        self.assertEqual(json.loads(body)["error"], "boom")
+        self.assertEqual(json.loads(body)["error"], "internal server error")
+        self.assertNotIn(b"boom", body)
+
+    def test_start_exception_returns_500_without_detail(self) -> None:
+        with patch.object(self.manager, "start", side_effect=RuntimeError("boom")):
+            status, body = self.request("POST", "/api/session/start")
+        self.assertEqual(status, 500)
+        self.assertEqual(json.loads(body)["error"], "internal server error")
+        self.assertNotIn(b"boom", body)
+
+    def test_stalled_body_returns_400_json(self) -> None:
+        with patch.object(DashboardHandler, "timeout", 0.1):
+            sock = socket.create_connection(("127.0.0.1", self.port), timeout=3)
+            response = b""
+            try:
+                sock.sendall(
+                    b"POST /api/session/mode HTTP/1.1\r\n"
+                    b"Host: 127.0.0.1\r\n"
+                    b"Content-Type: application/json\r\n"
+                    b"Content-Length: 10\r\n\r\n"
+                )
+                while True:
+                    chunk = sock.recv(4096)
+                    if not chunk:
+                        break
+                    response += chunk
+            finally:
+                sock.close()
+        self.assertIn(b" 400 ", response)
+        self.assertIn(b"request body timeout", response)
+
+    def test_peer_closed_detects_disconnect(self) -> None:
+        server_sock, client_sock = socket.socketpair()
+        try:
+            handler = object.__new__(DashboardHandler)
+            handler.connection = server_sock
+            self.assertFalse(handler._peer_closed())
+            client_sock.close()
+            self.assertTrue(handler._peer_closed())
+        finally:
+            server_sock.close()
+            client_sock.close()
 
     def test_frame_read_failure_returns_404(self) -> None:
         self.manager.latest.mkdir()
@@ -266,25 +310,65 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(status, 404)
         self.assertIn("error", json.loads(body))
 
-    def _assert_stream_ends_after(self, state: str) -> None:
+    def _frame_part(self, data: bytes) -> bytes:
+        return (
+            b"--frame\r\n"
+            b"Content-Type: image/jpeg\r\n"
+            + f"Content-Length: {len(data)}\r\n\r\n".encode()
+            + data
+            + b"\r\n"
+        )
+
+    def test_preview_stream_ends_when_session_stops(self) -> None:
         self.manager.state = "running"
         connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=2)
         try:
             connection.request("GET", "/preview.mjpg")
             response = connection.getresponse()
             self.assertEqual(response.status, 200)
-            self.manager.state = state
+            self.manager.state = "stopped"
             started = time.monotonic()
             self.assertEqual(response.read(), b"")
             self.assertLess(time.monotonic() - started, 2)
         finally:
             connection.close()
 
-    def test_preview_stream_ends_when_session_stops(self) -> None:
-        self._assert_stream_ends_after("stopped")
+    def test_preview_streams_frame_after_starting(self) -> None:
+        self.manager.state = "starting"
+        polled = threading.Event()
+        original_preview_path = self.manager.preview_path
 
-    def test_preview_stream_ends_when_session_is_stopping(self) -> None:
-        self._assert_stream_ends_after("stopping")
+        def preview_path():
+            polled.set()
+            return original_preview_path()
+
+        with patch.object(self.manager, "preview_path", side_effect=preview_path):
+            connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=3)
+            try:
+                connection.request("GET", "/preview.mjpg")
+                response = connection.getresponse()
+                self.assertEqual(response.status, 200)
+                self.assertTrue(polled.wait(2), "stream did not poll for frames while starting")
+                self.manager.state = "running"
+                self.manager.latest.write_bytes(b"JPEGDATA")
+                expected = self._frame_part(b"JPEGDATA")
+                self.assertEqual(response.read(len(expected)), expected)
+            finally:
+                connection.close()
+
+    def test_preview_stream_continues_while_stopping(self) -> None:
+        self.manager.state = "running"
+        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=3)
+        try:
+            connection.request("GET", "/preview.mjpg")
+            response = connection.getresponse()
+            self.assertEqual(response.status, 200)
+            self.manager.state = "stopping"
+            self.manager.latest.write_bytes(b"JPEGDATA")
+            expected = self._frame_part(b"JPEGDATA")
+            self.assertEqual(response.read(len(expected)), expected)
+        finally:
+            connection.close()
 
     def test_unknown_route(self) -> None:
         status, _ = self.request("GET", "/nope")

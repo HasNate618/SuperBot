@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import codecs
 import os
 import re
 import sys
@@ -38,27 +39,54 @@ class StartupError(RuntimeError):
     pass
 
 
-def parse_openxr_client(text: str) -> str | None:
-    active: dict[str, str | None] = {}
-    pending: str | None = None
-    for line in text.splitlines():
+class _OpenXRLogParser:
+    def __init__(self) -> None:
+        self._active: dict[str, str | None] = {}
+        self._pending: str | None = None
+        self._buffer = ""
+
+    def feed(self, text: str) -> str | None:
+        self._buffer += text
+        lines = self._buffer.split("\n")
+        self._buffer = lines.pop()
+        for line in lines:
+            self.consume(line)
+        return self.value()
+
+    def flush(self) -> str | None:
+        if self._buffer:
+            line = self._buffer
+            self._buffer = ""
+            self.consume(line)
+        return self.value()
+
+    def value(self) -> str | None:
+        for name in reversed(list(self._active.values())):
+            if name:
+                return name
+        return None
+
+    def consume(self, line: str) -> None:
         match = re.search(r"\[client_connected\]\s+Client\s+(\d+)\s+connected", line)
         if match:
-            pending = match.group(1)
-            continue
+            self._pending = match.group(1)
+            return
         match = re.search(r"application_name:\s*'([^']*)'", line)
-        if match and pending is not None:
+        if match and self._pending is not None:
             name = match.group(1).strip()
-            active[pending] = name or None
-            pending = None
-            continue
+            self._active[self._pending] = name or None
+            self._pending = None
+            return
         match = re.search(r"\[client_disconnected\]\s+Client\s+(\d+)\s+disconnected", line)
         if match:
-            active.pop(match.group(1), None)
-    for name in reversed(list(active.values())):
-        if name:
-            return name
-    return None
+            self._active.pop(match.group(1), None)
+
+
+def parse_openxr_client(text: str) -> str | None:
+    parser = _OpenXRLogParser()
+    for line in text.splitlines():
+        parser.consume(line)
+    return parser.value()
 
 
 class SessionManager:
@@ -103,6 +131,12 @@ class SessionManager:
         self._thread: threading.Thread | None = None
         self._monitor_thread: threading.Thread | None = None
         self._startup_deadline: float | None = None
+        self._openxr_lock = threading.Lock()
+        self._openxr_parser = _OpenXRLogParser()
+        self._openxr_decoder = codecs.getincrementaldecoder("utf-8")("replace")
+        self._openxr_offset = 0
+        self._openxr_inode: int | None = None
+        self._openxr_path: Path | None = None
 
     def state_value(self) -> str:
         with self._lock:
@@ -136,6 +170,7 @@ class SessionManager:
         with self._lock:
             if self._state not in (State.STOPPED, State.FAILED):
                 raise ConflictError("session is not stopped")
+            self._reset_openxr()
             self._state = State.STARTING
             self._last_error = None
             self._stop_event.clear()
@@ -246,7 +281,7 @@ class SessionManager:
         openxr_client = None
         monado_log = self.log_path("monado")
         if monado_log is not None:
-            openxr_client = parse_openxr_client(self.runner.tail(monado_log, 200))
+            openxr_client = self._openxr_client(monado_log)
         if preview is not None:
             preview_status = preview.status()
         else:
@@ -282,6 +317,41 @@ class SessionManager:
             "session_dir": str(session_dir) if session_dir is not None else None,
             "player_log": str(player_log),
         }
+
+    def _reset_openxr(self) -> None:
+        with self._openxr_lock:
+            self._openxr_parser = _OpenXRLogParser()
+            self._openxr_decoder = codecs.getincrementaldecoder("utf-8")("replace")
+            self._openxr_offset = 0
+            self._openxr_inode = None
+            self._openxr_path = None
+
+    def _openxr_client(self, path: Path) -> str | None:
+        with self._openxr_lock:
+            try:
+                stat_result = path.stat()
+            except OSError:
+                return None
+            if (
+                path != self._openxr_path
+                or stat_result.st_ino != self._openxr_inode
+                or stat_result.st_size < self._openxr_offset
+            ):
+                self._openxr_parser = _OpenXRLogParser()
+                self._openxr_decoder = codecs.getincrementaldecoder("utf-8")("replace")
+                self._openxr_offset = 0
+                self._openxr_inode = stat_result.st_ino
+                self._openxr_path = path
+            try:
+                with path.open("rb") as handle:
+                    handle.seek(self._openxr_offset)
+                    chunk = handle.read()
+                    self._openxr_offset = handle.tell()
+            except OSError:
+                return None
+            if chunk:
+                self._openxr_parser.feed(self._openxr_decoder.decode(chunk))
+            return self._openxr_parser.value()
 
     def _set_state(self, state: State) -> None:
         with self._lock:
