@@ -426,10 +426,10 @@ class OrchestratorTests(unittest.TestCase):
         release = threading.Event()
         original_preflight = self.manager._preflight
 
-        def blocking_preflight() -> None:
+        def blocking_preflight(gen) -> None:
             entered.set()
             self.assertTrue(release.wait(2))
-            original_preflight()
+            original_preflight(gen)
 
         with (
             patch.object(self.manager, "_preflight", side_effect=blocking_preflight),
@@ -524,6 +524,22 @@ class OrchestratorTests(unittest.TestCase):
             with self.assertRaises(PreflightError) as raised:
                 self.manager.start()
         self.assertIn("pgrep missing", str(raised.exception))
+        self.assertEqual(self.manager.state_value(), "failed")
+        self.assertIsNone(self.runner.pointer)
+        self.assertEqual(self.runner.handles, {})
+
+    def test_systemd_probe_failure_blocks_start(self) -> None:
+        with (
+            patch.object(
+                self.runner,
+                "systemd_unit_active",
+                side_effect=OSError("systemctl missing"),
+            ),
+            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+        ):
+            with self.assertRaises(PreflightError) as raised:
+                self.manager.start()
+        self.assertIn("systemctl missing", str(raised.exception))
         self.assertEqual(self.manager.state_value(), "failed")
         self.assertIsNone(self.runner.pointer)
         self.assertEqual(self.runner.handles, {})
@@ -749,6 +765,30 @@ class OrchestratorTests(unittest.TestCase):
         self.assertIn("socket boom", text)
         self.assertIn("warning: surviving processes: steam", text)
 
+    def test_cleanup_first_phase_failure_still_stops_later_handles(self) -> None:
+        self.start()
+        pose = self.runner.handles["pose"]
+        later = {
+            name: self.runner.handles[name] for name in ("steam", "weston", "monado")
+        }
+
+        def failing_stop(timeout: float = 5.0) -> None:
+            raise RuntimeError("pose stop boom")
+
+        pose.stop = failing_stop
+        self.manager.stop()
+        self.assertTrue(self.manager.wait_idle(2))
+        snapshot = self.manager.snapshot()
+        self.assertEqual(snapshot["state"], "stopped")
+        self.assertTrue(self.preview.stopped)
+        self.assertIsNone(self.manager._preview)
+        self.assertIn("pose", snapshot["survivors"])
+        self.assertTrue(all(not handle.alive() for handle in later.values()))
+        session_log = Path(snapshot["session_dir"]) / "session.log"
+        text = session_log.read_text()
+        self.assertIn("cleanup phase pose failed: pose stop boom", text)
+        self.assertIn("warning: surviving processes: pose", text)
+
     def test_startup_failure_preserves_step_error_when_cleanup_fails(self) -> None:
         original_wait_log = self.runner.wait_log
 
@@ -838,10 +878,10 @@ class OrchestratorTests(unittest.TestCase):
         release = threading.Event()
         original_preflight = self.manager._preflight
 
-        def blocking_preflight() -> None:
+        def blocking_preflight(gen) -> None:
+            original_preflight(gen)
             entered.set()
             self.assertTrue(release.wait(2))
-            original_preflight()
 
         with (
             patch.object(self.manager, "_preflight", side_effect=blocking_preflight),
@@ -851,6 +891,10 @@ class OrchestratorTests(unittest.TestCase):
             thread.start()
             try:
                 self.assertTrue(entered.wait(2))
+                session_dir = self.manager._session_dir
+                self.assertIsNotNone(session_dir)
+                assert session_dir is not None
+                self.assertTrue(session_dir.exists())
                 self.manager.stop()
                 self.assertTrue(self.manager.wait_idle(2))
                 release.set()
@@ -866,6 +910,7 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(snapshot["state"], "stopped")
         self.assertIsNone(self.runner.pointer)
         self.assertIsNone(snapshot["session_dir"])
+        self.assertFalse(session_dir.exists())
 
     def test_stop_after_final_startup_checkpoint_ends_stopped(self) -> None:
         reached = threading.Event()
@@ -955,9 +1000,9 @@ class OrchestratorTests(unittest.TestCase):
         original_start_worker = self.manager._start_worker
         original_cleanup = self.manager._cleanup
 
-        def delayed_start_worker() -> None:
+        def delayed_start_worker(gen, session_dir) -> None:
             self.assertTrue(allow.wait(2))
-            original_start_worker()
+            original_start_worker(gen, session_dir)
             finished.set()
 
         def counting_cleanup() -> None:
@@ -970,12 +1015,179 @@ class OrchestratorTests(unittest.TestCase):
             patch("vrbot.orchestrator.missing_requirements", return_value=[]),
         ):
             self.manager.start()
+            captured = self.manager._session_dir
+            self.assertIsNotNone(captured)
+            assert captured is not None
+            self.assertTrue(captured.exists())
             self.manager.stop()
             allow.set()
             self.assertTrue(finished.wait(2))
             self.assertTrue(self.manager.wait_idle(2))
         self.assertEqual(self.manager.state_value(), "stopped")
         self.assertEqual(len(cleanup_calls), 1)
+        self.assertIsNone(self.runner.pointer)
+        self.assertFalse(captured.exists())
+
+    def test_stop_during_preflight_then_start_preserves_new_session(self) -> None:
+        entered = threading.Event()
+        release = threading.Event()
+        original_preflight = self.manager._preflight
+        calls = 0
+        calls_lock = threading.Lock()
+
+        def blocking_first_preflight(gen) -> None:
+            nonlocal calls
+            with calls_lock:
+                calls += 1
+                first = calls == 1
+            if first:
+                entered.set()
+                self.assertTrue(release.wait(5))
+            original_preflight(gen)
+
+        with (
+            patch.object(
+                self.manager, "_preflight", side_effect=blocking_first_preflight
+            ),
+            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+        ):
+            thread_a = threading.Thread(target=self.manager.start, daemon=True)
+            thread_a.start()
+            self.assertTrue(entered.wait(2))
+            self.manager.stop()
+            self.assertTrue(self.manager.wait_idle(2))
+
+            self.manager.start()
+            self.assertTrue(self.manager.wait_idle(2))
+            self.assertEqual(self.manager.state_value(), "running")
+            session_dir = Path(self.manager.snapshot()["session_dir"])
+            pointer = self.runner.pointer
+            self.assertIsNotNone(pointer)
+            marker = session_dir / "marker.log"
+            marker.write_text("new session\n")
+
+            release.set()
+            thread_a.join(5)
+
+        self.assertFalse(thread_a.is_alive())
+        self.assertTrue(session_dir.exists())
+        self.assertTrue(marker.exists())
+        self.assertEqual(self.runner.pointer, pointer)
+        self.assertEqual(self.manager.state_value(), "running")
+        self.assertEqual(self.manager.snapshot()["session_dir"], str(session_dir))
+
+    def test_stop_during_preflight_then_start_does_not_duplicate_processes(
+        self,
+    ) -> None:
+        entered = threading.Event()
+        release_preflight = threading.Event()
+        worker_entered = threading.Event()
+        release_worker = threading.Event()
+        worker_finished = threading.Event()
+        original_preflight = self.manager._preflight
+        original_start_worker = self.manager._start_worker
+        original_start = self.runner.start
+        starts: list[str] = []
+
+        def blocking_preflight(gen) -> None:
+            entered.set()
+            self.assertTrue(release_preflight.wait(5))
+            original_preflight(gen)
+
+        def delayed_first_worker(gen, session_dir) -> None:
+            if gen == 1:
+                worker_entered.set()
+                self.assertTrue(release_worker.wait(5))
+            original_start_worker(gen, session_dir)
+            if gen == 1:
+                worker_finished.set()
+
+        def recording_start(name, argv, env, cwd, log_path, stderr_path=None):
+            starts.append(name)
+            return original_start(name, argv, env, cwd, log_path, stderr_path)
+
+        with (
+            patch.object(
+                self.manager, "_preflight", side_effect=blocking_preflight
+            ),
+            patch.object(
+                self.manager, "_start_worker", side_effect=delayed_first_worker
+            ),
+            patch.object(self.runner, "start", side_effect=recording_start),
+            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+        ):
+            thread_a = threading.Thread(target=self.manager.start, daemon=True)
+            thread_a.start()
+            self.assertTrue(entered.wait(2))
+            self.manager.stop()
+            self.assertTrue(self.manager.wait_idle(2))
+            release_preflight.set()
+            thread_a.join(5)
+            self.assertFalse(thread_a.is_alive())
+            self.assertTrue(worker_entered.wait(2))
+
+            self.manager.start()
+            self.assertTrue(self.manager.wait_idle(2))
+            self.assertEqual(self.manager.state_value(), "running")
+            session_dir = Path(self.manager.snapshot()["session_dir"])
+            pointer = self.runner.pointer
+            self.assertIsNotNone(pointer)
+
+            release_worker.set()
+            self.assertTrue(worker_finished.wait(2))
+
+        self.assertEqual(self.manager.state_value(), "running")
+        self.assertTrue(session_dir.exists())
+        self.assertEqual(self.runner.pointer, pointer)
+        self.assertEqual(self.manager.snapshot()["session_dir"], str(session_dir))
+        self.assertEqual(sorted(starts), ["monado", "pose", "steam", "weston"])
+
+    def test_startup_failure_log_error_still_cleans_up(self) -> None:
+        original_log = self.manager._session_log
+
+        def failing_log(message: str) -> None:
+            if message.startswith("startup failed:"):
+                raise OSError("log failure")
+            original_log(message)
+
+        self.runner.fail_at = "wait_port"
+        with (
+            patch.object(self.manager, "_session_log", side_effect=failing_log),
+            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+        ):
+            self.manager.start()
+            self.assertTrue(self.manager.wait_idle(2))
+        snapshot = self.manager.snapshot()
+        self.assertIn(snapshot["state"], ("failed", "stopped"))
+        self.assertNotEqual(snapshot["state"], "starting")
+        self.assertIsNone(self.runner.pointer)
+        self.assertEqual(self.manager._handles, {})
+
+    def test_preflight_failure_after_stop_ends_stopped(self) -> None:
+        entered = threading.Event()
+        release = threading.Event()
+
+        def failing_preflight(gen) -> None:
+            entered.set()
+            self.assertTrue(release.wait(5))
+            raise PreflightError("late preflight failure")
+
+        with (
+            patch.object(self.manager, "_preflight", side_effect=failing_preflight),
+            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+        ):
+            thread = threading.Thread(target=self.manager.start, daemon=True)
+            thread.start()
+            self.assertTrue(entered.wait(2))
+            self.manager.stop()
+            self.assertTrue(self.manager.wait_idle(2))
+            release.set()
+            thread.join(5)
+
+        self.assertFalse(thread.is_alive())
+        snapshot = self.manager.snapshot()
+        self.assertEqual(snapshot["state"], "stopped")
+        self.assertIsNone(snapshot["last_error"])
         self.assertIsNone(self.runner.pointer)
 
     def test_mode_switch_restarts_pose_only(self) -> None:

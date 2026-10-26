@@ -225,7 +225,11 @@ class ProcessRunner:
             stderr=subprocess.DEVNULL,
             timeout=5,
         )
-        return result.returncode == 0
+        if result.returncode == 0:
+            return True
+        if result.returncode == 1:
+            return False
+        raise ProcessError(f"pgrep failed with exit code {result.returncode}")
 
     def systemd_unit_active(self, unit: str) -> bool:
         result = subprocess.run(
@@ -235,7 +239,11 @@ class ProcessRunner:
             stderr=subprocess.DEVNULL,
             timeout=5,
         )
-        return result.returncode == 0
+        if result.returncode == 0:
+            return True
+        if result.returncode == 3:
+            return False
+        raise ProcessError(f"systemctl is-active failed with exit code {result.returncode}")
 
     def port_in_use(self, host: str, port: int) -> bool:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:

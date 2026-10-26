@@ -14,7 +14,14 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from vrbot.processes import Aborted, ProcessHandle, ProcessRunner, tail_stream, tail_text
+from vrbot.processes import (
+    Aborted,
+    ProcessError,
+    ProcessHandle,
+    ProcessRunner,
+    tail_stream,
+    tail_text,
+)
 
 
 class ProcessTests(unittest.TestCase):
@@ -210,6 +217,32 @@ class ProcessTests(unittest.TestCase):
                     popen.wait(timeout=2)
                 except subprocess.TimeoutExpired:
                     pass
+
+    def test_process_name_running_exit_codes(self) -> None:
+        runner = ProcessRunner(Path("/tmp/pointer.json"))
+        for code, expected in ((0, True), (1, False)):
+            with self.subTest(code=code):
+                result = subprocess.CompletedProcess(["pgrep"], code, "", "")
+                with mock.patch("vrbot.processes.subprocess.run", return_value=result):
+                    self.assertEqual(runner.process_name_running("steam"), expected)
+        result = subprocess.CompletedProcess(["pgrep"], 2, "", "")
+        with mock.patch("vrbot.processes.subprocess.run", return_value=result):
+            with self.assertRaises(ProcessError):
+                runner.process_name_running("steam")
+
+    def test_systemd_unit_active_exit_codes(self) -> None:
+        runner = ProcessRunner(Path("/tmp/pointer.json"))
+        for code, expected in ((0, True), (3, False)):
+            with self.subTest(code=code):
+                result = subprocess.CompletedProcess(["systemctl"], code, "", "")
+                with mock.patch("vrbot.processes.subprocess.run", return_value=result):
+                    self.assertEqual(runner.systemd_unit_active("monado.service"), expected)
+        for code in (1, 4):
+            with self.subTest(code=code):
+                result = subprocess.CompletedProcess(["systemctl"], code, "", "")
+                with mock.patch("vrbot.processes.subprocess.run", return_value=result):
+                    with self.assertRaises(ProcessError):
+                        runner.systemd_unit_active("monado.service")
 
     def test_process_probes_raise_on_timeout(self) -> None:
         runner = ProcessRunner(Path("/tmp/pointer.json"))
