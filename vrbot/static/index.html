@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>vr-bot C0</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header>
+    <h1>C0 session</h1>
+    <span id="state" class="badge">stopped</span>
+    <span id="session-id"></span>
+    <span id="uptime"></span>
+    <button id="start">Start</button>
+    <button id="stop">Stop</button>
+  </header>
+  <main>
+    <section class="preview">
+      <img id="preview" src="/preview.mjpg" alt="live C0 preview">
+      <div id="preview-wait">waiting for the first frame…</div>
+    </section>
+
+    <section>
+      <h2>Pose mode</h2>
+      <div id="modes">
+        <button data-mode="hold">hold</button>
+        <button data-mode="yaw">yaw</button>
+        <button data-mode="trigger">trigger</button>
+        <button data-mode="dodge">dodge</button>
+        <button data-mode="walk">walk</button>
+        <button data-mode="clock">clock</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>Health</h2>
+      <div id="health"></div>
+    </section>
+
+    <section class="danger">
+      <h2>Danger zone</h2>
+      <button id="kill-game">Kill game</button>
+      <button id="kill-steam">Shutdown Steam</button>
+    </section>
+
+    <section>
+      <h2>Logs</h2>
+      <select id="log-name">
+        <option value="session">session</option>
+        <option value="monado">monado</option>
+        <option value="weston">weston</option>
+        <option value="steam">steam</option>
+        <option value="pose">pose</option>
+      </select>
+      <button id="log-refresh">Refresh</button>
+      <pre id="log-tail"></pre>
+    </section>
+
+    <p id="error" class="error"></p>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>

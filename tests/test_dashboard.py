@@ -158,6 +158,11 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertIn(b"C0", body)
 
+    def test_ui_assets_are_served(self) -> None:
+        for path in ("/style.css", "/app.js"):
+            status, _ = self.request("GET", path)
+            self.assertEqual(status, 200)
+
     def test_frame_404_then_200(self) -> None:
         status, _ = self.request("GET", "/api/frame.jpg")
         self.assertEqual(status, 404)
