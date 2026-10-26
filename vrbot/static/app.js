@@ -1,5 +1,16 @@
 const $ = (id) => document.getElementById(id);
 
+const LIVE_STATES = ["starting", "running", "stopping"];
+
+let currentState = null;
+let lastState = null;
+let previewOpen = false;
+let previewRetry = null;
+let pollInFlight = false;
+let actionInFlight = false;
+let clientError = "";
+let lastServerError = null;
+
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, (char) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
@@ -35,29 +46,124 @@ function showError(message) {
   $("error").style.display = message ? "block" : "none";
 }
 
+function renderError() {
+  showError(clientError || lastServerError || "");
+}
+
+function setClientError(message) {
+  clientError = message || "";
+  renderError();
+}
+
+function applyServerError(serverError) {
+  const next = serverError || null;
+  if (next !== lastServerError) {
+    lastServerError = next;
+    if (next) clientError = "";
+  }
+  renderError();
+}
+
 function uptime(startedAt) {
   if (!startedAt) return "";
   const seconds = Math.max(0, Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000));
   return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
 }
 
+function isLive(state) {
+  return LIVE_STATES.includes(state);
+}
+
+function clearPreviewRetry() {
+  if (previewRetry !== null) {
+    clearTimeout(previewRetry);
+    previewRetry = null;
+  }
+}
+
+function openPreview() {
+  clearPreviewRetry();
+  if (previewOpen) return;
+  previewOpen = true;
+  $("preview").src = `/preview.mjpg?t=${Date.now()}`;
+}
+
+function closePreview() {
+  clearPreviewRetry();
+  previewOpen = false;
+  $("preview").removeAttribute("src");
+}
+
+function schedulePreviewRetry() {
+  clearPreviewRetry();
+  if (!isLive(currentState)) return;
+  previewRetry = setTimeout(() => {
+    previewRetry = null;
+    if (!isLive(currentState) || previewOpen) return;
+    openPreview();
+  }, 1000);
+}
+
+function syncPreview(previous, state) {
+  const changed = state.state !== previous;
+  if (changed) clearPreviewRetry();
+  if (!isLive(state.state)) {
+    closePreview();
+    return;
+  }
+  if (changed && !previewOpen) openPreview();
+}
+
+function updatePreviewWait(state) {
+  const wait = $("preview-wait");
+  const stateText = {
+    stopped: "session stopped",
+    failed: "session failed",
+    starting: "starting…",
+  }[state.state];
+  if (stateText) {
+    wait.textContent = stateText;
+    wait.style.display = "block";
+  } else if (state.preview.last_frame_at) {
+    wait.style.display = "none";
+  } else {
+    wait.textContent = "waiting for the first frame…";
+    wait.style.display = "block";
+  }
+}
+
+function applyControls(state) {
+  const running = state.state === "running";
+  $("start").disabled = actionInFlight || !["stopped", "failed"].includes(state.state);
+  $("stop").disabled = actionInFlight || state.state === "stopped";
+  document.querySelectorAll("#modes button").forEach((button) => {
+    const active = button.dataset.mode === state.mode;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+    button.disabled = actionInFlight || !running;
+  });
+  $("kill-game").disabled = actionInFlight || !running;
+  $("kill-steam").disabled = actionInFlight || !running;
+}
+
 function render(state) {
+  const previous = currentState;
+  currentState = state.state;
+  lastState = state;
+
   $("state").textContent = state.state;
   $("state").className = `badge ${state.state}`;
-  $("session-id").textContent = state.session_id || "";
-  $("uptime").textContent = uptime(state.started_at);
-  $("start").disabled = !["stopped", "failed"].includes(state.state);
-  $("stop").disabled = state.state === "stopped";
-  $("preview-wait").style.display = state.preview.last_frame_at ? "none" : "block";
-  showError(state.last_error);
 
-  document.querySelectorAll("#modes button").forEach((button) => {
-    button.classList.toggle("active", button.dataset.mode === state.mode);
-    button.disabled = state.state !== "running";
-  });
+  const showSession = state.state === "running" || state.state === "stopping";
+  $("session-id").textContent = showSession ? state.session_id || "" : "";
+  $("session-id").style.display = showSession ? "" : "none";
+  $("uptime").textContent = showSession ? uptime(state.started_at) : "";
+  $("uptime").style.display = showSession ? "" : "none";
 
-  $("kill-game").disabled = state.state !== "running";
-  $("kill-steam").disabled = state.state !== "running";
+  applyControls(state);
+  syncPreview(previous, state);
+  updatePreviewWait(state);
+  applyServerError(state.last_error);
 
   const cards = Object.entries(state.processes).map(([name, process]) => `
     <div class="card">
@@ -82,60 +188,55 @@ function render(state) {
 }
 
 async function refresh() {
+  if (pollInFlight) return;
+  pollInFlight = true;
   try {
     render(await api("/api/state"));
   } catch (error) {
-    showError(error.message);
+    setClientError(error.message);
+  } finally {
+    pollInFlight = false;
   }
 }
 
-$("start").onclick = async () => {
+async function runAction(action) {
+  if (actionInFlight) return;
+  actionInFlight = true;
+  if (lastState) applyControls(lastState);
   try {
-    await post("/api/session/start");
+    await action();
+    setClientError("");
     await refresh();
   } catch (error) {
-    showError(error.message);
+    setClientError(error.message);
+  } finally {
+    actionInFlight = false;
+    if (lastState) applyControls(lastState);
   }
-};
+}
 
-$("stop").onclick = async () => {
-  try {
-    await post("/api/session/stop");
-    await refresh();
-  } catch (error) {
-    showError(error.message);
-  }
-};
-
-document.querySelectorAll("#modes button").forEach((button) => {
-  button.onclick = async () => {
-    try {
-      await post("/api/session/mode", { mode: button.dataset.mode });
-      await refresh();
-    } catch (error) {
-      showError(error.message);
-    }
-  };
+$("preview").addEventListener("error", () => {
+  previewOpen = false;
+  if (!isLive(currentState)) return;
+  schedulePreviewRetry();
 });
 
-$("kill-game").onclick = async () => {
+$("start").onclick = () => runAction(() => post("/api/session/start"));
+
+$("stop").onclick = () => runAction(() => post("/api/session/stop"));
+
+document.querySelectorAll("#modes button").forEach((button) => {
+  button.onclick = () => runAction(() => post("/api/session/mode", { mode: button.dataset.mode }));
+});
+
+$("kill-game").onclick = () => {
   if (!confirm("Kill the game process?")) return;
-  try {
-    await post("/api/session/kill", { target: "game" });
-    await refresh();
-  } catch (error) {
-    showError(error.message);
-  }
+  runAction(() => post("/api/session/kill", { target: "game" }));
 };
 
-$("kill-steam").onclick = async () => {
+$("kill-steam").onclick = () => {
   if (!confirm("Shut down the hidden Steam client?")) return;
-  try {
-    await post("/api/session/kill", { target: "steam" });
-    await refresh();
-  } catch (error) {
-    showError(error.message);
-  }
+  runAction(() => post("/api/session/kill", { target: "steam" }));
 };
 
 $("log-refresh").onclick = async () => {

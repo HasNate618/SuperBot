@@ -12,24 +12,24 @@
     <span id="state" class="badge">stopped</span>
     <span id="session-id"></span>
     <span id="uptime"></span>
-    <button id="start">Start</button>
-    <button id="stop">Stop</button>
+    <button id="start" disabled>Start</button>
+    <button id="stop" disabled>Stop</button>
   </header>
   <main>
     <section class="preview">
-      <img id="preview" src="/preview.mjpg" alt="live C0 preview">
-      <div id="preview-wait">waiting for the first frame…</div>
+      <img id="preview" alt="live C0 preview">
+      <div id="preview-wait">session stopped</div>
     </section>
 
     <section>
       <h2>Pose mode</h2>
       <div id="modes">
-        <button data-mode="hold">hold</button>
-        <button data-mode="yaw">yaw</button>
-        <button data-mode="trigger">trigger</button>
-        <button data-mode="dodge">dodge</button>
-        <button data-mode="walk">walk</button>
-        <button data-mode="clock">clock</button>
+        <button data-mode="hold" aria-pressed="false" disabled>hold</button>
+        <button data-mode="yaw" aria-pressed="false" disabled>yaw</button>
+        <button data-mode="trigger" aria-pressed="false" disabled>trigger</button>
+        <button data-mode="dodge" aria-pressed="false" disabled>dodge</button>
+        <button data-mode="walk" aria-pressed="false" disabled>walk</button>
+        <button data-mode="clock" aria-pressed="false" disabled>clock</button>
       </div>
     </section>
 
@@ -40,8 +40,8 @@
 
     <section class="danger">
       <h2>Danger zone</h2>
-      <button id="kill-game">Kill game</button>
-      <button id="kill-steam">Shutdown Steam</button>
+      <button id="kill-game" disabled>Kill game</button>
+      <button id="kill-steam" disabled>Shutdown Steam</button>
     </section>
 
     <section>
@@ -57,7 +57,7 @@
       <pre id="log-tail"></pre>
     </section>
 
-    <p id="error" class="error"></p>
+    <p id="error" class="error" role="alert"></p>
   </main>
   <script src="/app.js"></script>
 </body>

@@ -389,5 +389,44 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(status, 404)
 
 
+class ShippedStaticAssetsTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.manager = FakeManager(Path(self.temp.name))
+        self.cfg = load_config(None, env={})
+        static_dir = Path(__file__).resolve().parents[1] / "vrbot" / "static"
+        self.server = DashboardServer(("127.0.0.1", 0), self.manager, self.cfg, static_dir)
+        self.port = self.server.server_address[1]
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+
+    def tearDown(self) -> None:
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join(2)
+        self.temp.cleanup()
+
+    def request(self, path: str):
+        request = urllib.request.Request(f"http://127.0.0.1:{self.port}{path}")
+        try:
+            with urllib.request.urlopen(request, timeout=5) as response:
+                return response.status, response.read()
+        except urllib.error.HTTPError as exc:
+            try:
+                return exc.code, exc.read()
+            finally:
+                exc.close()
+
+    def test_shipped_assets_are_served(self) -> None:
+        for path in ("/", "/app.js", "/style.css"):
+            with self.subTest(path=path):
+                status, body = self.request(path)
+                self.assertEqual(status, 200)
+                self.assertTrue(body)
+        _, index = self.request("/")
+        self.assertIn(b"/app.js", index)
+        self.assertIn(b"/style.css", index)
+
+
 if __name__ == "__main__":
     unittest.main()
