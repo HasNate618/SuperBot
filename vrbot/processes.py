@@ -189,23 +189,43 @@ class ProcessRunner:
         offset = 0
         carry = ""
         carry_len = max(len(needle) - 1, 0)
+        inode: int | None = None
+        fingerprint = b""
         while time.monotonic() < deadline:
             if abort is not None and abort.is_set():
                 raise Aborted("session stop requested")
             try:
-                size = path.stat().st_size
+                stat_result = path.stat()
             except OSError:
-                size = 0
-            if size < offset:
+                time.sleep(0.25)
+                continue
+            if inode != stat_result.st_ino or stat_result.st_size < offset:
+                inode = stat_result.st_ino
                 offset = 0
                 carry = ""
+                fingerprint = b""
+            if offset > 0 and fingerprint:
+                probe_start = max(0, offset - 64)
+                try:
+                    with path.open("rb") as handle:
+                        handle.seek(probe_start)
+                        probe = handle.read(offset - probe_start)
+                except OSError:
+                    time.sleep(0.25)
+                    continue
+                if probe != fingerprint:
+                    offset = 0
+                    carry = ""
+                    fingerprint = b""
             try:
                 with path.open("rb") as handle:
                     handle.seek(offset)
                     chunk = handle.read()
                     offset = handle.tell()
             except OSError:
-                chunk = b""
+                time.sleep(0.25)
+                continue
+            fingerprint = (fingerprint + chunk)[-64:]
             text = chunk.decode(errors="replace")
             window = carry + text
             if needle in window:

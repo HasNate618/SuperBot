@@ -166,6 +166,40 @@ class ProcessTests(unittest.TestCase):
                 timer.cancel()
                 timer.join()
 
+    def test_wait_log_handles_truncate_and_regrow(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "log.txt"
+            path.write_text("x" * 200)
+            runner = ProcessRunner(Path(raw) / "pointer.json")
+            thread, outcome = self._wait_log_in_thread(runner, path, "TARGET")
+            time.sleep(0.3)
+            path.write_text("a" * 120 + "TARGET" + "b" * 120)
+            thread.join(timeout=3)
+            self.assertFalse(
+                thread.is_alive(), "wait_log did not return after truncate-and-regrow"
+            )
+            self.assertNotIn(
+                "error", outcome, f"wait_log raised: {outcome.get('error')!r}"
+            )
+            self.assertTrue(outcome.get("ok"), "wait_log did not find needle")
+
+    def test_wait_log_handles_shrink_to_zero(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "log.txt"
+            path.write_text("y" * 200)
+            runner = ProcessRunner(Path(raw) / "pointer.json")
+            thread, outcome = self._wait_log_in_thread(runner, path, "NEW")
+            time.sleep(0.3)
+            path.write_text("NEW")
+            thread.join(timeout=3)
+            self.assertFalse(
+                thread.is_alive(), "wait_log did not return after shrink-to-zero"
+            )
+            self.assertNotIn(
+                "error", outcome, f"wait_log raised: {outcome.get('error')!r}"
+            )
+            self.assertTrue(outcome.get("ok"), "wait_log did not find needle")
+
     def test_tail(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             path = Path(raw) / "log.txt"
@@ -188,6 +222,26 @@ class ProcessTests(unittest.TestCase):
             runner = ProcessRunner(pointer)
             runner.write_pointer({"a": 1})
             self.assertEqual(json.loads(pointer.read_text()), {"a": 1})
+
+    def _wait_log_in_thread(
+        self,
+        runner: ProcessRunner,
+        path: Path,
+        needle: str,
+        timeout: float = 2.0,
+    ) -> tuple[threading.Thread, dict[str, object]]:
+        outcome: dict[str, object] = {}
+
+        def wait() -> None:
+            try:
+                runner.wait_log(path, needle, timeout=timeout)
+                outcome["ok"] = True
+            except BaseException as exc:
+                outcome["error"] = exc
+
+        thread = threading.Thread(target=wait, daemon=True)
+        thread.start()
+        return thread, outcome
 
 
 if __name__ == "__main__":
