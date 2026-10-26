@@ -51,6 +51,9 @@ class ProcessHandle:
             return True
         return True
 
+    def group_alive(self) -> bool:
+        return self._group_alive()
+
     def signal_group(self, sig: int) -> None:
         if self.pgid <= 0:
             return
@@ -60,22 +63,22 @@ class ProcessHandle:
             pass
 
     def stop(self, timeout: float = 5.0) -> None:
+        deadline = time.monotonic() + max(0.0, timeout)
         self.signal_group(signal.SIGTERM)
-        deadline = time.monotonic() + timeout
         while self._group_alive() and time.monotonic() < deadline:
             if self._popen is not None:
                 self._popen.poll()
             time.sleep(0.05)
         if self._group_alive():
             self.signal_group(signal.SIGKILL)
-            kill_deadline = time.monotonic() + 5.0
-            while self._group_alive() and time.monotonic() < kill_deadline:
+            while self._group_alive() and time.monotonic() < deadline:
                 if self._popen is not None:
                     self._popen.poll()
                 time.sleep(0.05)
         if self._popen is not None:
+            remaining = max(0.0, deadline - time.monotonic())
             try:
-                self._popen.wait(timeout=5)
+                self._popen.wait(timeout=remaining)
             except subprocess.TimeoutExpired:
                 pass
         self._close()

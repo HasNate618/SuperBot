@@ -8,7 +8,8 @@ import time
 import unittest
 from pathlib import Path
 
-from vrbot.preview import PreviewCapture, atomic_replace, crop_filter, newest_png
+from vrbot.config import load_config
+from vrbot.preview import PreviewCapture, _smoke_http, atomic_replace, crop_filter, newest_png
 
 
 class FakeRun:
@@ -281,6 +282,26 @@ class PreviewTests(unittest.TestCase):
             capture = self.make_capture(base, DirectoryOutputRun())
             self.assertFalse(capture.capture_once())
             self.assertEqual(capture.status()["errors"], 1)
+
+
+class SmokeHttpTests(unittest.TestCase):
+    def test_smoke_http_serves_state_and_frame(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            latest = Path(raw) / "latest.jpg"
+            latest.write_bytes(b"JPEGDATA")
+            cfg = load_config(None, env={})
+            self.assertTrue(_smoke_http(cfg, latest))
+            self.assertFalse(
+                any(
+                    thread.name == "vrbot-smoke-http" and thread.is_alive()
+                    for thread in threading.enumerate()
+                )
+            )
+
+    def test_smoke_http_missing_frame_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            cfg = load_config(None, env={})
+            self.assertFalse(_smoke_http(cfg, Path(raw) / "latest.jpg"))
 
 
 if __name__ == "__main__":

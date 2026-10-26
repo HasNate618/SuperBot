@@ -108,11 +108,11 @@ class SessionManager:
     LOG_FILES = {
         "monado": "monado.log",
         "weston": "weston.log",
-        "weston-stdout": "weston-stdout.log",
         "steam": "steam.log",
         "pose": "pose.log",
         "session": "session.log",
     }
+    INTERNAL_LOG_FILES = {**LOG_FILES, "weston-stdout": "weston-stdout.log"}
 
     def __init__(
         self,
@@ -133,6 +133,7 @@ class SessionManager:
         self._session_dir: Path | None = None
         self._started_at: datetime | None = None
         self._last_error: str | None = None
+        self._survivors: list[str] = []
         self._mode = "hold"
         self._handles: dict[str, ProcessHandle] = {}
         self._game_pids: list[int] = []
@@ -196,6 +197,7 @@ class SessionManager:
             self._socket_name = None
             self._state = State.STARTING
             self._last_error = None
+            self._survivors = []
             self._stop_event.clear()
             self._idle.clear()
         try:
@@ -282,6 +284,7 @@ class SessionManager:
             started_at = self._started_at
             mode = self._mode
             last_error = self._last_error
+            survivors = list(self._survivors)
             handles = dict(self._handles)
             display = self._display
             preview = self._preview
@@ -337,6 +340,7 @@ class SessionManager:
             "openxr_client": openxr_client,
             "preview": preview_status,
             "last_error": last_error,
+            "survivors": survivors,
             "logs": logs,
             "session_dir": str(session_dir) if session_dir is not None else None,
             "player_log": str(player_log),
@@ -414,6 +418,12 @@ class SessionManager:
         if self._startup_deadline is not None and time.monotonic() > self._startup_deadline:
             raise StartupError("startup timeout exceeded")
 
+    def _startup_timeout(self, configured: float) -> float:
+        if self._startup_deadline is None:
+            return configured
+        remaining = self._startup_deadline - time.monotonic()
+        return max(0.1, min(configured, remaining))
+
     def _sleep_abort(self, seconds: float) -> None:
         deadline = time.monotonic() + max(0.0, seconds)
         while True:
@@ -437,10 +447,10 @@ class SessionManager:
         return env
 
     def _log(self, name: str) -> Path:
-        path = self.log_path(name)
-        if path is None:
+        filename = self.INTERNAL_LOG_FILES.get(name)
+        if filename is None or self._session_dir is None:
             raise StartupError("no active session directory")
-        return path
+        return self._session_dir / filename
 
     def _session_log(self, message: str) -> None:
         if self._session_dir is None:
@@ -525,7 +535,7 @@ class SessionManager:
         self.runner.wait_port(
             "127.0.0.1",
             4242,
-            self.cfg.timeouts.monado_startup_sec,
+            self._startup_timeout(self.cfg.timeouts.monado_startup_sec),
             self._stop_event,
         )
 
@@ -548,7 +558,7 @@ class SessionManager:
         self._wait_weston_display(handle, weston_log)
 
     def _wait_weston_display(self, handle: ProcessHandle, log_path: Path) -> None:
-        deadline = time.monotonic() + self.cfg.timeouts.weston_startup_sec
+        deadline = time.monotonic() + self._startup_timeout(self.cfg.timeouts.weston_startup_sec)
         pattern = re.compile(r"xserver listening on display (:\d+)")
         while time.monotonic() < deadline:
             self._abort_if_stopped()
@@ -597,7 +607,12 @@ class SessionManager:
             str(self._session_dir / f"c0_{mode}.csv"),
         ]
         self._start("pose", argv, self._base_env(), Path.cwd(), pose_log)
-        self.runner.wait_log(pose_log, "handshake ok", self.cfg.timeouts.pose_handshake_sec, self._stop_event)
+        self.runner.wait_log(
+            pose_log,
+            "handshake ok",
+            self._startup_timeout(self.cfg.timeouts.pose_handshake_sec),
+            self._stop_event,
+        )
 
     def _start_steam(self) -> None:
         argv = [self.cfg.paths.steam_bin, *self.cfg.launch.steam_extra_args]
@@ -607,13 +622,17 @@ class SessionManager:
     def _wait_steam_ready(self) -> None:
         handle = self._handles["steam"]
         started = time.monotonic()
-        deadline = started + self.cfg.launch.steam_ready_timeout_sec
+        deadline = started + self._startup_timeout(self.cfg.launch.steam_ready_timeout_sec)
         failures = 0
         while time.monotonic() < deadline:
             self._abort_if_stopped()
             if not handle.alive():
                 raise StartupError("Steam exited during startup")
-            graph = self.runner.debug_scene_graph(self.cfg.paths.weston_debug_bin, self._steam_env())
+            graph = self.runner.debug_scene_graph(
+                self.cfg.paths.weston_debug_bin,
+                self._steam_env(),
+                timeout=self._startup_timeout(5.0),
+            )
             if graph is None:
                 failures += 1
                 if failures >= 3:
@@ -626,7 +645,7 @@ class SessionManager:
         self._session_log("Steam window not found; continuing after settle period")
         remaining = self.cfg.launch.steam_settle_sec - (time.monotonic() - started)
         if remaining > 0:
-            self._sleep_abort(remaining)
+            self._sleep_abort(self._startup_timeout(remaining))
         if not handle.alive():
             raise StartupError("Steam exited during startup")
 
@@ -635,13 +654,13 @@ class SessionManager:
             [self.cfg.paths.steam_bin, f"steam://rungameid/{self.cfg.launch.shortcut_id}"],
             env=self._steam_env(),
             cwd=Path.home(),
-            timeout=15,
+            timeout=self._startup_timeout(15),
         )
         if result.returncode != 0:
             raise StartupError(f"steam rungameid failed: {result.stderr.strip()}")
         pids = self.runner.wait_pids(
             self._game_argv0(),
-            self.cfg.launch.game_process_timeout_sec,
+            self._startup_timeout(self.cfg.launch.game_process_timeout_sec),
             self._stop_event,
         )
         self._game_pids = pids
@@ -653,23 +672,44 @@ class SessionManager:
         self.runner.wait_log(
             self._log("monado"),
             "application_name: 'Unity Application'",
-            self.cfg.launch.openxr_client_timeout_sec,
+            self._startup_timeout(self.cfg.launch.openxr_client_timeout_sec),
             self._stop_event,
         )
 
+    def _step(self, name: str, log_name: str, action: Callable[[], None], fallback_log_name: str | None = None) -> None:
+        try:
+            action()
+        except Aborted:
+            raise
+        except Exception as exc:
+            tail = self._step_tail(log_name)
+            if not tail and fallback_log_name is not None:
+                tail = self._step_tail(fallback_log_name)
+            message = f"{name} failed: {exc}"
+            if tail:
+                message += f"\n--- {log_name} tail ---\n{tail}"
+            raise StartupError(message) from exc
+
+    def _step_tail(self, name: str) -> str:
+        try:
+            path = self._log(name)
+        except StartupError:
+            return ""
+        return self.runner.tail(path, 200)
+
     def _startup(self) -> None:
         self._abort_if_stopped()
-        self._start_monado()
+        self._step("monado", "monado", self._start_monado)
         self._abort_if_stopped()
-        self._start_weston()
+        self._step("weston", "weston", self._start_weston, "weston-stdout")
         self._abort_if_stopped()
-        self._start_preview()
+        self._step("preview", "session", self._start_preview)
         self._abort_if_stopped()
-        self._start_pose(self._mode)
+        self._step("pose", "pose", lambda: self._start_pose(self._mode))
         self._abort_if_stopped()
-        self._start_steam()
+        self._step("steam", "steam", self._start_steam)
         self._abort_if_stopped()
-        self._launch_game()
+        self._step("game", "monado", self._launch_game)
         self._abort_if_stopped()
 
     def _start_worker(self) -> None:
@@ -768,7 +808,8 @@ class SessionManager:
         def budget(cap: float) -> float:
             return max(0.1, min(cap, deadline - time.monotonic()))
 
-        self._stop_handle("pose", budget(2))
+        stopped: dict[str, ProcessHandle] = {}
+        stopped["pose"] = self._stop_handle("pose", budget(2))
         if "steam" in self._handles:
             try:
                 self.runner.run(
@@ -779,22 +820,42 @@ class SessionManager:
                 )
             except Exception:
                 pass
-        self._stop_handle("steam", budget(5))
+        stopped["steam"] = self._stop_handle("steam", budget(5))
         for pid in list(self._game_pids):
             self.runner.kill_pid(pid)
         self._game_pids = []
         for pid in self.runner.pids_by_argv0(self._game_argv0()):
             self.runner.kill_pid(pid)
-        self._stop_handle("weston", budget(5))
-        monado = self._stop_handle("monado", budget(5))
+        stopped["weston"] = self._stop_handle("weston", budget(5))
+        stopped["monado"] = self._stop_handle("monado", budget(5))
+        monado = stopped["monado"]
         if monado is None or not monado.alive():
             self.runner.remove_stale_socket(self.runtime_dir / "monado_comp_ipc")
         if self._preview is not None:
             try:
-                self._preview.stop(5)
+                self._preview.stop(budget(5))
             except Exception:
                 pass
             self._preview = None
+        survivors: list[str] = []
+        try:
+            if self.runner.pids_by_argv0(self._game_argv0()):
+                survivors.append("game")
+        except Exception:
+            pass
+        for name in ("pose", "steam", "weston", "monado"):
+            handle = stopped.get(name)
+            if handle is None:
+                continue
+            try:
+                if handle.alive() or handle.group_alive():
+                    survivors.append(name)
+            except Exception:
+                pass
+        with self._lock:
+            self._survivors = survivors
+        if survivors:
+            self._session_log("warning: surviving processes: " + ", ".join(survivors))
         self.runner.remove_pointer()
         self._pointer = {}
         self._handles.clear()

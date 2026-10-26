@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -11,6 +12,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
+from urllib.request import urlopen
 
 from .config import Config
 
@@ -226,6 +228,77 @@ class PreviewCapture:
             self.log(f"preview: {message}")
 
 
+class _SmokeManager:
+    def __init__(self, latest: Path, cfg: Config) -> None:
+        self._latest = latest
+        self._cfg = cfg
+
+    def snapshot(self) -> dict:
+        return {
+            "state": "running",
+            "session_id": "preview-smoke",
+            "started_at": None,
+            "mode": "hold",
+            "processes": {},
+            "openxr_client": None,
+            "preview": {
+                "width": self._cfg.preview.width,
+                "height": self._cfg.preview.height - self._cfg.preview.panel_height,
+                "fps_target": self._cfg.preview.fps,
+                "fps_actual": 0,
+                "last_frame_at": None,
+                "errors": 0,
+                "frames": 0,
+            },
+            "last_error": None,
+            "survivors": [],
+            "logs": {},
+        }
+
+    def preview_path(self) -> Path:
+        return self._latest
+
+    def state_value(self) -> str:
+        return "running"
+
+    def log_path(self, name: str) -> None:
+        return None
+
+
+def _smoke_http(cfg: Config, latest: Path) -> bool:
+    from .dashboard import DashboardServer
+
+    latest = Path(latest)
+    if not latest.exists():
+        return False
+    manager = _SmokeManager(latest, cfg)
+    static_dir = Path(__file__).resolve().parent / "static"
+    server = DashboardServer(("127.0.0.1", 0), manager, cfg, static_dir)
+    thread = threading.Thread(target=server.serve_forever, name="vrbot-smoke-http", daemon=True)
+    thread.start()
+    try:
+        host, port = server.server_address[:2]
+        base = f"http://{host}:{port}"
+        with urlopen(f"{base}/api/state", timeout=2) as response:
+            if response.status != 200:
+                return False
+            payload = json.loads(response.read())
+        if not isinstance(payload, dict) or payload.get("state") != "running":
+            return False
+        with urlopen(f"{base}/api/frame.jpg", timeout=2) as response:
+            if response.status != 200:
+                return False
+            if response.read() != latest.read_bytes():
+                return False
+        return True
+    except Exception:
+        return False
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(2)
+
+
 def _kill_group(pid: int) -> None:
     try:
         os.killpg(os.getpgid(pid), signal.SIGTERM)
@@ -339,6 +412,9 @@ def preview_smoke(cfg: Config) -> int:
                         ok = float(result.stdout.strip()) > 0.01
                     except ValueError:
                         ok = False
+            if ok and not _smoke_http(cfg, latest):
+                print("preview smoke failed: /api/state or /api/frame.jpg check failed")
+                return 1
             print("preview smoke ok" if ok else "preview smoke failed")
             return 0 if ok else 1
     finally:

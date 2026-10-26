@@ -14,10 +14,12 @@ from unittest.mock import patch
 
 from vrbot.config import load_config
 from vrbot.dashboard import DashboardHandler, DashboardServer
-from vrbot.orchestrator import ConflictError, MODES, PreflightError
+from vrbot.orchestrator import ConflictError, MODES, PreflightError, SessionManager
 
 
 class FakeManager:
+    LOG_FILES = SessionManager.LOG_FILES
+
     def __init__(self, base: Path) -> None:
         self.base = base
         self.state = "stopped"
@@ -64,7 +66,10 @@ class FakeManager:
         return self.state
 
     def log_path(self, name: str) -> Path | None:
-        return self.logs.get(name)
+        filename = self.LOG_FILES.get(name)
+        if filename is None:
+            return None
+        return self.base / filename
 
     def preview_path(self) -> Path:
         return self.latest
@@ -211,6 +216,12 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(body, b"hello monado")
         status, _ = self.request("GET", "/api/logs/nope")
         self.assertEqual(status, 404)
+
+    def test_logs_weston_stdout_is_not_public(self) -> None:
+        (self.base / "weston-stdout.log").write_text("internal weston stdout")
+        status, body = self.request("GET", "/api/logs/weston-stdout")
+        self.assertEqual(status, 404)
+        self.assertNotIn(b"internal weston stdout", body)
 
     def test_logs_reject_traversal(self) -> None:
         self.manager.logs["monado"].write_text("secret")

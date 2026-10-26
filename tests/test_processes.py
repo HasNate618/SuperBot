@@ -133,6 +133,32 @@ class ProcessTests(unittest.TestCase):
                     pass
                 handle.stop(timeout=1)
 
+    def test_stop_with_short_timeout_returns_promptly(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            base = Path(raw)
+            runner = ProcessRunner(base / "pointer.json")
+            handle = runner.start(
+                "stubborn-timed",
+                ["/bin/sh", "-c", "trap '' TERM; sleep 30 & wait"],
+                os.environ.copy(),
+                base,
+                base / "stubborn-timed.log",
+            )
+            try:
+                with mock.patch.object(handle, "_group_alive", return_value=True):
+                    started = time.monotonic()
+                    handle.stop(timeout=0.2)
+                    elapsed = time.monotonic() - started
+                self.assertLess(elapsed, 1.5)
+                with self.assertRaises(ProcessLookupError):
+                    os.killpg(handle.pgid, 0)
+            finally:
+                try:
+                    os.killpg(handle.pgid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                handle.stop(timeout=1)
+
     def test_wait_port_aborts_when_event_set(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             runner = ProcessRunner(Path(raw) / "pointer.json")

@@ -6,6 +6,7 @@ import os
 import subprocess
 import tempfile
 import threading
+import time
 import unittest
 from dataclasses import replace
 from pathlib import Path
@@ -28,9 +29,13 @@ class FakeHandle:
         self.pgid = pid
         self.log_path = Path("/tmp") / f"{name}.log"
         self._alive = True
+        self._group_alive = False
 
     def alive(self) -> bool:
         return self._alive
+
+    def group_alive(self) -> bool:
+        return self._group_alive
 
     def stop(self, timeout: float = 5.0) -> None:
         self._alive = False
@@ -81,6 +86,13 @@ class FakeRunner:
     def start(self, name, argv, env, cwd, log_path, stderr_path=None):
         if self.fail_at == f"start:{name}":
             raise RuntimeError(f"{name} failed to start")
+        log_path = Path(log_path)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.touch()
+        if stderr_path is not None:
+            stderr_path = Path(stderr_path)
+            stderr_path.parent.mkdir(parents=True, exist_ok=True)
+            stderr_path.touch()
         if name == "weston":
             for arg in argv:
                 text = str(arg)
@@ -214,6 +226,12 @@ class OrchestratorTests(unittest.TestCase):
         snapshot = self.manager.snapshot()
         self.assertIsNotNone(snapshot["session_id"])
         self.assertIsNotNone(snapshot["started_at"])
+
+    def test_weston_stdout_log_is_written_but_not_public(self) -> None:
+        self.start()
+        snapshot = self.manager.snapshot()
+        self.assertTrue((Path(snapshot["session_dir"]) / "weston-stdout.log").exists())
+        self.assertIsNone(self.manager.log_path("weston-stdout"))
 
     def test_snapshot_reports_health(self) -> None:
         self.start()
@@ -516,6 +534,68 @@ class OrchestratorTests(unittest.TestCase):
         self.assertIsNone(self.runner.pointer)
         self.assertTrue(all(not handle.alive() for handle in self.runner.handles.values()))
 
+    def test_startup_failure_includes_step_and_log_tail(self) -> None:
+        original_wait_log = self.runner.wait_log
+
+        def failing_wait_log(path, needle, timeout, abort=None):
+            if needle == "handshake ok":
+                Path(path).write_text("pose handshake detail\n")
+                raise RuntimeError("pose handshake timeout")
+            return original_wait_log(path, needle, timeout, abort)
+
+        with (
+            patch.object(self.runner, "wait_log", side_effect=failing_wait_log),
+            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+        ):
+            self.manager.start()
+            self.assertTrue(self.manager.wait_idle(2))
+        snapshot = self.manager.snapshot()
+        self.assertEqual(snapshot["state"], "failed")
+        self.assertIn("pose failed", snapshot["last_error"])
+        self.assertIn("pose handshake detail", snapshot["last_error"])
+
+    def test_startup_failure_uses_weston_stdout_fallback_tail(self) -> None:
+        def failing_start_weston() -> None:
+            self.manager._log("weston").write_text("")
+            self.manager._log("weston-stdout").write_text("weston stdout detail\n")
+            raise RuntimeError("weston display timeout")
+
+        with (
+            patch.object(self.manager, "_start_weston", side_effect=failing_start_weston),
+            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+        ):
+            self.manager.start()
+            self.assertTrue(self.manager.wait_idle(2))
+        last_error = self.manager.snapshot()["last_error"]
+        self.assertIn("weston failed", last_error)
+        self.assertIn("weston stdout detail", last_error)
+
+    def test_startup_timeout_bounds_slow_step(self) -> None:
+        self.manager.cfg = replace(
+            self.cfg,
+            launch=replace(self.cfg.launch, startup_timeout_sec=0.25),
+            timeouts=replace(self.cfg.timeouts, monado_startup_sec=2),
+        )
+
+        def slow_wait_port(host, port, timeout, abort=None) -> None:
+            deadline = time.monotonic() + timeout
+            while time.monotonic() < deadline:
+                time.sleep(0.01)
+            raise TimeoutError("monado port timeout")
+
+        started = time.monotonic()
+        with (
+            patch.object(self.runner, "wait_port", side_effect=slow_wait_port),
+            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+        ):
+            self.manager.start()
+            self.assertTrue(self.manager.wait_idle(5))
+        elapsed = time.monotonic() - started
+        snapshot = self.manager.snapshot()
+        self.assertEqual(snapshot["state"], "failed")
+        self.assertIn("monado failed", snapshot["last_error"])
+        self.assertLess(elapsed, 1.0)
+
     def test_concurrent_start_is_rejected(self) -> None:
         self.runner.block_wait = threading.Event()
         with patch("vrbot.orchestrator.missing_requirements", return_value=[]):
@@ -533,6 +613,32 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(self.manager.state_value(), "stopped")
         self.assertIsNone(self.runner.pointer)
         self.assertTrue(self.preview.stopped)
+
+    def test_clean_stop_reports_no_survivors(self) -> None:
+        self.start()
+        self.manager.stop()
+        self.assertTrue(self.manager.wait_idle(2))
+        snapshot = self.manager.snapshot()
+        self.assertEqual(snapshot["state"], "stopped")
+        self.assertEqual(snapshot["survivors"], [])
+        session_log = Path(snapshot["session_dir"]) / "session.log"
+        self.assertNotIn("surviving processes", session_log.read_text())
+
+    def test_stop_reports_surviving_process_group(self) -> None:
+        self.start()
+        self.runner.handles["steam"]._group_alive = True
+        self.manager.stop()
+        self.assertTrue(self.manager.wait_idle(2))
+        snapshot = self.manager.snapshot()
+        self.assertEqual(snapshot["state"], "stopped")
+        self.assertIn("steam", snapshot["survivors"])
+        session_log = Path(snapshot["session_dir"]) / "session.log"
+        self.assertIn("warning: surviving processes: steam", session_log.read_text())
+
+    def test_start_clears_previous_survivors(self) -> None:
+        self.manager._survivors = ["steam"]
+        self.start()
+        self.assertEqual(self.manager.snapshot()["survivors"], [])
 
     def test_stop_after_final_startup_checkpoint_ends_stopped(self) -> None:
         reached = threading.Event()
@@ -593,6 +699,27 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(len(cleanup_calls), 1)
         self.assertFalse(self.preview.started)
         self.assertIsNone(self.runner.pointer)
+
+    def test_stop_during_starting_has_no_failure_tail(self) -> None:
+        entered = threading.Event()
+        release = threading.Event()
+
+        def blocking_wait_port(host, port, timeout, abort=None) -> None:
+            entered.set()
+            release.wait(2)
+
+        with (
+            patch.object(self.runner, "wait_port", side_effect=blocking_wait_port),
+            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+        ):
+            self.manager.start()
+            self.assertTrue(entered.wait(2))
+            self.manager.stop()
+            release.set()
+            self.assertTrue(self.manager.wait_idle(2))
+        snapshot = self.manager.snapshot()
+        self.assertEqual(snapshot["state"], "stopped")
+        self.assertIsNone(snapshot["last_error"])
 
     def test_stop_before_start_worker_cleans_up_once(self) -> None:
         allow = threading.Event()
