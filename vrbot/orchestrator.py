@@ -207,7 +207,7 @@ class SessionManager:
             self._stop_event.clear()
             self._idle.clear()
         try:
-            self._preflight(generation)
+            session_dir = self._preflight(generation)
         except Exception as exc:
             with self._lifecycle_lock:
                 with self._lock:
@@ -242,6 +242,7 @@ class SessionManager:
                     if not current:
                         return
                     if not stopped:
+                        self._discard_attempt(generation, session_dir)
                         if isinstance(exc, ConflictError):
                             raise
                         if isinstance(exc, PreflightError):
@@ -253,8 +254,8 @@ class SessionManager:
                 return
         with self._lock:
             current = generation == self._start_generation
-            session_dir = self._session_dir
         if not current:
+            self._discard_attempt(generation, session_dir)
             return
         self._thread = threading.Thread(
             target=self._start_worker,
@@ -269,8 +270,13 @@ class SessionManager:
             if self._state == State.STOPPED:
                 return
             if self._state == State.FAILED:
-                self.runner.remove_pointer()
+                session_dir = self._session_dir
+                try:
+                    self.runner.remove_pointer()
+                except Exception as exc:
+                    self._attempt_log(session_dir, f"pointer removal failed: {exc}")
                 self._pointer = {}
+                self._last_error = None
                 self._set_terminal_state(State.STOPPED)
                 return
             if self._state == State.STOPPING:
@@ -546,10 +552,10 @@ class SessionManager:
         if not self._attempt_active(generation):
             raise ConflictError("start attempt superseded")
 
-    def _preflight(self, generation: int) -> None:
+    def _preflight(self, generation: int) -> Path | None:
         with self._lock:
             if not self._attempt_active(generation):
-                return
+                return None
 
         pointer = self.runner.read_pointer()
         stale: list[str] = []
@@ -591,6 +597,7 @@ class SessionManager:
             self._session_dir.mkdir(parents=True, exist_ok=False)
             self._pointer = {"session": str(self._session_dir), "processes": {}}
             self.runner.write_pointer(self._pointer)
+            return self._session_dir
 
     def _start(self, name: str, argv, env, cwd: Path, log_path: Path, stderr_path: Path | None = None):
         handle = self.runner.start(name, argv, env, cwd, log_path, stderr_path)

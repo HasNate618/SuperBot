@@ -427,10 +427,10 @@ class OrchestratorTests(unittest.TestCase):
         release = threading.Event()
         original_preflight = self.manager._preflight
 
-        def blocking_preflight(gen) -> None:
+        def blocking_preflight(gen):
             entered.set()
             self.assertTrue(release.wait(2))
-            original_preflight(gen)
+            return original_preflight(gen)
 
         with (
             patch.object(self.manager, "_preflight", side_effect=blocking_preflight),
@@ -879,10 +879,11 @@ class OrchestratorTests(unittest.TestCase):
         release = threading.Event()
         original_preflight = self.manager._preflight
 
-        def blocking_preflight(gen) -> None:
-            original_preflight(gen)
+        def blocking_preflight(gen):
+            session_dir = original_preflight(gen)
             entered.set()
             self.assertTrue(release.wait(2))
+            return session_dir
 
         with (
             patch.object(self.manager, "_preflight", side_effect=blocking_preflight),
@@ -1036,7 +1037,7 @@ class OrchestratorTests(unittest.TestCase):
         calls = 0
         calls_lock = threading.Lock()
 
-        def blocking_first_preflight(gen) -> None:
+        def blocking_first_preflight(gen):
             nonlocal calls
             with calls_lock:
                 calls += 1
@@ -1044,7 +1045,7 @@ class OrchestratorTests(unittest.TestCase):
             if first:
                 entered.set()
                 self.assertTrue(release.wait(5))
-            original_preflight(gen)
+            return original_preflight(gen)
 
         with (
             patch.object(
@@ -1086,12 +1087,12 @@ class OrchestratorTests(unittest.TestCase):
         original_preflight = self.manager._preflight
         original_discard = self.manager._discard_attempt
 
-        def failing_preflight(gen) -> None:
+        def failing_preflight(gen):
             if gen == 1:
                 entered.set()
                 self.assertTrue(release.wait(5))
                 raise PreflightError("late preflight failure")
-            original_preflight(gen)
+            return original_preflight(gen)
 
         def delayed_discard(gen, session_dir) -> None:
             if gen == 1 and not discard_entered.is_set():
@@ -1321,11 +1322,11 @@ class OrchestratorTests(unittest.TestCase):
         original_preflight = self.manager._preflight
         original_idle_set = self.manager._idle.set
 
-        def blocking_second_preflight(gen) -> None:
+        def blocking_second_preflight(gen):
             if gen == 2:
                 entered_b.set()
                 self.assertTrue(release_b.wait(5))
-            original_preflight(gen)
+            return original_preflight(gen)
 
         def guarded_idle_set() -> None:
             if not self.manager._lock._is_owned():
@@ -1415,10 +1416,10 @@ class OrchestratorTests(unittest.TestCase):
         original_start = self.runner.start
         starts: list[str] = []
 
-        def blocking_preflight(gen) -> None:
+        def blocking_preflight(gen):
             entered.set()
             self.assertTrue(release_preflight.wait(5))
-            original_preflight(gen)
+            return original_preflight(gen)
 
         def delayed_first_worker(gen, session_dir) -> None:
             if gen == 1:
@@ -1515,6 +1516,152 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(snapshot["state"], "stopped")
         self.assertIsNone(snapshot["last_error"])
         self.assertIsNone(self.runner.pointer)
+
+    def test_stop_from_failed_clears_last_error(self) -> None:
+        self.runner.host_steam = True
+        with patch("vrbot.orchestrator.missing_requirements", return_value=[]):
+            with self.assertRaises(PreflightError):
+                self.manager.start()
+        self.assertEqual(self.manager.snapshot()["state"], "failed")
+        self.assertIsNotNone(self.manager.snapshot()["last_error"])
+
+        self.manager.stop()
+
+        snapshot = self.manager.snapshot()
+        self.assertEqual(snapshot["state"], "stopped")
+        self.assertIsNone(snapshot["last_error"])
+
+    def test_stop_from_failed_logs_pointer_removal_failure(self) -> None:
+        self.runner.fail_at = "wait_port"
+        with patch("vrbot.orchestrator.missing_requirements", return_value=[]):
+            self.manager.start()
+            self.assertTrue(self.manager.wait_idle(2))
+        snapshot = self.manager.snapshot()
+        self.assertEqual(snapshot["state"], "failed")
+        self.assertIsNotNone(snapshot["last_error"])
+        session_dir = Path(snapshot["session_dir"])
+
+        with patch.object(
+            self.runner, "remove_pointer", side_effect=RuntimeError("pointer boom")
+        ):
+            self.manager.stop()
+
+        snapshot = self.manager.snapshot()
+        self.assertEqual(snapshot["state"], "stopped")
+        self.assertIsNone(snapshot["last_error"])
+        self.assertEqual(self.manager._pointer, {})
+        text = (session_dir / "session.log").read_text()
+        self.assertIn("pointer removal failed: pointer boom", text)
+
+    def test_superseded_successful_preflight_discards_own_directory(self) -> None:
+        entered = threading.Event()
+        release = threading.Event()
+        a_dirs: list[Path | None] = []
+        original_preflight = self.manager._preflight
+        calls = 0
+        calls_lock = threading.Lock()
+
+        def pausing_preflight(gen):
+            nonlocal calls
+            with calls_lock:
+                calls += 1
+                call = calls
+            session_dir = original_preflight(gen)
+            if call == 1:
+                a_dirs.append(session_dir)
+                entered.set()
+                self.assertTrue(release.wait(5))
+            return session_dir
+
+        with (
+            patch.object(self.manager, "_preflight", side_effect=pausing_preflight),
+            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+        ):
+            thread_a = threading.Thread(target=self.manager.start, daemon=True)
+            thread_a.start()
+            self.assertTrue(entered.wait(2))
+            self.assertTrue(a_dirs)
+            a_dir = a_dirs[0]
+            self.assertIsNotNone(a_dir)
+            assert a_dir is not None
+            self.assertTrue(a_dir.exists())
+
+            self.manager.stop()
+            self.assertTrue(self.manager.wait_idle(2))
+            self.manager.start()
+            self.assertTrue(self.manager.wait_idle(2))
+            self.assertEqual(self.manager.state_value(), "running")
+            b_dir = Path(self.manager.snapshot()["session_dir"])
+            pointer = self.runner.pointer
+            marker = b_dir / "marker.log"
+            marker.write_text("new session\n")
+
+            release.set()
+            thread_a.join(5)
+
+        self.assertFalse(thread_a.is_alive())
+        self.assertFalse(a_dir.exists())
+        self.assertTrue(b_dir.exists())
+        self.assertTrue(marker.exists())
+        self.assertEqual(self.runner.pointer, pointer)
+        self.assertEqual(self.manager.state_value(), "running")
+        self.assertEqual(self.manager.snapshot()["session_dir"], str(b_dir))
+
+    def test_preflight_pointer_write_failure_discards_directory(self) -> None:
+        with (
+            patch.object(
+                self.runner,
+                "write_pointer",
+                side_effect=RuntimeError("pointer write boom"),
+            ),
+            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+        ):
+            with self.assertRaises(PreflightError) as caught:
+                self.manager.start()
+
+        self.assertIn("pointer write boom", str(caught.exception))
+        snapshot = self.manager.snapshot()
+        self.assertEqual(snapshot["state"], "failed")
+        self.assertIn("pointer write boom", snapshot["last_error"])
+        self.assertIsNone(snapshot["session_dir"])
+        self.assertIsNone(self.manager._session_dir)
+        self.assertIsNone(self.runner.pointer)
+        session_root = Path(self.cfg.paths.session_root)
+        self.assertEqual(list(session_root.iterdir()) if session_root.exists() else [], [])
+
+    def test_stop_during_preflight_leaves_no_orphan_directories(self) -> None:
+        entered = threading.Event()
+        release = threading.Event()
+        original_preflight = self.manager._preflight
+
+        def blocking_preflight(gen):
+            session_dir = original_preflight(gen)
+            entered.set()
+            self.assertTrue(release.wait(5))
+            return session_dir
+
+        with (
+            patch.object(self.manager, "_preflight", side_effect=blocking_preflight),
+            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+        ):
+            thread = threading.Thread(target=self.manager.start, daemon=True)
+            thread.start()
+            self.assertTrue(entered.wait(2))
+            self.manager.stop()
+            self.assertTrue(self.manager.wait_idle(2))
+            release.set()
+            thread.join(5)
+            worker = self.manager._thread
+            self.assertIsNotNone(worker)
+            worker.join(2)
+
+        self.assertFalse(thread.is_alive())
+        snapshot = self.manager.snapshot()
+        self.assertEqual(snapshot["state"], "stopped")
+        self.assertIsNone(self.runner.pointer)
+        self.assertIsNone(snapshot["session_dir"])
+        session_root = Path(self.cfg.paths.session_root)
+        self.assertEqual(list(session_root.iterdir()) if session_root.exists() else [], [])
 
     def test_mode_switch_restarts_pose_only(self) -> None:
         self.start()
