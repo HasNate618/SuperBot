@@ -168,6 +168,11 @@ def _validate(cfg: Config) -> None:
         raise ConfigError("preview.fps must be positive")
     if not 1 <= cfg.preview.jpeg_quality <= 100:
         raise ConfigError("preview.jpeg_quality must be between 1 and 100")
+    host = cfg.dashboard.host.strip()
+    if not host:
+        raise ConfigError("dashboard.host must not be empty")
+    if host in {"0.0.0.0", "::", "[::]"}:
+        raise ConfigError("dashboard.host must be a specific address, not a wildcard")
     if not 0 <= cfg.dashboard.port <= 65535:
         raise ConfigError("dashboard.port must be between 0 and 65535")
     for field_name in (
@@ -191,6 +196,10 @@ def _validate(cfg: Config) -> None:
             raise ConfigError(f"timeouts.{field_name} must be positive")
 
 
+def validate_config(cfg: Config) -> None:
+    _validate(cfg)
+
+
 def load_config(
     path: Path | str | None = None,
     env: Mapping[str, str] | None = None,
@@ -206,7 +215,7 @@ def load_config(
         with candidate.open("rb") as handle:
             try:
                 file_data = tomllib.load(handle)
-            except tomllib.TOMLDecodeError as exc:
+            except (tomllib.TOMLDecodeError, UnicodeDecodeError) as exc:
                 raise ConfigError(f"invalid TOML in {candidate}: {exc}") from exc
 
     if base_dir is not None:

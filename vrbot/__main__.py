@@ -6,7 +6,7 @@ import sys
 from dataclasses import replace
 from pathlib import Path
 
-from .config import ConfigError, load_config
+from .config import ConfigError, load_config, validate_config
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -33,14 +33,24 @@ def main(argv: list[str] | None = None) -> int:
             ),
         )
 
-    if args.preview_smoke:
-        from .preview import preview_smoke
+    try:
+        validate_config(cfg)
+    except ConfigError as exc:
+        print(f"vrbot: {exc}", file=sys.stderr)
+        return 2
 
-        return preview_smoke(cfg)
+    try:
+        if args.preview_smoke:
+            from .preview import preview_smoke
 
-    from .dashboard import run_dashboard
+            return preview_smoke(cfg)
 
-    run_dashboard(cfg)
+        from .dashboard import run_dashboard
+
+        run_dashboard(cfg)
+    except OSError as exc:
+        print(f"vrbot: {exc}", file=sys.stderr)
+        return 2
     return 0
 
 

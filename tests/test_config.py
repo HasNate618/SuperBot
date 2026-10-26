@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
-from vrbot.config import ConfigError, load_config, missing_requirements
+from vrbot.config import ConfigError, load_config, missing_requirements, validate_config
 
 
 class ConfigTests(unittest.TestCase):
@@ -83,6 +84,32 @@ class ConfigTests(unittest.TestCase):
             path.write_text("[preview]\npanel_height = 720\n")
             with self.assertRaises(ConfigError):
                 load_config(path, env={})
+
+    def test_empty_dashboard_host_is_rejected(self) -> None:
+        cfg = load_config(None, env={})
+        for host in ("", "   "):
+            with self.subTest(host=host):
+                with self.assertRaises(ConfigError):
+                    validate_config(
+                        replace(cfg, dashboard=replace(cfg.dashboard, host=host))
+                    )
+
+    def test_wildcard_dashboard_host_is_rejected(self) -> None:
+        cfg = load_config(None, env={})
+        for host in ("0.0.0.0", "::", "[::]"):
+            with self.subTest(host=host):
+                with self.assertRaises(ConfigError):
+                    validate_config(
+                        replace(cfg, dashboard=replace(cfg.dashboard, host=host))
+                    )
+
+    def test_specific_dashboard_host_is_accepted(self) -> None:
+        cfg = load_config(None, env={})
+        for host in ("127.0.0.1", "192.168.1.10"):
+            with self.subTest(host=host):
+                validate_config(
+                    replace(cfg, dashboard=replace(cfg.dashboard, host=host))
+                )
 
     def test_non_finite_floats_are_rejected(self) -> None:
         float_env_keys = [
