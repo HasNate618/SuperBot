@@ -23,6 +23,9 @@ spike/*/weights/
 .DS_Store
 .swp
 
+# Isolated worktrees
+.worktrees/
+
 # Per-tick run logs. Aggregated summaries (*_measurements.json, summary.json)
 # are committed instead; these regenerate by re-running the spike.
 spike/*/logs/*.csv
