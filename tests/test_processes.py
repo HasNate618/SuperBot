@@ -1,0 +1,81 @@
+from __future__ import annotations
+
+import json
+import os
+import socket
+import tempfile
+import unittest
+from pathlib import Path
+
+from vrbot.processes import ProcessRunner
+
+
+class ProcessTests(unittest.TestCase):
+    def test_pointer_roundtrip(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            pointer = Path(raw) / "current-session.json"
+            runner = ProcessRunner(pointer)
+            self.assertIsNone(runner.read_pointer())
+            runner.write_pointer({"session": "/tmp/x", "processes": {}})
+            self.assertEqual(runner.read_pointer()["session"], "/tmp/x")
+            runner.remove_pointer()
+            self.assertIsNone(runner.read_pointer())
+
+    def test_proc_scan_and_cmdline(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            proc_root = Path(raw)
+            pid_dir = proc_root / "123"
+            pid_dir.mkdir()
+            argv0 = r"Z:\home\nate\Games\SUPERHOT VR\SUPERHOT_VR.exe"
+            (pid_dir / "cmdline").write_bytes(argv0.encode() + b"\0")
+            runner = ProcessRunner(Path(raw) / "pointer.json", proc_root=proc_root)
+            self.assertEqual(runner.pids_by_argv0(argv0), [123])
+            self.assertEqual(runner.pid_cmdline(123)[0], argv0)
+            self.assertTrue(runner.pid_alive(123))
+            self.assertFalse(runner.pid_alive(999))
+
+    def test_remove_stale_socket(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "monado_comp_ipc"
+            sock = socket.socket(socket.AF_UNIX)
+            sock.bind(str(path))
+            sock.close()
+            runner = ProcessRunner(Path(raw) / "pointer.json")
+            self.assertTrue(runner.remove_stale_socket(path))
+            self.assertFalse(path.exists())
+            self.assertFalse(runner.remove_stale_socket(path))
+
+    def test_start_and_stop_process_group(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            base = Path(raw)
+            runner = ProcessRunner(base / "pointer.json")
+            handle = runner.start(
+                "sleeper",
+                ["/bin/sh", "-c", "sleep 30"],
+                os.environ.copy(),
+                base,
+                base / "sleeper.log",
+            )
+            self.assertTrue(handle.alive())
+            self.assertTrue((base / "sleeper.log").exists())
+            handle.stop(timeout=1)
+            self.assertFalse(handle.alive())
+
+    def test_tail(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "log.txt"
+            path.write_text("\n".join(str(i) for i in range(300)))
+            runner = ProcessRunner(Path(raw) / "pointer.json")
+            text = runner.tail(path, 5)
+            self.assertEqual(text.splitlines(), ["295", "296", "297", "298", "299"])
+
+    def test_pointer_is_json_on_disk(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            pointer = Path(raw) / "pointer.json"
+            runner = ProcessRunner(pointer)
+            runner.write_pointer({"a": 1})
+            self.assertEqual(json.loads(pointer.read_text()), {"a": 1})
+
+
+if __name__ == "__main__":
+    unittest.main()
