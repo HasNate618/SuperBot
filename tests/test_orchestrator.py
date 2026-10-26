@@ -512,6 +512,22 @@ class OrchestratorTests(unittest.TestCase):
         self.assertIsNone(self.runner.pointer)
         self.assertEqual(self.runner.handles, {})
 
+    def test_probe_failure_blocks_start(self) -> None:
+        with (
+            patch.object(
+                self.runner,
+                "process_name_running",
+                side_effect=OSError("pgrep missing"),
+            ),
+            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+        ):
+            with self.assertRaises(PreflightError) as raised:
+                self.manager.start()
+        self.assertIn("pgrep missing", str(raised.exception))
+        self.assertEqual(self.manager.state_value(), "failed")
+        self.assertIsNone(self.runner.pointer)
+        self.assertEqual(self.runner.handles, {})
+
     def test_stale_pointer_blocks_start(self) -> None:
         self.runner.alive_pids.add(999)
         self.runner.pointer = {
@@ -711,6 +727,145 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(self.manager._handles, {})
         self.assertEqual(self.manager._game_pids, [])
         self.assertEqual(snapshot["survivors"], [])
+
+    def test_cleanup_phase_failure_does_not_skip_remaining_phases(self) -> None:
+        self.start()
+        self.runner.handles["steam"]._group_alive = True
+        with patch.object(
+            self.runner,
+            "remove_stale_socket",
+            side_effect=RuntimeError("socket boom"),
+        ):
+            self.manager.stop()
+            self.assertTrue(self.manager.wait_idle(2))
+        snapshot = self.manager.snapshot()
+        self.assertEqual(snapshot["state"], "stopped")
+        self.assertTrue(self.preview.stopped)
+        self.assertIsNone(self.manager._preview)
+        self.assertTrue(all(not handle.alive() for handle in self.runner.handles.values()))
+        self.assertEqual(snapshot["survivors"], ["steam"])
+        session_log = Path(snapshot["session_dir"]) / "session.log"
+        text = session_log.read_text()
+        self.assertIn("socket boom", text)
+        self.assertIn("warning: surviving processes: steam", text)
+
+    def test_startup_failure_preserves_step_error_when_cleanup_fails(self) -> None:
+        original_wait_log = self.runner.wait_log
+
+        def failing_wait_log(path, needle, timeout, abort=None):
+            if needle == "handshake ok":
+                Path(path).write_text("pose handshake detail\n")
+                raise RuntimeError("pose handshake timeout")
+            return original_wait_log(path, needle, timeout, abort)
+
+        original_remove = self.runner.remove_stale_socket
+        calls = 0
+
+        def flaky_remove(path):
+            nonlocal calls
+            calls += 1
+            if calls >= 2:
+                raise RuntimeError("cleanup boom")
+            return original_remove(path)
+
+        with (
+            patch.object(self.runner, "wait_log", side_effect=failing_wait_log),
+            patch.object(self.runner, "remove_stale_socket", side_effect=flaky_remove),
+            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+        ):
+            self.manager.start()
+            self.assertTrue(self.manager.wait_idle(2))
+        snapshot = self.manager.snapshot()
+        self.assertEqual(snapshot["state"], "failed")
+        self.assertIn("pose failed", snapshot["last_error"])
+        self.assertIn("pose handshake detail", snapshot["last_error"])
+        self.assertNotIn("cleanup failed", snapshot["last_error"])
+        session_log = Path(snapshot["session_dir"]) / "session.log"
+        self.assertIn("cleanup boom", session_log.read_text())
+
+    def test_stop_cleanup_failure_without_prior_error_reports_and_logs(self) -> None:
+        self.start()
+        with patch.object(
+            self.runner,
+            "remove_stale_socket",
+            side_effect=RuntimeError("socket boom"),
+        ):
+            self.manager.stop()
+            self.assertTrue(self.manager.wait_idle(2))
+        snapshot = self.manager.snapshot()
+        self.assertEqual(snapshot["state"], "stopped")
+        self.assertIn("cleanup failed", snapshot["last_error"])
+        self.assertIn("socket boom", snapshot["last_error"])
+        session_log = Path(snapshot["session_dir"]) / "session.log"
+        self.assertIn("socket boom", session_log.read_text())
+
+    def test_stop_during_startup_clears_cleanup_error(self) -> None:
+        entered = threading.Event()
+        release = threading.Event()
+
+        def blocking_wait_port(host, port, timeout, abort=None) -> None:
+            entered.set()
+            release.wait(2)
+
+        original_remove = self.runner.remove_stale_socket
+        calls = 0
+
+        def flaky_remove(path):
+            nonlocal calls
+            calls += 1
+            if calls >= 2:
+                raise RuntimeError("cleanup boom")
+            return original_remove(path)
+
+        with (
+            patch.object(self.runner, "wait_port", side_effect=blocking_wait_port),
+            patch.object(self.runner, "remove_stale_socket", side_effect=flaky_remove),
+            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+        ):
+            self.manager.start()
+            self.assertTrue(entered.wait(2))
+            self.manager.stop()
+            release.set()
+            self.assertTrue(self.manager.wait_idle(2))
+        snapshot = self.manager.snapshot()
+        self.assertEqual(snapshot["state"], "stopped")
+        self.assertIsNone(snapshot["last_error"])
+        session_log = Path(snapshot["session_dir"]) / "session.log"
+        self.assertIn("cleanup boom", session_log.read_text())
+
+    def test_stop_during_preflight_removes_pointer(self) -> None:
+        entered = threading.Event()
+        release = threading.Event()
+        original_preflight = self.manager._preflight
+
+        def blocking_preflight() -> None:
+            entered.set()
+            self.assertTrue(release.wait(2))
+            original_preflight()
+
+        with (
+            patch.object(self.manager, "_preflight", side_effect=blocking_preflight),
+            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+        ):
+            thread = threading.Thread(target=self.manager.start, daemon=True)
+            thread.start()
+            try:
+                self.assertTrue(entered.wait(2))
+                self.manager.stop()
+                self.assertTrue(self.manager.wait_idle(2))
+                release.set()
+                thread.join(2)
+                worker = self.manager._thread
+                self.assertIsNotNone(worker)
+                worker.join(2)
+            finally:
+                release.set()
+                thread.join(2)
+        self.assertTrue(self.manager.wait_idle(2))
+        snapshot = self.manager.snapshot()
+        self.assertEqual(snapshot["state"], "stopped")
+        self.assertIsNone(self.runner.pointer)
+        self.assertIsNone(snapshot["session_dir"])
 
     def test_stop_after_final_startup_checkpoint_ends_stopped(self) -> None:
         reached = threading.Event()

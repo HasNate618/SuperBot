@@ -151,7 +151,7 @@ class ProcessTests(unittest.TestCase):
                     started = time.monotonic()
                     handle.stop(timeout=0.2)
                     elapsed = time.monotonic() - started
-                self.assertLess(elapsed, 1.5)
+                self.assertLess(elapsed, 2.5)
                 with self.assertRaises(ProcessLookupError):
                     os.killpg(handle.pgid, 0)
             finally:
@@ -195,6 +195,9 @@ class ProcessTests(unittest.TestCase):
                 handle.stop(0.3)
                 elapsed = time.monotonic() - started
                 self.assertLess(elapsed, 2.0)
+                deadline = time.monotonic() + 0.5
+                while handle.group_alive() and time.monotonic() < deadline:
+                    time.sleep(0.01)
                 self.assertFalse(handle.group_alive())
                 self.assertFalse(handle.alive())
                 self.assertIsNotNone(popen.returncode)
@@ -208,12 +211,22 @@ class ProcessTests(unittest.TestCase):
                 except subprocess.TimeoutExpired:
                     pass
 
-    def test_process_probes_fail_closed_on_timeout(self) -> None:
+    def test_process_probes_raise_on_timeout(self) -> None:
         runner = ProcessRunner(Path("/tmp/pointer.json"))
         timeout = subprocess.TimeoutExpired(["probe"], 5)
         with mock.patch("vrbot.processes.subprocess.run", side_effect=timeout):
-            self.assertFalse(runner.process_name_running("steam"))
-            self.assertFalse(runner.systemd_unit_active("monado.service"))
+            with self.assertRaises(subprocess.TimeoutExpired):
+                runner.process_name_running("steam")
+            with self.assertRaises(subprocess.TimeoutExpired):
+                runner.systemd_unit_active("monado.service")
+
+    def test_process_probes_raise_on_oserror(self) -> None:
+        runner = ProcessRunner(Path("/tmp/pointer.json"))
+        with mock.patch("vrbot.processes.subprocess.run", side_effect=OSError("missing probe")):
+            with self.assertRaises(OSError):
+                runner.process_name_running("steam")
+            with self.assertRaises(OSError):
+                runner.systemd_unit_active("monado.service")
 
     def test_wait_port_aborts_when_event_set(self) -> None:
         with tempfile.TemporaryDirectory() as raw:

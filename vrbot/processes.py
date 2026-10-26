@@ -218,29 +218,23 @@ class ProcessRunner:
         )
 
     def process_name_running(self, name: str) -> bool:
-        try:
-            result = subprocess.run(
-                ["pgrep", "-x", name],
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                timeout=5,
-            )
-        except (subprocess.TimeoutExpired, OSError):
-            return False
+        result = subprocess.run(
+            ["pgrep", "-x", name],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=5,
+        )
         return result.returncode == 0
 
     def systemd_unit_active(self, unit: str) -> bool:
-        try:
-            result = subprocess.run(
-                ["systemctl", "--user", "is-active", "--quiet", unit],
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                timeout=5,
-            )
-        except (subprocess.TimeoutExpired, OSError):
-            return False
+        result = subprocess.run(
+            ["systemctl", "--user", "is-active", "--quiet", unit],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=5,
+        )
         return result.returncode == 0
 
     def port_in_use(self, host: str, port: int) -> bool:

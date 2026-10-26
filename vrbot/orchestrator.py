@@ -3,6 +3,7 @@ from __future__ import annotations
 import codecs
 import os
 import re
+import shutil
 import sys
 import threading
 import time
@@ -716,11 +717,28 @@ class SessionManager:
             self._startup_deadline = time.monotonic() + self.cfg.launch.startup_timeout_sec
             try:
                 with self._lock:
-                    if self._state == State.STOPPED:
-                        return
+                    stopped = self._state == State.STOPPED
+                if stopped:
+                    try:
+                        self.runner.remove_pointer()
+                    except Exception:
+                        pass
+                    self._pointer = {}
+                    session_dir = self._session_dir
+                    if session_dir is not None:
+                        try:
+                            shutil.rmtree(session_dir)
+                        except OSError:
+                            pass
+                    with self._lock:
+                        self._session_dir = None
+                        self._session_id = None
+                    return
                 self._startup()
             except Aborted:
                 self._cleanup_safe()
+                with self._lock:
+                    self._last_error = None
                 self._set_state(State.STOPPED)
             except Exception as exc:
                 self._last_error = str(exc)
@@ -731,6 +749,8 @@ class SessionManager:
                     if not stopped:
                         self._state = State.FAILED
                         self._condition.notify_all()
+                    else:
+                        self._last_error = None
                 if stopped:
                     self._set_state(State.STOPPED)
             else:
@@ -742,6 +762,8 @@ class SessionManager:
                         self._condition.notify_all()
                 if stopped:
                     self._cleanup_safe()
+                    with self._lock:
+                        self._last_error = None
                     self._set_state(State.STOPPED)
                 else:
                     self._monitor_thread = threading.Thread(
@@ -793,7 +815,13 @@ class SessionManager:
         try:
             self._cleanup()
         except Exception as exc:
-            self._last_error = f"cleanup failed: {exc}"
+            try:
+                self._session_log(f"cleanup failed: {exc}")
+            except Exception:
+                pass
+            with self._lock:
+                if self._last_error is None:
+                    self._last_error = f"cleanup failed: {exc}"
 
     def _stop_handle(self, name: str, timeout: float):
         handle = self._handles.pop(name, None)
@@ -802,60 +830,103 @@ class SessionManager:
         return handle
 
     def _cleanup(self) -> None:
+        failures: list[str] = []
         try:
             deadline = time.monotonic() + self.cfg.timeouts.stop_sec
 
             def budget(cap: float) -> float:
                 return max(0.0, min(cap, deadline - time.monotonic()))
 
-            stopped: dict[str, ProcessHandle] = {}
-            stopped["pose"] = self._stop_handle("pose", budget(2))
-            if "steam" in self._handles:
+            def phase(name: str, action: Callable[[], None]) -> None:
                 try:
+                    action()
+                except Exception as exc:
+                    failures.append(f"{name}: {exc}")
+                    try:
+                        self._session_log(f"cleanup phase {name} failed: {exc}")
+                    except Exception:
+                        pass
+
+            stopped: dict[str, ProcessHandle] = {}
+
+            def stop_handle(name: str, timeout: float) -> None:
+                handle = self._handles.pop(name, None)
+                if handle is None:
+                    return
+                try:
+                    handle.stop(timeout)
+                finally:
+                    stopped[name] = handle
+
+            def shutdown_steam() -> None:
+                if "steam" in self._handles:
                     self.runner.run(
                         [self.cfg.paths.steam_bin, "-shutdown"],
                         env=self._steam_env(),
                         cwd=Path.home(),
                         timeout=budget(20.0),
                     )
-                except Exception:
-                    pass
-            stopped["steam"] = self._stop_handle("steam", budget(5))
-            for pid in list(self._game_pids):
-                self.runner.kill_pid(pid)
-            self._game_pids = []
-            for pid in self.runner.pids_by_argv0(self._game_argv0()):
-                self.runner.kill_pid(pid)
-            stopped["weston"] = self._stop_handle("weston", budget(5))
-            stopped["monado"] = self._stop_handle("monado", budget(5))
-            monado = stopped["monado"]
-            if monado is None or not monado.alive():
-                self.runner.remove_stale_socket(self.runtime_dir / "monado_comp_ipc")
-            if self._preview is not None:
+
+            def kill_game() -> None:
+                for pid in list(self._game_pids):
+                    self.runner.kill_pid(pid)
+                self._game_pids = []
+                for pid in self.runner.pids_by_argv0(self._game_argv0()):
+                    self.runner.kill_pid(pid)
+
+            def remove_socket() -> None:
+                monado = stopped.get("monado")
+                if monado is None or not monado.alive():
+                    self.runner.remove_stale_socket(self.runtime_dir / "monado_comp_ipc")
+
+            def stop_preview() -> None:
                 try:
-                    self._preview.stop(budget(5))
-                except Exception:
-                    pass
-                self._preview = None
+                    if self._preview is not None:
+                        self._preview.stop(budget(5))
+                finally:
+                    self._preview = None
+
+            phase("pose", lambda: stop_handle("pose", budget(2)))
+            phase("steam-shutdown", shutdown_steam)
+            phase("steam", lambda: stop_handle("steam", budget(5)))
+            phase("game", kill_game)
+            phase("weston", lambda: stop_handle("weston", budget(5)))
+            phase("monado", lambda: stop_handle("monado", budget(5)))
+            phase("monado-socket", remove_socket)
+            phase("preview", stop_preview)
+
             survivors: list[str] = []
-            try:
+
+            def probe_game() -> None:
                 if self.runner.pids_by_argv0(self._game_argv0()):
                     survivors.append("game")
-            except Exception:
-                pass
-            for name in ("pose", "steam", "weston", "monado"):
-                handle = stopped.get(name)
-                if handle is None:
-                    continue
-                try:
-                    if handle.alive() or handle.group_alive():
-                        survivors.append(name)
-                except Exception:
-                    pass
-            with self._lock:
-                self._survivors = survivors
-            if survivors:
-                self._session_log("warning: surviving processes: " + ", ".join(survivors))
+
+            def probe_handles() -> None:
+                for name in ("pose", "steam", "weston", "monado"):
+                    handle = stopped.get(name)
+                    if handle is None:
+                        continue
+                    try:
+                        if handle.alive() or handle.group_alive():
+                            survivors.append(name)
+                    except Exception as exc:
+                        failures.append(f"survivor {name}: {exc}")
+                        try:
+                            self._session_log(f"cleanup survivor {name} probe failed: {exc}")
+                        except Exception:
+                            pass
+
+            def report_survivors() -> None:
+                with self._lock:
+                    self._survivors = survivors
+                if survivors:
+                    self._session_log("warning: surviving processes: " + ", ".join(survivors))
+
+            phase("survivor-game", probe_game)
+            phase("survivor-handles", probe_handles)
+            phase("survivor-report", report_survivors)
+            if failures:
+                raise RuntimeError("; ".join(failures))
         finally:
             try:
                 self.runner.remove_pointer()
