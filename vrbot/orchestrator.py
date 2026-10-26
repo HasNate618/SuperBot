@@ -211,37 +211,45 @@ class SessionManager:
         except Exception as exc:
             with self._lifecycle_lock:
                 with self._lock:
-                    current = generation == self._start_generation
-                    stopped = self._stop_event.is_set() or self._state != State.STARTING
-                    session_dir = self._session_dir
-                if not current:
+                    if generation != self._start_generation:
+                        stale = True
+                    else:
+                        stale = False
+                        stopped = self._stop_event.is_set() or self._state != State.STARTING
+                        session_dir = self._session_dir
+                        if stopped:
+                            self._last_error = None
+                            self._set_terminal_state(State.STOPPED)
+                        else:
+                            self._last_error = str(exc)
+                if stale:
+                    if isinstance(exc, ConflictError):
+                        raise
                     return
                 if not stopped:
-                    with self._lock:
-                        self._last_error = str(exc)
                     self._cleanup_safe()
                     with self._lock:
-                        stopped = self._stop_event.is_set() or self._state != State.STARTING
-                        if not stopped:
-                            self._state = State.FAILED
-                            self._condition.notify_all()
+                        if generation != self._start_generation:
+                            current = False
                         else:
-                            self._last_error = None
+                            current = True
+                            stopped = self._stop_event.is_set() or self._state != State.STARTING
+                            if stopped:
+                                self._last_error = None
+                                self._set_terminal_state(State.STOPPED)
+                            else:
+                                self._set_terminal_state(State.FAILED)
+                    if not current:
+                        return
                     if not stopped:
-                        with self._lock:
-                            if generation == self._start_generation:
-                                self._idle.set()
+                        if isinstance(exc, ConflictError):
+                            raise
                         if isinstance(exc, PreflightError):
                             raise
                         raise PreflightError(str(exc)) from exc
                 self._discard_attempt(generation, session_dir)
-                with self._lock:
-                    if generation == self._start_generation:
-                        self._last_error = None
-                self._set_state(State.STOPPED)
-                with self._lock:
-                    if generation == self._start_generation:
-                        self._idle.set()
+                if isinstance(exc, ConflictError):
+                    raise
                 return
         with self._lock:
             current = generation == self._start_generation
@@ -263,7 +271,7 @@ class SessionManager:
             if self._state == State.FAILED:
                 self.runner.remove_pointer()
                 self._pointer = {}
-                self._set_state(State.STOPPED)
+                self._set_terminal_state(State.STOPPED)
                 return
             if self._state == State.STOPPING:
                 return
@@ -287,7 +295,7 @@ class SessionManager:
             except Exception as exc:
                 self._last_error = str(exc)
                 self._cleanup_safe()
-                self._set_state(State.FAILED)
+                self._set_terminal_state(State.FAILED)
                 raise
             with self._lock:
                 self._mode = mode
@@ -450,10 +458,11 @@ class SessionManager:
                 return None
             return self._openxr_parser.value()
 
-    def _set_state(self, state: State) -> None:
+    def _set_terminal_state(self, state: State) -> None:
         with self._lock:
             self._state = state
             self._condition.notify_all()
+            self._idle.set()
 
     def _abort_if_stopped(self) -> None:
         if self._stop_event.is_set():
@@ -503,6 +512,16 @@ class SessionManager:
         with path.open("a") as handle:
             handle.write(f"{timestamp} {message}\n")
 
+    def _attempt_log(self, session_dir: Path | None, message: str) -> None:
+        if session_dir is None:
+            return
+        timestamp = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        try:
+            with (session_dir / "session.log").open("a") as handle:
+                handle.write(f"{timestamp} {message}\n")
+        except OSError:
+            pass
+
     def _game_argv0(self) -> str:
         linux_path = Path(self.cfg.paths.game_exe).as_posix()
         return ("Z:" + linux_path).replace("/", "\\")
@@ -523,6 +542,10 @@ class SessionManager:
             and not self._stop_event.is_set()
         )
 
+    def _require_attempt_active(self, generation: int) -> None:
+        if not self._attempt_active(generation):
+            raise ConflictError("start attempt superseded")
+
     def _preflight(self, generation: int) -> None:
         with self._lock:
             if not self._attempt_active(generation):
@@ -542,8 +565,7 @@ class SessionManager:
                     "stale session processes: " + ", ".join(stale) + "; stop them before starting"
                 )
             with self._lock:
-                if not self._attempt_active(generation):
-                    return
+                self._require_attempt_active(generation)
                 self.runner.remove_pointer()
 
         if self.runner.process_name_running("steam"):
@@ -553,15 +575,16 @@ class SessionManager:
                 raise PreflightError(f"Stop the user unit {unit} before starting a hidden C0 session.")
         if self.runner.port_in_use("127.0.0.1", 4242):
             raise PreflightError("TCP 4242 is already in use")
-        self.runner.remove_stale_socket(self.runtime_dir / "monado_comp_ipc")
+        with self._lock:
+            self._require_attempt_active(generation)
+            self.runner.remove_stale_socket(self.runtime_dir / "monado_comp_ipc")
 
         missing = missing_requirements(self.cfg)
         if missing:
             raise PreflightError("missing requirements: " + ", ".join(missing))
 
         with self._lock:
-            if not self._attempt_active(generation):
-                return
+            self._require_attempt_active(generation)
             stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
             self._session_id = f"{stamp}-{os.urandom(3).hex()}"
             self._session_dir = Path(self.cfg.paths.session_root) / self._session_id
@@ -771,38 +794,46 @@ class SessionManager:
 
     def _discard_attempt(self, generation: int, session_dir: Path | None) -> None:
         with self._lock:
+            current_dir = self._session_dir
             if generation != self._start_generation:
-                return
-            try:
-                self.runner.remove_pointer()
-            except Exception as exc:
+                owned = False
+            else:
+                owned = session_dir is not None and current_dir == session_dir
                 try:
-                    self._session_log(f"pointer removal failed: {exc}")
-                except Exception:
-                    pass
-            self._pointer = {}
-            if session_dir is None or self._session_dir != session_dir:
-                return
+                    self.runner.remove_pointer()
+                except Exception as exc:
+                    self._attempt_log(session_dir, f"pointer removal failed: {exc}")
+                self._pointer = {}
+                if owned:
+                    self._session_id = None
+                    self._session_dir = None
+                    self._started_at = None
+                    self._socket_name = None
+        if session_dir is not None and (owned or session_dir != current_dir):
             try:
                 shutil.rmtree(session_dir)
-            except OSError:
-                pass
-            self._session_id = None
-            self._session_dir = None
-            self._started_at = None
-            self._socket_name = None
+            except OSError as exc:
+                self._attempt_log(
+                    session_dir, f"session directory removal failed: {exc}"
+                )
 
     def _start_worker(self, generation: int, session_dir: Path | None) -> None:
         with self._lifecycle_lock:
             with self._lock:
                 if generation != self._start_generation:
-                    return
-                stopped = self._state != State.STARTING
+                    stale = True
+                    stopped = False
+                else:
+                    stale = False
+                    stopped = self._state != State.STARTING
+            if stale:
+                self._discard_attempt(generation, session_dir)
+                return
             if stopped:
                 self._discard_attempt(generation, session_dir)
                 with self._lock:
                     if generation == self._start_generation:
-                        self._idle.set()
+                        self._set_terminal_state(State.STOPPED)
                 return
             self._startup_deadline = time.monotonic() + self.cfg.launch.startup_timeout_sec
             try:
@@ -812,7 +843,7 @@ class SessionManager:
                 with self._lock:
                     if generation == self._start_generation:
                         self._last_error = None
-                self._set_state(State.STOPPED)
+                        self._set_terminal_state(State.STOPPED)
             except Exception as exc:
                 with self._lock:
                     if generation == self._start_generation:
@@ -823,15 +854,13 @@ class SessionManager:
                     pass
                 self._cleanup_safe()
                 with self._lock:
-                    stopped = self._stop_event.is_set() or self._state != State.STARTING
                     if generation == self._start_generation:
-                        if not stopped:
-                            self._state = State.FAILED
-                            self._condition.notify_all()
-                        else:
+                        stopped = self._stop_event.is_set() or self._state != State.STARTING
+                        if stopped:
                             self._last_error = None
-                if stopped and generation == self._start_generation:
-                    self._set_state(State.STOPPED)
+                            self._set_terminal_state(State.STOPPED)
+                        else:
+                            self._set_terminal_state(State.FAILED)
             else:
                 with self._lock:
                     current = generation == self._start_generation
@@ -845,22 +874,28 @@ class SessionManager:
                     with self._lock:
                         if generation == self._start_generation:
                             self._last_error = None
-                    self._set_state(State.STOPPED)
+                            self._set_terminal_state(State.STOPPED)
                 elif current:
                     self._monitor_thread = threading.Thread(
-                        target=self._monitor_worker, name="vrbot-monitor", daemon=True
+                        target=self._monitor_worker,
+                        args=(generation,),
+                        name="vrbot-monitor",
+                        daemon=True,
                     )
                     self._monitor_thread.start()
             finally:
                 self._startup_deadline = None
                 with self._lock:
-                    if generation == self._start_generation:
+                    if (
+                        generation == self._start_generation
+                        and self._state not in (State.STARTING, State.STOPPING)
+                    ):
                         self._idle.set()
 
-    def _monitor_worker(self) -> None:
+    def _monitor_worker(self, generation: int) -> None:
         while not self._stop_event.wait(1.0):
             with self._lock:
-                if self._state != State.RUNNING:
+                if generation != self._start_generation or self._state != State.RUNNING:
                     return
                 monado = self._handles.get("monado")
                 weston = self._handles.get("weston")
@@ -871,17 +906,18 @@ class SessionManager:
                 dead = "weston"
             if dead is None:
                 continue
-            with self._lock:
-                if self._state != State.RUNNING:
-                    return
-                self._state = State.STOPPING
-                self._last_error = f"{dead} exited while running"
-                self._idle.clear()
             with self._lifecycle_lock:
+                with self._lock:
+                    if generation != self._start_generation or self._state != State.RUNNING:
+                        return
+                    self._state = State.STOPPING
+                    self._last_error = f"{dead} exited while running"
+                    self._idle.clear()
                 self._cleanup_safe()
-            self._set_state(State.FAILED)
-            self._idle.set()
-            return
+                with self._lock:
+                    if generation == self._start_generation:
+                        self._set_terminal_state(State.FAILED)
+                return
 
     def _stop_worker(self) -> None:
         with self._lifecycle_lock:
@@ -891,8 +927,8 @@ class SessionManager:
             try:
                 self._cleanup_safe()
             finally:
-                self._set_state(State.STOPPED)
-                self._idle.set()
+                with self._lock:
+                    self._set_terminal_state(State.STOPPED)
 
     def _cleanup_safe(self) -> None:
         try:
@@ -1014,6 +1050,7 @@ class SessionManager:
             try:
                 self.runner.remove_pointer()
             except Exception as exc:
+                failures.append(f"pointer removal: {exc}")
                 try:
                     self._session_log(f"pointer removal failed: {exc}")
                 except Exception:
