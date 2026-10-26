@@ -41,6 +41,18 @@ def atomic_replace(tmp: Path, destination: Path) -> None:
     os.replace(tmp, destination)
 
 
+def _command_error(label: str, result: subprocess.CompletedProcess) -> str:
+    stderr = result.stderr
+    if isinstance(stderr, bytes):
+        detail = stderr.decode(errors="replace")
+    else:
+        detail = str(stderr or "")
+    detail = detail.strip()[-400:]
+    if detail:
+        return f"{label} exited {result.returncode}: {detail}"
+    return f"{label} exited {result.returncode}"
+
+
 class PreviewCapture:
     def __init__(
         self,
@@ -85,7 +97,10 @@ class PreviewCapture:
         self._started_monotonic = time.monotonic()
 
     def start(self) -> None:
+        if self._thread is not None:
+            raise RuntimeError("preview capture already started")
         self.publish_path.parent.mkdir(parents=True, exist_ok=True)
+        self._started_monotonic = time.monotonic()
         self._thread = threading.Thread(target=self._run, name="vrbot-preview", daemon=True)
         self._thread.start()
 
@@ -93,6 +108,8 @@ class PreviewCapture:
         self.stop_event.set()
         if self._thread is not None:
             self._thread.join(timeout)
+            if self._thread.is_alive():
+                self.log("preview: capture thread did not stop within timeout")
 
     def status(self) -> dict:
         with self._lock:
@@ -111,7 +128,12 @@ class PreviewCapture:
         interval = 1.0 / self.fps
         while not self.stop_event.is_set():
             started = time.monotonic()
-            self.capture_once()
+            try:
+                self.capture_once()
+            except Exception as exc:
+                with self._lock:
+                    self._errors += 1
+                self._warn(f"preview loop: {exc}")
             remaining = interval - (time.monotonic() - started)
             if remaining > 0:
                 self.stop_event.wait(remaining)
@@ -121,9 +143,10 @@ class PreviewCapture:
 
     def capture_once(self) -> bool:
         frame_dir = self._capture_root / str(time.monotonic_ns())
-        frame_dir.mkdir(parents=True, exist_ok=True)
-        started_ns = time.time_ns()
+        tmp: Path | None = None
         try:
+            frame_dir.mkdir(parents=True, exist_ok=True)
+            started_ns = time.time_ns()
             env = os.environ.copy()
             env["XDG_RUNTIME_DIR"] = str(self.runtime_dir)
             env["WAYLAND_DISPLAY"] = self.wayland_display
@@ -136,11 +159,13 @@ class PreviewCapture:
                 stderr=subprocess.PIPE,
             )
             if result.returncode != 0:
-                raise RuntimeError(f"screenshooter exited {result.returncode}")
+                raise RuntimeError(_command_error("screenshooter", result))
             png = newest_png(frame_dir, started_ns)
             if png is None:
                 raise RuntimeError("screenshooter produced no new PNG")
-            tmp = self.publish_path.with_name(self.publish_path.name + ".tmp")
+            tmp = self.publish_path.with_name(
+                f"{self.publish_path.name}.{time.monotonic_ns()}.tmp"
+            )
             result = self.run(
                 [
                     self.magick,
@@ -158,8 +183,9 @@ class PreviewCapture:
                 stderr=subprocess.PIPE,
             )
             if result.returncode != 0:
-                raise RuntimeError(f"magick exited {result.returncode}")
+                raise RuntimeError(_command_error("magick", result))
             atomic_replace(tmp, self.publish_path)
+            tmp = None
             with self._lock:
                 self._frames += 1
                 self._last_frame_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -171,6 +197,11 @@ class PreviewCapture:
             return False
         finally:
             shutil.rmtree(frame_dir, ignore_errors=True)
+            if tmp is not None:
+                try:
+                    tmp.unlink()
+                except FileNotFoundError:
+                    pass
 
     def _warn(self, message: str) -> None:
         now = time.monotonic()

@@ -28,17 +28,34 @@ class FakeRun:
             os.utime(shot, ns=(now, now))
             return subprocess.CompletedProcess(argv, 0, "", "")
         if argv[0] == "magick":
-            if self.fail == "magick":
-                return subprocess.CompletedProcess(argv, 1, "", "magick failed")
             out = Path(argv[-1][4:])
+            if self.fail == "magick":
+                out.write_bytes(b"PARTIAL")
+                return subprocess.CompletedProcess(argv, 1, "", "magick failed")
             out.write_bytes(b"JPEG")
             return subprocess.CompletedProcess(argv, 0, "", "")
         raise AssertionError(f"unexpected command: {argv}")
 
 
+class ExplodingCapture(PreviewCapture):
+    def capture_once(self) -> bool:
+        raise RuntimeError("boom")
+
+
+class TimeoutRun:
+    def __call__(self, argv, **kwargs):
+        raise subprocess.TimeoutExpired(argv, kwargs.get("timeout", 5))
+
+
 class PreviewTests(unittest.TestCase):
-    def make_capture(self, base: Path, run) -> PreviewCapture:
-        return PreviewCapture(
+    def make_capture(
+        self,
+        base: Path,
+        run,
+        log=None,
+        capture_type=PreviewCapture,
+    ) -> PreviewCapture:
+        return capture_type(
             width=1280,
             height=720,
             panel_height=32,
@@ -51,7 +68,7 @@ class PreviewTests(unittest.TestCase):
             work_dir=base,
             publish_path=base / "latest.jpg",
             run=run,
-            log=lambda message: None,
+            log=log or (lambda message: None),
         )
 
     def test_crop_filter(self) -> None:
@@ -75,6 +92,94 @@ class PreviewTests(unittest.TestCase):
             atomic_replace(tmp, dest)
             self.assertEqual(dest.read_bytes(), b"JPEG")
             self.assertFalse(tmp.exists())
+
+    def test_frame_directory_failure_is_counted(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            base = Path(raw)
+            work_file = base / "not-a-directory"
+            work_file.write_bytes(b"x")
+            run = FakeRun()
+            capture = self.make_capture(work_file, run)
+            self.assertFalse(capture.capture_once())
+            self.assertEqual(capture.status()["errors"], 1)
+            self.assertEqual(run.calls, [])
+
+    def test_loop_survives_capture_crash(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            base = Path(raw)
+            capture = self.make_capture(
+                base,
+                FakeRun(),
+                capture_type=ExplodingCapture,
+            )
+            capture.start()
+            try:
+                deadline = time.monotonic() + 2
+                while time.monotonic() < deadline and capture.status()["errors"] < 1:
+                    time.sleep(0.01)
+                self.assertIsNotNone(capture._thread)
+                self.assertTrue(capture._thread.is_alive())
+                self.assertGreaterEqual(capture.status()["errors"], 1)
+            finally:
+                capture.stop()
+
+    def test_start_twice_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            base = Path(raw)
+            capture = self.make_capture(base, FakeRun())
+            capture.start()
+            try:
+                with self.assertRaisesRegex(RuntimeError, "already started"):
+                    capture.start()
+            finally:
+                capture.stop()
+
+    def test_start_after_stop_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            base = Path(raw)
+            capture = self.make_capture(base, FakeRun())
+            capture.start()
+            capture.stop()
+            with self.assertRaisesRegex(RuntimeError, "already started"):
+                capture.start()
+
+    def test_stop_joins_thread(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            base = Path(raw)
+            capture = self.make_capture(base, FakeRun())
+            capture.start()
+            capture.stop(timeout=2)
+            self.assertIsNotNone(capture._thread)
+            self.assertFalse(capture._thread.is_alive())
+
+    def test_screenshooter_failure_logs_stderr(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            base = Path(raw)
+            logs: list[str] = []
+            capture = self.make_capture(base, FakeRun("screen"), log=logs.append)
+            self.assertFalse(capture.capture_once())
+            self.assertTrue(any("screenshooter exited 1" in entry for entry in logs))
+            self.assertTrue(any("screen failed" in entry for entry in logs))
+
+    def test_magick_failure_logs_stderr(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            base = Path(raw)
+            run = FakeRun()
+            logs: list[str] = []
+            capture = self.make_capture(base, run, log=logs.append)
+            self.assertTrue(capture.capture_once())
+            logs.clear()
+            run.fail = "magick"
+            self.assertFalse(capture.capture_once())
+            self.assertTrue(any("magick exited 1" in entry for entry in logs))
+            self.assertTrue(any("magick failed" in entry for entry in logs))
+
+    def test_run_timeout_is_counted(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            base = Path(raw)
+            capture = self.make_capture(base, TimeoutRun())
+            self.assertFalse(capture.capture_once())
+            self.assertEqual(capture.status()["errors"], 1)
 
     def test_capture_once_publishes_frame(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
@@ -112,6 +217,7 @@ class PreviewTests(unittest.TestCase):
             self.assertFalse(capture.capture_once())
             self.assertEqual((base / "latest.jpg").read_bytes(), before)
             self.assertEqual(capture.status()["errors"], 1)
+            self.assertEqual(list(base.glob("latest.jpg*.tmp")), [])
 
 
 if __name__ == "__main__":
