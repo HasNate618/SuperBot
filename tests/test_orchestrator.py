@@ -10,6 +10,7 @@ import threading
 import time
 import unittest
 from dataclasses import replace
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -18,6 +19,7 @@ from vrbot.orchestrator import (
     ConflictError,
     PreflightError,
     SessionManager,
+    State,
     _OpenXRLogParser,
     parse_openxr_client,
 )
@@ -1606,6 +1608,94 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(self.runner.pointer, pointer)
         self.assertEqual(self.manager.state_value(), "running")
         self.assertEqual(self.manager.snapshot()["session_dir"], str(b_dir))
+
+    def test_preflight_write_failure_discards_own_directory(self) -> None:
+        a_dirs: list[Path] = []
+
+        def failing_write(data):
+            a_dirs.append(Path(data["session"]))
+            raise RuntimeError("pointer write boom")
+
+        self.manager._start_generation = 1
+        self.manager._state = State.STARTING
+        self.manager._started_at = object()
+        self.manager._socket_name = "vrbot-old"
+        with (
+            patch.object(self.runner, "write_pointer", side_effect=failing_write),
+            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+        ):
+            with self.assertRaises(RuntimeError):
+                self.manager._preflight(1)
+
+        self.assertEqual(len(a_dirs), 1)
+        self.assertFalse(a_dirs[0].exists())
+        self.assertIsNone(self.manager._session_id)
+        self.assertIsNone(self.manager._session_dir)
+        self.assertIsNone(self.manager._started_at)
+        self.assertIsNone(self.manager._socket_name)
+        self.assertIsNone(self.runner.pointer)
+        self.manager._state = State.STOPPED
+
+    def test_preflight_write_failure_after_supersession_keeps_successor(self) -> None:
+        a_dirs: list[Path] = []
+        b_dir = Path(self.cfg.paths.session_root) / "session-b"
+        b_dir.mkdir(parents=True)
+        marker = b_dir / "marker.log"
+        marker.write_text("new session\n")
+        b_pointer = {"session": str(b_dir), "processes": {}}
+        b_started = object()
+
+        def superseding_write(data):
+            a_dirs.append(Path(data["session"]))
+            with self.manager._lock:
+                self.manager._start_generation += 1
+                self.manager._session_id = "session-b"
+                self.manager._session_dir = b_dir
+                self.manager._started_at = b_started
+                self.manager._socket_name = "vrbot-b"
+            self.runner.pointer = b_pointer
+            raise RuntimeError("pointer write boom")
+
+        self.manager._start_generation = 1
+        self.manager._state = State.STARTING
+        with (
+            patch.object(self.runner, "write_pointer", side_effect=superseding_write),
+            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+        ):
+            with self.assertRaises(RuntimeError):
+                self.manager._preflight(1)
+
+        self.assertEqual(len(a_dirs), 1)
+        self.assertFalse(a_dirs[0].exists())
+        self.assertTrue(b_dir.exists())
+        self.assertTrue(marker.exists())
+        self.assertEqual(self.runner.pointer, b_pointer)
+        self.assertEqual(self.manager._session_id, "session-b")
+        self.assertEqual(self.manager._session_dir, b_dir)
+        self.assertIs(self.manager._started_at, b_started)
+        self.assertEqual(self.manager._socket_name, "vrbot-b")
+        self.manager._state = State.STOPPED
+
+    def test_preflight_mkdir_collision_preserves_existing_directory(self) -> None:
+        fixed_now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        collision = Path(self.cfg.paths.session_root) / "20260101T000000Z-000000"
+        collision.mkdir(parents=True)
+        marker = collision / "keep.log"
+        marker.write_text("historical session\n")
+
+        with (
+            patch("vrbot.orchestrator.os.urandom", return_value=b"\x00\x00\x00"),
+            patch("vrbot.orchestrator.datetime") as fake_datetime,
+            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+        ):
+            fake_datetime.now.return_value = fixed_now
+            with self.assertRaises(PreflightError):
+                self.manager.start()
+
+        self.assertTrue(collision.exists())
+        self.assertEqual(marker.read_text(), "historical session\n")
+        self.assertIsNone(self.manager._session_dir)
+        self.assertEqual(self.manager.state_value(), "failed")
 
     def test_preflight_pointer_write_failure_discards_directory(self) -> None:
         with (

@@ -592,11 +592,37 @@ class SessionManager:
         with self._lock:
             self._require_attempt_active(generation)
             stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-            self._session_id = f"{stamp}-{os.urandom(3).hex()}"
-            self._session_dir = Path(self.cfg.paths.session_root) / self._session_id
-            self._session_dir.mkdir(parents=True, exist_ok=False)
-            self._pointer = {"session": str(self._session_dir), "processes": {}}
-            self.runner.write_pointer(self._pointer)
+            session_id = f"{stamp}-{os.urandom(3).hex()}"
+            session_dir = Path(self.cfg.paths.session_root) / session_id
+            self._session_id = session_id
+            self._session_dir = session_dir
+            created = False
+            try:
+                session_dir.mkdir(parents=True, exist_ok=False)
+                created = True
+                self._pointer = {"session": str(session_dir), "processes": {}}
+                self.runner.write_pointer(self._pointer)
+            except Exception:
+                if self._session_dir == session_dir:
+                    try:
+                        self.runner.remove_pointer()
+                    except Exception as exc:
+                        self._attempt_log(
+                            session_dir, f"pointer removal failed: {exc}"
+                        )
+                    self._pointer = {}
+                    self._session_id = None
+                    self._session_dir = None
+                    self._started_at = None
+                    self._socket_name = None
+                if created:
+                    try:
+                        shutil.rmtree(session_dir)
+                    except OSError as exc:
+                        self._attempt_log(
+                            session_dir, f"session directory removal failed: {exc}"
+                        )
+                raise
             return self._session_dir
 
     def _start(self, name: str, argv, env, cwd: Path, log_path: Path, stderr_path: Path | None = None):
