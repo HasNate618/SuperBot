@@ -437,6 +437,7 @@ class ShippedStaticAssetsTests(unittest.TestCase):
         _, index = self.request("/")
         self.assertIn(b"/app.js", index)
         self.assertIn(b"/style.css", index)
+        self.assertIn(b'data-mode="manual"', index)
 
 
 if __name__ == "__main__":

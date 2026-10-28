@@ -83,10 +83,12 @@ class FakeRunner:
         self.fail_at: str | None = None
         self.block_wait: threading.Event | None = None
         self.runs: list[list[str]] = []
+        self.starts: list[tuple[str, list[str]]] = []
         self.alive_pids: set[int] = set()
         self.removed_socket = False
 
     def start(self, name, argv, env, cwd, log_path, stderr_path=None):
+        self.starts.append((name, [str(item) for item in argv]))
         if self.fail_at == f"start:{name}":
             raise RuntimeError(f"{name} failed to start")
         log_path = Path(log_path)
@@ -1760,6 +1762,23 @@ class OrchestratorTests(unittest.TestCase):
         self.assertFalse(old_pose.alive())
         self.assertTrue(self.runner.handles["pose"].alive())
         self.assertEqual(self.manager.snapshot()["mode"], "yaw")
+
+    def test_manual_mode_starts_manual_client(self) -> None:
+        self.start()
+        self.manager.set_mode("manual")
+        self.assertEqual(self.manager.snapshot()["mode"], "manual")
+        argv = self.runner.starts[-1][1]
+        self.assertTrue(argv[1].endswith("c0_manual.py"), argv)
+        self.assertNotIn("--mode", argv)
+
+    def test_manual_mode_switches_back_to_scripted_client(self) -> None:
+        self.start()
+        self.manager.set_mode("manual")
+        self.manager.set_mode("hold")
+        self.assertEqual(self.manager.snapshot()["mode"], "hold")
+        argv = self.runner.starts[-1][1]
+        self.assertTrue(argv[1].endswith("c0_client.py"), argv)
+        self.assertIn("--mode", argv)
 
     def test_monado_death_fails_and_cleans_up(self) -> None:
         self.start()

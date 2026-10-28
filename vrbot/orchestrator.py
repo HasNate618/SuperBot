@@ -17,7 +17,7 @@ from .preview import PreviewCapture
 from .processes import Aborted, ProcessHandle, ProcessRunner
 
 
-MODES = ("hold", "yaw", "trigger", "dodge", "walk", "clock")
+MODES = ("hold", "yaw", "trigger", "dodge", "walk", "clock", "manual")
 
 
 class State(str, Enum):
@@ -712,20 +712,28 @@ class SessionManager:
     def _start_pose(self, mode: str) -> None:
         pose_log = self._log("pose")
         pose_log.unlink(missing_ok=True)
-        argv = [
-            sys.executable,
-            self.cfg.paths.pose_client,
-            "--mode",
-            mode,
-            "--duration",
-            "3600",
-            "--log",
-            str(self._session_dir / f"c0_{mode}.csv"),
-        ]
+        if mode == "manual":
+            manual = Path(self.cfg.paths.pose_client).with_name("c0_manual.py")
+            if not manual.exists():
+                raise StartupError(f"manual pose client not found: {manual}")
+            argv = [sys.executable, str(manual)]
+            needle = "connected 127.0.0.1"
+        else:
+            argv = [
+                sys.executable,
+                self.cfg.paths.pose_client,
+                "--mode",
+                mode,
+                "--duration",
+                "3600",
+                "--log",
+                str(self._session_dir / f"c0_{mode}.csv"),
+            ]
+            needle = "handshake ok"
         self._start("pose", argv, self._base_env(), Path.cwd(), pose_log)
         self.runner.wait_log(
             pose_log,
-            "handshake ok",
+            needle,
             self._startup_timeout(self.cfg.timeouts.pose_handshake_sec),
             self._stop_event,
         )
