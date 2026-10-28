@@ -157,6 +157,8 @@ The pass bars. `research/wbc-*.md` proposals are still judged against these.
 | R7 | **Honest** | every pose is `mjData` after `mj_step` | **MET by construction** in E3/C3i–C3m. **Caveat for C0**: its poses were scripted constants built from measured geometry, so the game test was honest but not sim-driven |
 | R8 | **Completes a stage** | one early stage cleared end-to-end, recorded | **OPEN** — gated on C0-3/5/6 and C1–C5 |
 
+**Also open, and cheap:** the **E5 brain bake-off** (design doc §14) — four candidates on 100 labelled digest frames, scored against majority-class and the scripted commander. Non-blocking for the milestone. `research/d1-capabilities.md` §6b already measured the decisive cost: d1 over a text digest is **5.5 s**, over an image **7 s at 116 tokens / 36–39 s at 591** — which is why the brain is a digest classifier and not a VLM.
+
 **The binding constraint is now R1's off-axis case.** At 30° off-axis the body cannot aim well, and it cannot be fixed by arm authority (§2.2). The design consequence is a rule, not a bug: **the body must turn to face its target rather than aim sideways.** Everything about "walk to a position, then aim" must be planned around that.
 
 ---
@@ -182,7 +184,7 @@ From `research/wbc-game-proposal.md`, read from serialized assets of levels 0–
 - **`hold` is load-bearing and active**, never "send zero".
 - **Executor = GEAR-SONIC.** The Playground ONNX is off the critical path. The standalone QP is not a body. The QP-on-SONIC joint override is dead; **wrist-orientation-only override** is the one permitted refinement.
 - **Keep the G1.** No RP1 swap.
-- **Brain = MiniCPM5-2B on CPU via llama.cpp** — GPU is occupied by Superhot + Monado + MuJoCo on 8 GB. Measured: ~20 s p50 / 31 s p95 (3,932 MiB). MiMo-9B ~5 s p50 (7,346 MiB, does not fit beside the rest). LFM2.5-3B 0.21 s but degenerate (73% `navigate_to`).
+- **Brain: unresolved, and the earlier default was not evidence-based.** CPU-only, no cloud. The 10-23 version named MiniCPM5-2B; nothing ever compared candidates on *this* layer. `LFM2.5-VL-3B` (**0.21 s p50 / 0.24 s p95**, 4,658 MiB) was the stubborn-gamer bench's *"best compact fast candidate, particularly for routine decisions"* — which is our layer — and was struck out here for a **planner** failure (73% `navigate_to` on hard home-assistant cases) that does not apply. Current candidates: `LFM2.5-VL-3B` (0.21 s), `LFM3-1.7B` (text, 256K ctx, native tool calling, ~1 GB at 4-bit), `d1-2B` (**1.7 s p50 CPU text-only**, third party; no generated tokens), MiniCPM5-2B (20 s p50 / 31 s p95, 3,932 MiB). MiMo-9B (5.07 s p50, 7,346 MiB) does not fit beside the rest. **Decided by E5, not by argument** — §18.8 of the design doc.
 
 ---
 

@@ -210,7 +210,8 @@ A cheap 2D tracker (KCF-class on the grim crop) **may** update the hand target d
 
 - **Input:** one grim still + a ≤10-line text digest (`skill`, `supported` bits, residuals, drift estimate, last outcome, optional bbox). Pixels-only planning measured 2.1× worse in stubborn-gamer; do not omit the digest.
 - **Output:** skill + side only (`hold` | `look` | `reach` | `strike` + `left`/`right` where needed) plus optional `ttl_ms`. No 3D point. The adapter supplies E3 local offsets (`REACH` / `PUNCH`) as `p`. README claim: “named a skill,” not “chose a 3D target.” 2D→3D is out of v1. The VLM does not emit joint angles or OpenXR poses.
-- **Where it runs:** CPU llama.cpp. MiniCPM5-2B default. No cloud API.
+- **Where it runs:** CPU only, no cloud API. **The model is unresolved — E5 in §14 decides it.** MiniCPM5-2B was the default, but nothing ever compared candidates *on this layer*: it was chosen after `LFM2.5-VL-3B` (0.21 s p50) was struck out for a **planner** failure that does not apply to skill selection. See §18.8.
+- **What the job actually is:** classification, not planning — a five-way `choice` plus a side. So the natural executor is a **closed-vocabulary decision head**, not a generative VLM. `[MEASURED 2026-10-28]` d1-2B over a **text digest** costs **5.5 s** (Q8_0/2.2B, 12 threads; a third party got **1.7 s** on Q4_K_M/4 threads), while d1 over an **image** costs **7 s at 116 image tokens and 36–39 s at 591** — the pixel path is 5–7× too slow on this CPU, which is an independent confirmation that the digest is the right interface (§9 input, not an optimisation).
 - **When it runs:** only in `hold` (or after a ballistic terminates). Superhot’s clock makes seconds legal *if hold holds*. The architecture must still be correct if the world does not pause.
 - **Not in v1:** streaming tokens into motors; visual-servoing off VLM tokens; GPU residency during a captured Superhot run.
 
@@ -223,7 +224,7 @@ A scripted commander (E3 PHASES, then a JSON file / socket writer) is the first 
 - Protocol: Monado `remote`, magic `mndrmt3\0`, 376-byte `r_remote_data`, TCP 4242, handshake = two packets then client streams. Hub binds `0.0.0.0`, **one client**. Disconnect freezes last pose.
 - Transient unit env (copy from E2/E3): `IPC_EXIT_ON_DISCONNECT=off`, `XRT_NO_STDIN=1`, `P_OVERRIDE_ACTIVE_CONFIG=remote`, `XRT_COMPOSITOR_COMPUTE=false`, `VK_DRIVER_FILES=/run/opengl-driver/share/vulkan/icd.d/nvidia_icd.json`, binary `/run/wrappers/bin/monado-service`.
 - `hello_xr`: `/nix/store/4z8ibn91k9r6yismm2nrcnl19b1v9rp7-openxr-loader-1.1.54/bin/hello_xr -g Vulkan2` with stdin held open. `XR_RUNTIME_JSON` = the monado json above.
-- OpenVR titles (Superhot) are **assumed** to reach Monado via xrizer. That is untested. `PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES=1` is already set in this NixOS config. **C0** (below) is the first game-side go/no-go, not E4.
+- **Measured 2026-10-28 — the xrizer assumption was wrong.** Superhot ships `UnityOpenXR.dll` and reaches Monado **directly**; there is no xrizer in the proven path, and no `XR_RUNTIME_JSON` / `PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES` is needed. Under Wine the chain is: prefix registry `ActiveRuntime = C:\openxr\wineopenxr64.json` → `wineopenxr.dll` → host OpenXR loader → Monado. The host loader finds the runtime through **`~/.config/openxr/1/active_runtime.json`** — `/etc/xdg` is invisible inside pressure-vessel and `~/.local/share/openxr/1/` is not a searched path — and it **caches the runtime list per process**, so a game restart is mandatory after creating that file. Full detail: `research/c0-results.md`.
 - HMD pose is the achieved `head_link` (**~1.221 m**, not a hidden 1.6 m eye). Document that height. Prefer OpenXR **STAGE** with floor = MuJoCo ground; measure yaw/height bias against Monado `initial_offset` in C0. If Superhot is unplayable at child height, add a **named** `hmd_z_offset` (default 0). Never smuggle scale into the honesty claim.
 - Do not start SteamVR, do not write a custom OpenVR driver, unless Superhot refuses the synthetic HMD. Then stop and re-plan; that is the only allowed game switch.
 
@@ -287,6 +288,7 @@ Promote or rewrite against this contract, in order. Each step has a pass and an 
 | C3h | Gain scheduling instead of mode switching: loop **off** while moving, **on** at zero command | straight walk *and* held heading in one schedule | scheduling itself destabilises → keep loop off, accept creep |
 | C4 | Digest; scripted strike using E3 offsets (tracker optional) | residual logged; trigger from achieved phase | miss by 13 cm |
 | C5 | VLM writer on CPU, same bus; skill+side only | one valid command per still; invalid → hold | bad choices |
+| E5 | **Brain bake-off on the digest** — `LFM2.5-VL-3B`, `LFM3-1.7B`, `d1-2B` (text), MiniCPM5-2B, all on the same 100 labelled frames | beats the **majority-class** baseline *and* the scripted commander's labels; reports p50/p95 and a 5-bucket reliability table | the only measurement that can settle §9. Cost: digest-only calls, minutes of compute. Non-blocking for C0-3/5/6 |
 | E4 | Superhot with the body | body in the level on video | no objective |
 
 C0 may run in parallel with C1 and with C3i/C3j/C3k. Do not start C5 before C0 and C1. Do not start E4 before C0, C1, C2, C3i and C3j. **The Playground `g1_policy.onnx` is no longer on the critical path**; C3a–C3h stay in this table as the record of why (see §18.3–18.4).
@@ -449,3 +451,16 @@ Detail in `research/c3m-results.md`; script `spike/wbc/hold_c3m.py`; data `spike
 **Known defect, recorded rather than hidden.** The 5-cycle test attempted 4 configs; 2 completed (`survived=True`, full per-cycle data) and one crashed in `place_region` (`quat_mul` on a `(T,14,4)` array), so **`hold_c3m.py` carries an unpatched bug** in that path. The two completed configs are enough for the conclusion; the missing ones are not load-bearing.
 
 **Net effect on the goal.** Walk, dodge, hold and transition are all now measured on one controller: **39.79 m / 60 s walking, 0.15–0.18 m dodge, RMS 1.3×10⁻⁴ hold, 5/5 clean cycles.** Aim is the single weak axis (3.5 cm / 7.2° ahead, 28° at 30° off-axis). **C0 is the only remaining gate that can invalidate the whole thing**, and it is still unrun.
+
+
+### 18.8 The brain choice was never earned (2026-10-28)
+
+`MiniCPM5-2B` sat in this document as the default brain with no measurement behind it. The reasoning trail does not support it, and three separate pieces of our own work point elsewhere.
+
+**The disqualification was borrowed from the wrong layer.** `stubborn-gamer/research/model-test-findings.md` concludes: *"Best compact fast candidate: LFM2.5-VL-3B, particularly for routine decisions."* Routine decision — pick one of a small closed set from a compact typed state — **is exactly this layer**. LFM was struck out in vr-bot's docs for emitting `navigate_to` on 73% of **hard home-assistant planning cases**, which is the layer above us. The bench's own caveat for LFM was *"not a proven general planner"*: true, and irrelevant to a five-way skill choice. What survived into these docs was "LFM disqualified", without the qualifier that mattered.
+
+**The bench also says vision is the wrong axis:** *"Vision was not the main reasoner... a text/JSON belief state produced by perception and tracking is likely more valuable than spending most of the VRAM budget on a large vision model."* A **VL** model is therefore the wrong shape for the brain, and `LFM3-1.7B` (text, 256K context, native tool calling, ~1 GB at 4-bit) fits the contract better than either VL candidate.
+
+**And the category is cheap now.** `research/d1-capabilities.md` §6b measured on this machine: d1-2B over a **text digest** at **5.5 s** (Q8_0/2.2B/12 threads; a third party measured **1.7 s** on Q4_K_M/d1-2B/4 threads), versus **7 s at 116 image tokens and 36–39 s at 591** for the same model over a picture. So the pixel path is 5–7× too slow, and the digest path is 7–13× faster than MiniCPM5-2B's 20 s p50. Answers were byte-identical across repeats, as a zero-token readout must be.
+
+**Consequence.** §9 keeps the contract — digest in, skill+side out, CPU, no cloud — and loses the model name. **E5** decides it. Two cautions carry over and must survive any bake-off: a **fine-tuned 421M Laya beat zero-shot 2B d1** (99.9% vs 55.4%) on a narrow closed-vocabulary task, so the axis that decides is task-specific training rather than parameters; and **no calibration metric exists for d1 anywhere** (no ECE, no Brier), while `confidence`-gated `hold` is precisely a calibration claim. A majority-class baseline and a reliability table are part of E5's pass bar for that reason.
