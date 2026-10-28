@@ -3,6 +3,7 @@ from __future__ import annotations
 import collections
 import json
 import os
+import select
 import shutil
 import signal
 import socket
@@ -268,6 +269,18 @@ class ProcessTests(unittest.TestCase):
             abort.set()
             with self.assertRaises(Aborted):
                 runner.wait_port("127.0.0.1", 9, timeout=1, abort=abort)
+
+    def test_port_probe_never_connects(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            runner = ProcessRunner(Path(raw) / "pointer.json")
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+                listener.bind(("127.0.0.1", 0))
+                listener.listen()
+                port = listener.getsockname()[1]
+                self.assertTrue(runner.port_in_use("127.0.0.1", port))
+                runner.wait_port("127.0.0.1", port, timeout=1)
+                readable, _, _ = select.select([listener], [], [], 0)
+                self.assertEqual(readable, [])
 
     def test_wait_log_times_out(self) -> None:
         with tempfile.TemporaryDirectory() as raw:

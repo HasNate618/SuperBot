@@ -3,13 +3,21 @@ from __future__ import annotations
 import json
 import os
 import signal
-import socket
 import stat
 import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, Iterator
+
+
+def _listening_in(text: str, port: int) -> bool:
+    suffix = f":{port:04X}"
+    for line in text.splitlines()[1:]:
+        fields = line.split()
+        if len(fields) >= 4 and fields[1].endswith(suffix) and fields[3] == "0A":
+            return True
+    return False
 
 
 class Aborted(RuntimeError):
@@ -246,9 +254,14 @@ class ProcessRunner:
         raise ProcessError(f"systemctl is-active failed with exit code {result.returncode}")
 
     def port_in_use(self, host: str, port: int) -> bool:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            sock.settimeout(0.5)
-            return sock.connect_ex((host, port)) == 0
+        for path in ("/proc/net/tcp", "/proc/net/tcp6"):
+            try:
+                text = Path(path).read_text()
+            except OSError:
+                continue
+            if _listening_in(text, port):
+                return True
+        return False
 
     def wait_port(self, host: str, port: int, timeout: float, abort=None) -> None:
         deadline = time.monotonic() + timeout
