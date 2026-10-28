@@ -34,3 +34,6 @@ spike/*/logs/*.csv
 spike/e2/frames/
 spike/e1/include/
 spike/e1/xr_view_probe
+
+# Machine-specific config (absolute paths, Steam shortcut id)
+config.toml

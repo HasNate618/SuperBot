@@ -1,0 +1,75 @@
+# vrbot configuration — copy to config.toml and edit.
+#
+# Every value below is read at startup and validated; a bad path fails loudly
+# before anything is launched. `config.toml` is git-ignored because it holds
+# machine-specific absolute paths.
+#
+# Relative paths (pose_client, game_exe if you make it relative) resolve
+# against the repository root, not your shell's cwd.
+
+[paths]
+# Monado service binary. On NixOS this is the setuid wrapper.
+monado_bin = "/run/wrappers/bin/monado-service"
+
+# Tools the orchestrator drives. These must be on PATH or absolute.
+weston_bin = "weston"
+weston_screenshooter_bin = "weston-screenshooter"
+weston_debug_bin = "weston-debug"
+magick_bin = "magick"
+
+# Steam launcher and the game executable.
+# steam_bin: the steam *client* launcher, not the runtime's steam binary.
+# game_exe:  the .exe itself; it is launched through Steam, not directly.
+steam_bin = "/home/YOUR_USER/.local/bin/steam"
+game_exe = "/home/YOUR_USER/Games/SUPERHOT VR/SUPERHOT_VR.exe"
+
+# The pose client that feeds fabricated HMD/controller poses to Monado.
+pose_client = "spike/c0/c0_client.py"
+
+# OpenXR runtime pointer the game will resolve to.
+# READ-ONLY: vrbot validates that this file exists and is readable; it never
+# writes or replaces it. Create it yourself, see README "Prerequisites".
+openxr_active_runtime = "/home/YOUR_USER/.config/openxr/1/active_runtime.json"
+
+# Where session logs and frames are written.
+session_root = "/home/YOUR_USER/.local/state/vr-bot/sessions"
+
+[launch]
+# Steam shortcut ID of the non-Steam game entry. Find it in
+# ~/.local/share/Steam/userdata/<id>/config/shortcuts.vdf, or in Steam's
+# console log as `AppId=` when you launch the game by hand.
+shortcut_id = "0000000000000000000"
+
+# Proton app id used for the compatibility prefix. For a non-Steam shortcut
+# this is the same numeric id Steam reports as AppId.
+proton_app_id = "0000000000"
+
+# Extra args passed to Steam. -cef-disable-gpu keeps the Steam UI from
+# fighting the game for the GPU on small cards.
+steam_extra_args = ["-cef-disable-gpu"]
+
+# Timings, in seconds. Generous by default; tighten once you know your machine.
+steam_settle_sec = 60
+steam_ready_timeout_sec = 120
+game_process_timeout_sec = 60
+openxr_client_timeout_sec = 60
+startup_timeout_sec = 300
+
+[preview]
+# The dashboard's live preview: a composite of the Weston output with a small
+# status panel drawn above it.
+width = 1280
+height = 720
+panel_height = 32
+fps = 8
+jpeg_quality = 80
+
+[dashboard]
+host = "127.0.0.1"
+port = 8765
+
+[timeouts]
+monado_startup_sec = 20
+weston_startup_sec = 20
+pose_handshake_sec = 10
+stop_sec = 60
