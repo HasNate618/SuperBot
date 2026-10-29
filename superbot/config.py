@@ -47,6 +47,19 @@ class PreviewConfig:
 
 
 @dataclass(frozen=True)
+class BodyConfig:
+    """Third-person MuJoCo view, run beside the C0 session."""
+
+    enabled: bool
+    autostart: bool
+    python: str
+    script: str
+    fps: float
+    width: int
+    height: int
+
+
+@dataclass(frozen=True)
 class DashboardConfig:
     host: str
     port: int
@@ -67,6 +80,7 @@ class Config:
     preview: PreviewConfig
     dashboard: DashboardConfig
     timeouts: TimeoutsConfig
+    body: BodyConfig
 
 
 DEFAULTS: dict[str, dict[str, Any]] = {
@@ -90,6 +104,18 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         "game_process_timeout_sec": 60.0,
         "openxr_client_timeout_sec": 60.0,
         "startup_timeout_sec": 300.0,
+    },
+    "body": {
+        # Off by default: the body view needs the SONIC venv and weights, which
+        # a bare checkout will not have. Enable it for a "regular session" where
+        # you want the robot and the game on screen at the same time.
+        "enabled": False,
+        "autostart": False,
+        "python": "spike/e3/.venv/bin/python",
+        "script": "spike/wbc/body_view.py",
+        "fps": 10.0,
+        "width": 560,
+        "height": 420,
     },
     "preview": {
         "width": 1280,
@@ -267,6 +293,7 @@ def load_config(
         preview=PreviewConfig(**merged["preview"]),
         dashboard=DashboardConfig(**merged["dashboard"]),
         timeouts=TimeoutsConfig(**merged["timeouts"]),
+        body=BodyConfig(**merged["body"]),
     )
     _validate(cfg)
     return cfg

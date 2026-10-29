@@ -206,8 +206,8 @@ class SonicExecutor:
             root_q=(float(root_q[0]), float(root_q[1]), float(root_q[2]), float(root_q[3])),
             v_xy=(float(r.data.qvel[0]), float(r.data.qvel[1])),
             yaw_rate=float(r.data.qvel[5]),
-            q=tuple(float(v) for v in r._q_policy()),  # noqa: SLF001
-            qd=tuple(float(v) for v in r._dq_policy()),  # noqa: SLF001
+            q=tuple(map(float, np.asarray(r._q_policy()).ravel())),  # noqa: SLF001
+            qd=tuple(map(float, np.asarray(r._dq_policy()).ravel())),  # noqa: SLF001
             head=_pose_from(positions[HEAD], quats[HEAD]),
             left_hand=_pose_from(positions[L_WRIST], quats[L_WRIST]),
             right_hand=_pose_from(positions[R_WRIST], quats[R_WRIST]),

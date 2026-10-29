@@ -11,6 +11,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
+from .body_preview import BodyPreview
 from .config import Config
 from .manual_input import ManualInputError, ManualInputUnavailable
 from .orchestrator import ConflictError, PreflightError, SessionManager
@@ -25,10 +26,12 @@ class DashboardServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
 
-    def __init__(self, address, manager, config: Config, static_dir: Path) -> None:
+    def __init__(self, address, manager, config: Config, static_dir: Path,
+                 body: object | None = None) -> None:
         self.manager = manager
         self.config = config
         self.static_dir = Path(static_dir)
+        self.body = body
         self.shutdown_event = threading.Event()
         super().__init__(address, DashboardHandler)
 
@@ -53,7 +56,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if path == "/app.js":
             return self._static("app.js", "application/javascript; charset=utf-8")
         if path == "/api/state":
-            return self._json(self.server.manager.snapshot())
+            state = self.server.manager.snapshot()
+            body = self.server.body
+            if body is not None:
+                state = {**state, "body": body.status()}
+            return self._json(state)
         if path == "/api/frame.png":
             latest = self.server.manager.preview_path()
             if latest is None:
@@ -63,6 +70,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
             except OSError:
                 return self._error(404, "no preview frame")
             return self._bytes(200, data, "image/png")
+        if path == "/api/body.jpg":
+            body = self.server.body
+            frame = body.latest() if body is not None else None
+            if frame is None:
+                return self._error(404, "no body frame")
+            try:
+                return self._bytes(200, frame.read_bytes(), "image/jpeg")
+            except OSError:
+                return self._error(404, "no body frame")
         if path == "/preview.png":
             return self._preview_stream()
         if path.startswith("/api/logs/"):
@@ -111,6 +127,20 @@ class DashboardHandler(BaseHTTPRequestHandler):
             except Exception:
                 return self._error(500, "internal server error")
             return self._json({"accepted": True, "armed": bool(armed)})
+        if path == "/api/body/start":
+            body = self.server.body
+            if body is None:
+                return self._error(400, "body view disabled")
+            problem = body.start()
+            if problem:
+                return self._error(400, problem)
+            return self._json({"ok": True, "body": body.status()}, status=202)
+        if path == "/api/body/stop":
+            body = self.server.body
+            if body is None:
+                return self._error(400, "body view disabled")
+            body.stop()
+            return self._json({"ok": True, "body": body.status()})
         if path == "/api/session/mode":
             try:
                 self.server.manager.set_mode(body.get("mode"))
@@ -243,7 +273,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
 def run_dashboard(cfg: Config) -> None:
     manager = SessionManager(cfg)
     static_dir = Path(__file__).resolve().parent / "static"
-    server = DashboardServer((cfg.dashboard.host, cfg.dashboard.port), manager, cfg, static_dir)
+    body = None
+    if cfg.body.enabled:
+        body = BodyPreview(cfg.body, out_dir=Path(cfg.paths.session_root) / "body")
+        if cfg.body.autostart:
+            problem = body.start()
+            if problem:
+                print(f"superbot dashboard: body view: {problem}", file=sys.stderr)
+    server = DashboardServer(
+        (cfg.dashboard.host, cfg.dashboard.port), manager, cfg, static_dir, body=body
+    )
 
     def request_shutdown(signum, frame) -> None:
         threading.Thread(target=server.shutdown, daemon=True).start()
@@ -255,6 +294,11 @@ def run_dashboard(cfg: Config) -> None:
     try:
         server.serve_forever(poll_interval=0.5)
     finally:
+        print("superbot dashboard: shutting down", flush=True)
+        if body is not None:
+            print(f"superbot dashboard: stopping body view (running={body.running()})", flush=True)
+            body.stop()
+            print(f"superbot dashboard: body view stopped (running={body.running()})", flush=True)
         manager.stop()
         if not manager.wait_idle(70):
             print("superbot dashboard: session did not stop within 70s", file=sys.stderr)

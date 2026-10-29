@@ -147,3 +147,26 @@ button.active { border-color: var(--accent); color: var(--accent); }
 }
 
 .error { display: none; color: var(--bad); border: 1px solid #5a2a2a; background: #2a1515; padding: 10px; border-radius: 8px; }
+
+/* Game cam and third-person body view, side by side. */
+.views {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+.views > .preview {
+  flex: 1 1 320px;
+}
+#body-wait {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #888;
+  font-size: 0.85em;
+}
+#body-wait[hidden] {
+  display: none;
+}

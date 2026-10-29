@@ -534,3 +534,46 @@ window.addEventListener("blur", () => releaseManual());
 
 refresh();
 setInterval(refresh, 1000);
+
+// Third-person body view. Separate from the session: it is its own MuJoCo
+// process, so it can be live while the game session is stopped.
+const BODY_REFRESH_MS = 120;
+let bodyTimer = null;
+let bodyFailures = 0;
+
+function bodyRefresh() {
+  const info = (lastState && lastState.body) || null;
+  const img = $("body");
+  const wait = $("body-wait");
+  if (!info || !info.running || !info.frame) {
+    wait.hidden = false;
+    wait.textContent = info && info.error ? info.error : "body view off";
+    return;
+  }
+  const probe = new Image();
+  probe.onload = () => {
+    bodyFailures = 0;
+    img.src = probe.src;
+    wait.hidden = true;
+  };
+  probe.onerror = () => {
+    bodyFailures += 1;
+    if (bodyFailures > 8) {
+      wait.hidden = false;
+      wait.textContent = "waiting for body view";
+    }
+  };
+  probe.src = `/api/body.jpg?t=${Date.now()}`;
+}
+
+function bodySync() {
+  const info = (lastState && lastState.body) || null;
+  const wanted = Boolean(info && info.running);
+  if (wanted && bodyTimer === null) {
+    bodyTimer = setInterval(bodyRefresh, BODY_REFRESH_MS);
+    bodyRefresh();
+  } else if (!wanted && bodyTimer !== null) {
+    clearInterval(bodyTimer);
+    bodyTimer = null;
+  }
+}
