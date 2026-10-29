@@ -27,7 +27,7 @@ class DashboardServer(ThreadingHTTPServer):
     allow_reuse_address = True
 
     def __init__(self, address, manager, config: Config, static_dir: Path,
-                 body: object | None = None) -> None:
+                 body: BodyPreview | None = None) -> None:
         self.manager = manager
         self.config = config
         self.static_dir = Path(static_dir)
@@ -41,6 +41,10 @@ class DashboardServer(ThreadingHTTPServer):
 
 
 class DashboardHandler(BaseHTTPRequestHandler):
+    # BaseHTTPRequestHandler types .server as BaseServer, which has neither of
+    # ours. This annotation narrows it for the checker and costs nothing at runtime.
+    server: "DashboardServer"
+
     server_version = "superbot/0.1"
     timeout = 10
 

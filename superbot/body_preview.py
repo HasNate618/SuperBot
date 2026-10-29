@@ -41,7 +41,7 @@ class BodyPreview:
             "--fps", f"{self.cfg.fps:g}",
             "--width", str(self.cfg.width),
             "--height", str(self.cfg.height),
-        ]
+        ] + (["--reel"] if self.cfg.reel else [])
 
     def preflight(self) -> str:
         """Empty string when the sidecar can start, else why it cannot."""

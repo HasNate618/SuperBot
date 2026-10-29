@@ -20,6 +20,7 @@ def make_cfg(
         fps=10.0,
         width=560,
         height=420,
+        reel=True,
     )
 
 
@@ -32,6 +33,16 @@ class BodyPreviewTestCase(unittest.TestCase):
             self.assertIn(str(Path(tmp)), argv)
             self.assertIn("--fps", argv)
             self.assertIn("--width", argv)
+
+    def test_argv_asks_for_the_reel_when_enabled(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertIn("--reel", BodyPreview(make_cfg(), out_dir=Path(tmp)).argv())
+
+    def test_argv_omits_the_reel_when_disabled(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            view = BodyPreview(make_cfg(), out_dir=Path(tmp))
+            view.cfg = BodyConfig(**{**view.cfg.__dict__, "reel": False})
+            self.assertNotIn("--reel", view.argv())
 
     def test_preflight_reports_missing_python(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

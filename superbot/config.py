@@ -57,6 +57,7 @@ class BodyConfig:
     fps: float
     width: int
     height: int
+    reel: bool
 
 
 @dataclass(frozen=True)
@@ -116,6 +117,8 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         "fps": 10.0,
         "width": 560,
         "height": 420,
+        # Cycle the verb reel instead of holding one pose, so the tile shows motion.
+        "reel": True,
     },
     "preview": {
         "width": 1280,

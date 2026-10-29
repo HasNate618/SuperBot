@@ -82,3 +82,6 @@ script = "spike/wbc/body_view.py"
 fps = 10
 width = 560
 height = 420
+# Cycle the verb reel (hold, look, aim, punch, dodge) instead of holding one
+# pose, so the tile shows motion. Set false to sit in the standing hold.
+reel = true

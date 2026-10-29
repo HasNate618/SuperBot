@@ -20,6 +20,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+from collections.abc import Callable
 import io
 import json
 import math
@@ -45,7 +46,7 @@ import mujoco  # pyright: ignore[reportMissingImports]  # noqa: E402
 from PIL import Image  # pyright: ignore[reportMissingImports]  # noqa: E402
 
 from sonic_executor import SonicExecutor  # pyright: ignore[reportMissingImports]  # noqa: E402
-from superbot.body import AUTH_HEAD, BodyCommand, hold  # noqa: E402
+from superbot.body import AUTH_HEAD, AUTH_R_HAND, BodyCommand, hold  # noqa: E402
 
 
 class BodyRenderer:
@@ -83,12 +84,42 @@ def write_atomic(path: Path, payload: bytes) -> None:
     tmp.replace(path)
 
 
+def reel_plan(
+    executor: SonicExecutor,
+) -> list[tuple[str, float, Callable[[], BodyCommand] | None]]:
+    """The verb reel, as (name, seconds, command factory) triples.
+
+    `hold` is the empty authority mask, so it is `None` rather than a command -
+    there is no hold verb to send. Everything else reuses the executor's own
+    target builders, so the reel cannot drift from what the executor supports.
+    """
+    return [
+        ("hold", 1.5, None),
+        ("look left 35", 3.0, lambda: BodyCommand(
+            seq=0, authority=AUTH_HEAD, head=executor.look_target(math.radians(-35.0)))),
+        ("hold", 1.5, None),
+        ("look right 35", 3.0, lambda: BodyCommand(
+            seq=0, authority=AUTH_HEAD, head=executor.look_target(math.radians(35.0)))),
+        ("hold", 1.5, None),
+        ("aim right", 2.5, lambda: BodyCommand(
+            seq=0, authority=AUTH_R_HAND,
+            right_hand=executor.aim_target("right", forward_m=0.22))),
+        ("punch right", 2.0, lambda: BodyCommand(
+            seq=0, authority=AUTH_R_HAND, right_hand=executor.punch_target("right"))),
+        ("dodge left", 1.5, lambda: BodyCommand(
+            seq=0, authority=AUTH_HEAD, head=executor.dodge_target(0.14))),
+        ("hold", 2.0, None),
+    ]
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="body_view")
     ap.add_argument("--out", required=True, help="directory for body_latest.jpg and body_state.json")
     ap.add_argument("--seconds", type=float, default=0.0, help="0 = run forever")
     ap.add_argument("--fps", type=float, default=10.0, help="render cadence (policy still runs at 50 Hz)")
     ap.add_argument("--clip", default=None, help="motion clip (default: the hold clip)")
+    ap.add_argument("--reel", action="store_true",
+                    help="cycle the verb reel (hold, look, aim, punch, dodge) instead of holding")
     ap.add_argument("--look-deg", type=float, default=0.0, help="hold a fixed head yaw, for testing")
     ap.add_argument("--width", type=int, default=640)
     ap.add_argument("--height", type=int, default=480)
@@ -111,9 +142,28 @@ def main(argv: list[str] | None = None) -> int:
     next_render = started
     renders = 0
 
-    print(f"body_view: hold clip {executor.clip} -> {out}", flush=True)
+    plan = reel_plan(executor) if args.reel else None
+    phase_name = ""
+    print(
+        f"body_view: {'reel' if plan else 'hold'} clip {executor.clip} -> {out}",
+        flush=True,
+    )
+    if plan:
+        print("body_view: reel = " + " -> ".join(p[0] for p in plan), flush=True)
+        phase_total = sum(p[1] for p in plan)
     try:
         while True:
+            if plan:
+                t = (time.monotonic() - started) % phase_total
+                acc = 0.0
+                for name, secs, factory in plan:
+                    acc += secs
+                    if t < acc:
+                        cmd = factory() if factory else hold()
+                        if name != phase_name:
+                            phase_name = name
+                            print(f"body_view: phase {name}", flush=True)
+                        break
             state = executor.step(cmd, now_ns=time.monotonic_ns())
             now = time.monotonic()
             if now >= next_render:
