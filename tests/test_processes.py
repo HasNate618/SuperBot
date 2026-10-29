@@ -245,6 +245,21 @@ class ProcessTests(unittest.TestCase):
                     with self.assertRaises(ProcessError):
                         runner.systemd_unit_active("monado.service")
 
+    def test_stop_systemd_unit_exit_codes(self) -> None:
+        runner = ProcessRunner(Path("/tmp/pointer.json"))
+        result = subprocess.CompletedProcess(["systemctl"], 0, "", "")
+        with mock.patch("superbot.processes.subprocess.run", return_value=result) as run:
+            runner.stop_systemd_unit("monado.socket")
+        self.assertEqual(
+            run.call_args.args[0], ["systemctl", "--user", "stop", "monado.socket"]
+        )
+        for code in (1, 5):
+            with self.subTest(code=code):
+                result = subprocess.CompletedProcess(["systemctl"], code, "", "")
+                with mock.patch("superbot.processes.subprocess.run", return_value=result):
+                    with self.assertRaises(ProcessError):
+                        runner.stop_systemd_unit("monado.socket")
+
     def test_process_probes_raise_on_timeout(self) -> None:
         runner = ProcessRunner(Path("/tmp/pointer.json"))
         timeout = subprocess.TimeoutExpired(["probe"], 5)

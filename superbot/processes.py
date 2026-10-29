@@ -6,9 +6,11 @@ import signal
 import stat
 import subprocess
 import time
+from collections.abc import Iterator
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
-from typing import IO, Iterator
+from typing import IO
 
 
 def _listening_in(text: str, port: int) -> bool:
@@ -65,10 +67,8 @@ class ProcessHandle:
     def signal_group(self, sig: int) -> None:
         if self.pgid <= 0:
             return
-        try:
+        with suppress(ProcessLookupError, PermissionError):
             os.killpg(self.pgid, sig)
-        except (ProcessLookupError, PermissionError):
-            pass
 
     def stop(self, timeout: float = 5.0) -> None:
         grace = 0.5
@@ -87,18 +87,14 @@ class ProcessHandle:
                 time.sleep(0.05)
         if self._popen is not None:
             remaining = max(0.0, deadline - time.monotonic()) + grace
-            try:
+            with suppress(subprocess.TimeoutExpired):
                 self._popen.wait(timeout=remaining)
-            except subprocess.TimeoutExpired:
-                pass
         self._close()
 
     def _close(self) -> None:
         for handle in self._handles:
-            try:
+            with suppress(OSError):
                 handle.close()
-            except OSError:
-                pass
         self._handles = ()
 
 
@@ -216,8 +212,7 @@ class ProcessRunner:
         return subprocess.run(
             [str(item) for item in argv],
             stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             text=True,
             env=env,
             cwd=str(cwd) if cwd is not None else None,
@@ -252,6 +247,18 @@ class ProcessRunner:
         if result.returncode == 3:
             return False
         raise ProcessError(f"systemctl is-active failed with exit code {result.returncode}")
+
+    def stop_systemd_unit(self, unit: str) -> None:
+        """Stop a user unit. Raises ProcessError when systemd refuses."""
+        result = subprocess.run(
+            ["systemctl", "--user", "stop", unit],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=20,
+        )
+        if result.returncode != 0:
+            raise ProcessError(f"systemctl stop {unit} failed with exit code {result.returncode}")
 
     def port_in_use(self, host: str, port: int) -> bool:
         for path in ("/proc/net/tcp", "/proc/net/tcp6"):
@@ -371,10 +378,8 @@ class ProcessRunner:
         return [part.decode(errors="replace") for part in raw.split(b"\0") if part]
 
     def kill_pid(self, pid: int) -> None:
-        try:
+        with suppress(ProcessLookupError, PermissionError):
             os.kill(pid, signal.SIGKILL)
-        except (ProcessLookupError, PermissionError):
-            pass
 
     def debug_scene_graph(self, debug_bin: str, env: dict[str, str], timeout: float = 5.0) -> str | None:
         try:
@@ -415,10 +420,8 @@ class ProcessRunner:
         os.replace(tmp, self.pointer_path)
 
     def remove_pointer(self) -> None:
-        try:
+        with suppress(FileNotFoundError):
             self.pointer_path.unlink()
-        except FileNotFoundError:
-            pass
 
     def tail(self, path: Path, lines: int = 200) -> str:
         return tail_text(path, lines)

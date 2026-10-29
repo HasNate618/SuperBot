@@ -86,6 +86,7 @@ class FakeRunner:
         self.starts: list[tuple[str, list[str]]] = []
         self.alive_pids: set[int] = set()
         self.removed_socket = False
+        self.stopped_units: list[str] = []
 
     def start(self, name, argv, env, cwd, log_path, stderr_path=None):
         self.starts.append((name, [str(item) for item in argv]))
@@ -129,6 +130,10 @@ class FakeRunner:
 
     def systemd_unit_active(self, unit):
         return unit in self.units
+
+    def stop_systemd_unit(self, unit):
+        self.stopped_units.append(unit)
+        self.units.discard(unit)
 
     def port_in_use(self, host, port):
         return self.port
@@ -548,6 +553,29 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(self.manager.state_value(), "failed")
         self.assertIsNone(self.runner.pointer)
         self.assertEqual(self.runner.handles, {})
+
+    def test_active_monado_socket_is_reclaimed_not_refused(self) -> None:
+        self.runner.units.add("monado.socket")
+        self.start()
+        self.assertEqual(self.runner.stopped_units, ["monado.socket"])
+        self.assertEqual(self.runner.units, set())
+
+    def test_running_monado_service_is_stopped_before_its_socket(self) -> None:
+        self.runner.units.update({"monado.service", "monado.socket"})
+        self.start()
+        self.assertEqual(self.runner.stopped_units, ["monado.service", "monado.socket"])
+
+    def test_unit_that_will_not_stop_blocks_start(self) -> None:
+        self.runner.units.add("monado.socket")
+        with (
+            patch.object(self.runner, "stop_systemd_unit", return_value=None),
+            patch("superbot.orchestrator.missing_requirements", return_value=[]),
+        ):
+            with self.assertRaises(PreflightError) as raised:
+                self.manager.start()
+        self.assertIn("still active", str(raised.exception))
+        self.assertEqual(self.manager.state_value(), "failed")
+        self.assertIsNone(self.runner.pointer)
 
     def test_stale_pointer_blocks_start(self) -> None:
         self.runner.alive_pids.add(999)

@@ -8,10 +8,10 @@ import shutil
 import sys
 import threading
 import time
-from datetime import datetime, timezone
+from collections.abc import Callable
+from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
-from collections.abc import Callable
 
 from .config import Config, missing_requirements
 from .manual_input import ManualInputBridge
@@ -527,14 +527,14 @@ class SessionManager:
         if self._session_dir is None:
             return
         path = self._session_dir / "session.log"
-        timestamp = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        timestamp = datetime.now(UTC).isoformat().replace("+00:00", "Z")
         with path.open("a") as handle:
             handle.write(f"{timestamp} {message}\n")
 
     def _attempt_log(self, session_dir: Path | None, message: str) -> None:
         if session_dir is None:
             return
-        timestamp = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        timestamp = datetime.now(UTC).isoformat().replace("+00:00", "Z")
         try:
             with (session_dir / "session.log").open("a") as handle:
                 handle.write(f"{timestamp} {message}\n")
@@ -589,9 +589,18 @@ class SessionManager:
 
         if self.runner.process_name_running("steam"):
             raise PreflightError("Close the host Steam client before starting a hidden C0 session.")
+        # monado.socket is wired into sockets.target from /etc/systemd/user, so it is
+        # listening again after every reboot and owns the IPC path this session's own
+        # monado-service has to bind. systemctl --user disable cannot stick against a
+        # NixOS-generated unit, so reclaim it instead of asking the operator to. These
+        # units exist only for this project on this machine. Service first: it has
+        # Requires=monado.socket.
         for unit in ("monado.service", "monado.socket"):
             if self.runner.systemd_unit_active(unit):
-                raise PreflightError(f"Stop the user unit {unit} before starting a hidden C0 session.")
+                print(f"superbot session: stopping user unit {unit}", file=sys.stderr, flush=True)
+                self.runner.stop_systemd_unit(unit)
+                if self.runner.systemd_unit_active(unit):
+                    raise PreflightError(f"user unit {unit} is still active after stopping it")
         if self.runner.port_in_use("127.0.0.1", 4242):
             raise PreflightError("TCP 4242 is already in use")
         with self._lock:
@@ -604,7 +613,7 @@ class SessionManager:
 
         with self._lock:
             self._require_attempt_active(generation)
-            stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+            stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
             session_id = f"{stamp}-{os.urandom(3).hex()}"
             session_dir = Path(self.cfg.paths.session_root) / session_id
             self._session_id = session_id
@@ -930,7 +939,7 @@ class SessionManager:
                     current = generation == self._start_generation
                     stopped = self._stop_event.is_set() or self._state != State.STARTING
                     if current and not stopped:
-                        self._started_at = datetime.now(timezone.utc)  # noqa: DTZ002 - file imports the class, not the module
+                        self._started_at = datetime.now(UTC)
                         self._state = State.RUNNING
                         self._condition.notify_all()
                 if current and stopped:
