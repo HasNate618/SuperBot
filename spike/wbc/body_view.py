@@ -42,8 +42,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 # gl_boot is imported for its side effect: it re-execs with LD_LIBRARY_PATH so
-# libEGL resolves, which must happen before mujoco is imported.
-import gl_boot  # pyright: ignore[reportMissingImports]  # noqa: E402,F401
+# libEGL resolves, which must happen before mujoco is imported. Sorting this block
+# would move the local import after the third-party ones and break the renderer.
+import gl_boot  # pyright: ignore[reportMissingImports]  # noqa: E402,F401,I001
 
 # mujoco / PIL live in spike/e3/.venv only; `superbot/` stays stdlib-only.
 import mujoco  # pyright: ignore[reportMissingImports]  # noqa: E402
@@ -134,7 +135,10 @@ class BodyRenderer:
 
 
 def write_atomic(path: Path, payload: bytes) -> None:
-    tmp = path.with_suffix(path.suffix + ".tmp")
+    # The temp name carries the pid: two viewers rendering into the same --out used
+    # to share one .tmp path, so each one's replace() could find the other's tmp
+    # already renamed away (20 FileNotFoundError tracebacks in 103 s).
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
     tmp.write_bytes(payload)
     tmp.replace(path)
 
@@ -234,8 +238,25 @@ class VerbServer:
 
     def start(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        with contextlib.suppress(FileNotFoundError):
-            self.path.unlink()
+        if self.path.exists():
+            # A live owner means a working control channel. Unlinking it anyway
+            # leaves that process listening on a path nobody can reach, while the
+            # new one silently answers the dashboard: the dashboard then drives a
+            # body that is not the one on screen. Refuse, and let the caller say so.
+            probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            probe.settimeout(0.5)
+            try:
+                probe.connect(str(self.path))
+            except OSError:
+                pass
+            else:
+                raise RuntimeError(
+                    f"another body view is already listening on {self.path}"
+                )
+            finally:
+                probe.close()
+            with contextlib.suppress(FileNotFoundError):
+                self.path.unlink()
         self._sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self._sock.bind(str(self.path))
         self._sock.listen(4)
@@ -379,7 +400,11 @@ def main(argv: list[str] | None = None) -> int:
             print(f"body_view: view {name}", flush=True)
 
         server = VerbServer(Path(args.control), bus, executor, set_view=set_view)
-        server.start()
+        try:
+            server.start()
+        except RuntimeError as exc:
+            print(f"body_view: {exc}", file=sys.stderr, flush=True)
+            return 1
         print(f"body_view: control socket {args.control}", flush=True)
 
     if args.look_deg:
