@@ -596,7 +596,25 @@ async function bodyVerb(verb, button) {
   }
 }
 
+async function bodyView(name, button) {
+  const status = $("verb-status");
+  if (button) button.disabled = true;
+  try {
+    const reply = await post("/api/body/command", { view: name });
+    status.textContent = reply.ok ? `view → ${reply.view ?? name}` : `view rejected`;
+  } catch (error) {
+    status.textContent = `view failed: ${error.message}`;
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
 document.addEventListener("click", (event) => {
-  const button = event.target.closest("button[data-verb]");
-  if (button) bodyVerb(button.dataset.verb, button);
+  const verbButton = event.target.closest("button[data-verb]");
+  if (verbButton) {
+    bodyVerb(verbButton.dataset.verb, verbButton);
+    return;
+  }
+  const viewButton = event.target.closest("button[data-view]");
+  if (viewButton) bodyView(viewButton.dataset.view, viewButton);
 });

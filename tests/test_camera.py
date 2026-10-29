@@ -10,10 +10,12 @@ import unittest
 
 from superbot.camera import PRESETS, FollowCamera, project, yaw_from_quat
 
-# A standing G1: feet near the root, head about 1.5 m above it.
+# A standing G1, measured on the hold pose: root 0.788, ankles ~0.03-0.05,
+# shoulder links ~1.07-1.09, head geoms top out at 1.217. There is no head or
+# neck joint in the model, so these are world heights, not links.
 ROOT = (0.0, 0.0, 0.79)
-FEET = (0.0, 0.0, 0.85)
-HEAD = (0.0, 0.0, 2.30)
+FEET = (0.0, 0.0, 0.05)
+HEAD = (0.0, 0.0, 1.22)
 FOVY = 45.0
 ASPECT = 4 / 3
 

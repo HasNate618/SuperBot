@@ -22,13 +22,14 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 
-# Azimuth in degrees. 0 and 180 are along +y at either side of the body's front,
-# 90 is the body's side. Which of 0/180 is "front" depends on the model's facing;
+# Azimuth in degrees, VERIFIED VISUALLY against the G1 model (not derived from
+# the convention docs): 90 faces the chest, 180 shows the profile, 0 the back.
+# An earlier revision had front and side swapped, caught by looking at renders.
 # `three_quarter` is the default because it shows reach and gait at once.
 PRESETS: dict[str, float] = {
     "three_quarter": 140.0,
-    "front": 180.0,
-    "side": 90.0,
+    "front": 90.0,
+    "side": 180.0,
     "back": 0.0,
 }
 
@@ -46,12 +47,14 @@ class FollowCamera:
     preset: str = DEFAULT_PRESET
     distance: float = 2.3
     elevation: float = -10.0
-    # Frames the middle of the body, not the chest. Measured: aiming at the chest
-    # from 2.6 m put the head at y_ndc 1.22, i.e. cropped off the top.
-    target_height: float = 0.75
+    # Frames the middle of the body. Measured on the hold pose: feet ~0.03 m,
+    # head geoms top out at 1.217 m, so mid-body is ~0.62 m, i.e. 0.15 m BELOW
+    # the root. An earlier revision aimed 0.75 m above the root and put the
+    # lookat over empty air, parking the whole body in the bottom of the frame.
+    target_height: float = -0.15
     tau: float = 0.25
     yaw_follow: float = 0.0
-    lookat: tuple[float, float, float] = field(default=(0.0, 0.0, 1.54))
+    lookat: tuple[float, float, float] = field(default=(0.0, 0.0, 0.64))
 
     def __post_init__(self) -> None:
         if self.preset not in PRESETS:

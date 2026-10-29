@@ -77,14 +77,18 @@ class BodyRenderer:
         dt = now - self._last_t
         self._last_t = now
         root = (float(data.qpos[0]), float(data.qpos[1]), float(data.qpos[2]))
-        yaw = yaw_from_quat(tuple(float(v) for v in data.qpos[3:7]))
+        q = data.qpos[3:7]
+        yaw = yaw_from_quat((float(q[0]), float(q[1]), float(q[2]), float(q[3])))
         lookat = self.follow.update(root, yaw, dt)
         self.camera.lookat[:] = list(lookat)
         self.camera.distance = self.follow.distance
         self.camera.azimuth = self.follow.azimuth(yaw)
         self.camera.elevation = self.follow.elevation
 
-    def frame(self, data: mujoco.MjData):
+    # mujoco ships no type stubs, so attribute access on its classes is unchecked.
+    # The pyrightconfig override for spike/wbc says the same thing; this comment
+    # covers checkers that have not reloaded it yet.
+    def frame(self, data: mujoco.MjData):  # pyright: ignore[reportAttributeAccessIssue]
         self._aim(data)
         self.renderer.update_scene(data, camera=self.camera)
         # The policy's model has nlight == 0, so a free camera renders the scene
@@ -143,23 +147,39 @@ def verb_command(executor: SonicExecutor, name: str) -> BodyCommand | None:
     `BodyCommand`, and a verb is only a shortcut for the pose it implies. Returns
     None for an unknown verb so the caller can report it rather than guess.
     """
-    head_left = lambda: BodyCommand(
-        seq=0, authority=AUTH_HEAD, head=executor.look_target(math.radians(-35.0)))
-    head_right = lambda: BodyCommand(
-        seq=0, authority=AUTH_HEAD, head=executor.look_target(math.radians(35.0)))
+    def head_left() -> BodyCommand:
+        return BodyCommand(
+            seq=0, authority=AUTH_HEAD, head=executor.look_target(math.radians(-35.0)))
+
+    def head_right() -> BodyCommand:
+        return BodyCommand(
+            seq=0, authority=AUTH_HEAD, head=executor.look_target(math.radians(35.0)))
+
+    def aim() -> BodyCommand:
+        return BodyCommand(
+            seq=0, authority=AUTH_R_HAND,
+            right_hand=executor.aim_target("right", forward_m=0.22))
+
+    def punch() -> BodyCommand:
+        return BodyCommand(
+            seq=0, authority=AUTH_R_HAND, right_hand=executor.punch_target("right"))
+
+    def dodge_left() -> BodyCommand:
+        return BodyCommand(
+            seq=0, authority=AUTH_HEAD, head=executor.dodge_target(0.14))
+
+    def dodge_right() -> BodyCommand:
+        return BodyCommand(
+            seq=0, authority=AUTH_HEAD, head=executor.dodge_target(-0.14))
+
     verbs = {
         "hold": hold,
         "look_left": head_left,
         "look_right": head_right,
-        "aim": lambda: BodyCommand(
-            seq=0, authority=AUTH_R_HAND,
-            right_hand=executor.aim_target("right", forward_m=0.22)),
-        "punch": lambda: BodyCommand(
-            seq=0, authority=AUTH_R_HAND, right_hand=executor.punch_target("right")),
-        "dodge_left": lambda: BodyCommand(
-            seq=0, authority=AUTH_HEAD, head=executor.dodge_target(0.14)),
-        "dodge_right": lambda: BodyCommand(
-            seq=0, authority=AUTH_HEAD, head=executor.dodge_target(-0.14)),
+        "aim": aim,
+        "punch": punch,
+        "dodge_left": dodge_left,
+        "dodge_right": dodge_right,
     }
     make = verbs.get(name)
     if make is None:
@@ -174,10 +194,12 @@ class VerbServer:
     has to reason about clocks, and a stale press cannot rewind the body.
     """
 
-    def __init__(self, path: Path, bus, executor: SonicExecutor) -> None:
+    def __init__(self, path: Path, bus, executor: SonicExecutor,
+                 set_view: Callable[[str], None] | None = None) -> None:
         self.path = Path(path)
         self.bus = bus
         self.executor = executor
+        self.set_view = set_view
         self._sock: socket.socket | None = None
         self._thread: threading.Thread | None = None
         self._seq = 0
@@ -201,6 +223,15 @@ class VerbServer:
             return {"ok": False, "error": f"bad json: {exc}"}
         if not isinstance(raw, dict):
             return {"ok": False, "error": "expected an object"}
+
+        if "view" in raw and "verb" not in raw:
+            name = str(raw["view"])
+            if name not in PRESETS:
+                return {"ok": False, "error": f"unknown view: {name}"}
+            if self.set_view is None:
+                return {"ok": False, "error": "view switching unavailable"}
+            self.set_view(name)
+            return {"ok": True, "view": name}
 
         if "verb" not in raw:
             result = self.bus.push_json(line)       # a full BodyCommand
@@ -293,7 +324,12 @@ def main(argv: list[str] | None = None) -> int:
     server = None
     if args.control:
         bus = CommandBus()
-        server = VerbServer(Path(args.control), bus, executor)
+        def set_view(name: str) -> None:
+            if renderer is not None and renderer.follow is not None:
+                renderer.follow.preset = name
+            print(f"body_view: view {name}", flush=True)
+
+        server = VerbServer(Path(args.control), bus, executor, set_view=set_view)
         server.start()
         print(f"body_view: control socket {args.control}", flush=True)
 

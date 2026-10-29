@@ -25,6 +25,8 @@ from .config import BodyConfig
 # The verbs the viewer knows how to turn into a BodyCommand. Kept here so the
 # dashboard rejects a typo before it reaches the socket; the authoritative map
 # is `verb_command()` in spike/wbc/body_view.py.
+BODY_VIEWS: tuple[str, ...] = ("three_quarter", "front", "side", "back")
+
 BODY_VERBS: tuple[str, ...] = (
     "hold",
     "look_left",
@@ -38,17 +40,20 @@ BODY_VERBS: tuple[str, ...] = (
 
 def send_control(path: Path | str, payload: dict, timeout: float = 2.0) -> dict:
     """Send one control message and return the reply. Raises OSError if unreachable."""
-    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
-        sock.settimeout(timeout)
-        sock.connect(str(path))
-        sock.sendall((json.dumps(payload) + "\n").encode("utf-8"))
-        buf = b""
-        while b"\n" not in buf:
-            chunk = sock.recv(65536)
-            if not chunk:
-                break
-            buf += chunk
-    reply = json.loads(buf.decode("utf-8", "replace") or "{}")
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+            sock.settimeout(timeout)
+            sock.connect(str(path))
+            sock.sendall((json.dumps(payload) + "\n").encode("utf-8"))
+            buf = b""
+            while b"\n" not in buf:
+                chunk = sock.recv(65536)
+                if not chunk:
+                    break
+                buf += chunk
+        reply = json.loads(buf.decode("utf-8", "replace") or "{}")
+    except (OSError, ValueError, UnicodeError) as exc:
+        raise OSError(f"body control {path} failed: {exc}") from exc
     return reply if isinstance(reply, dict) else {"ok": False, "error": "bad reply"}
 
 

@@ -612,6 +612,18 @@ class BodyCommandRouteTestCase(unittest.TestCase):
         status, _ = self._serve(_FakeBody(self.sock_path, running=False), {"verb": "punch"})
         self.assertEqual(status, 503)
 
+    def test_view_switch_reaches_the_body_socket(self) -> None:
+        verbs = _VerbSocket(self.sock_path, {"ok": True, "view": "side"})
+        self.addCleanup(verbs.close)
+        status, doc = self._serve(_FakeBody(self.sock_path), {"view": "side"})
+        self.assertEqual(status, 200)
+        self.assertEqual(doc.get("view"), "side")
+        self.assertEqual(verbs.seen, [{"view": "side"}])
+
+    def test_unknown_view_is_rejected(self) -> None:
+        status, doc = self._serve(_FakeBody(self.sock_path), {"view": "drone"})
+        self.assertEqual(status, 400)
+
     def test_missing_body_returns_400(self) -> None:
         status, _ = self._serve(None, {"verb": "punch"})
         self.assertEqual(status, 400)

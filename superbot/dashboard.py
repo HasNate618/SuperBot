@@ -11,7 +11,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
-from .body_preview import BODY_VERBS, BodyPreview, send_control
+from .body_preview import BODY_VERBS, BODY_VIEWS, BodyPreview, send_control
 from .config import Config
 from .manual_input import ManualInputError, ManualInputUnavailable
 from .orchestrator import ConflictError, PreflightError, SessionManager
@@ -151,6 +151,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return self._error(400, "body view disabled")
             if not view.running():
                 return self._error(503, "body view is not running")
+            if "view" in body and "verb" not in body:
+                name = body.get("view")
+                if not isinstance(name, str) or name not in BODY_VIEWS:
+                    return self._error(400, f"unknown view: {name}")
+                try:
+                    reply = send_control(view.control_path(), {"view": name})
+                except (OSError, ValueError) as exc:
+                    return self._error(503, f"body control unavailable: {exc}")
+                return self._json(reply)
             verb = body.get("verb")
             if not isinstance(verb, str) or verb not in BODY_VERBS:
                 return self._error(400, f"unknown verb: {verb}")
