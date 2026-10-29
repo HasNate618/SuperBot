@@ -111,7 +111,9 @@ class CliTests(unittest.TestCase):
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         try:
-            result = self.run_cli("--port", str(port))
+            with tempfile.TemporaryDirectory() as raw:
+                cfg = self.temp_config(raw)
+                result = self.run_cli("--config", str(cfg), "--port", str(port))
         finally:
             server.shutdown()
             server.server_close()

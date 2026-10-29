@@ -20,6 +20,9 @@ class PathsConfig:
     weston_screenshooter_bin: str
     weston_debug_bin: str
     steam_bin: str
+    novnc_bin: str
+    websockify_bin: str
+    novnc_web_root: str
     game_exe: str
     pose_client: str
     openxr_active_runtime: str
@@ -44,6 +47,8 @@ class PreviewConfig:
     height: int
     panel_height: int
     fps: float
+    vnc_port: int
+    proxy_port: int
 
 
 @dataclass(frozen=True)
@@ -93,6 +98,9 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         "weston_screenshooter_bin": "weston-screenshooter",
         "weston_debug_bin": "weston-debug",
         "steam_bin": os.path.expanduser("~/.local/bin/steam"),
+        "novnc_bin": "novnc",
+        "websockify_bin": "websockify",
+        "novnc_web_root": "",
         "game_exe": "SUPERHOT_VR.exe",
         "pose_client": "spike/c0/c0_client.py",
         "openxr_active_runtime": os.path.expanduser("~/.config/openxr/1/active_runtime.json"),
@@ -131,7 +139,9 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         "width": 1280,
         "height": 720,
         "panel_height": 32,
-        "fps": 12.0,
+        "fps": 30.0,
+        "vnc_port": 5901,
+        "proxy_port": 6080,
     },
     "dashboard": {
         "host": "127.0.0.1",
@@ -198,6 +208,19 @@ def _validate(cfg: Config) -> None:
         raise ConfigError("preview.panel_height must be >= 0 and less than preview.height")
     if cfg.preview.fps <= 0 or not math.isfinite(cfg.preview.fps):
         raise ConfigError("preview.fps must be positive")
+    if cfg.preview.fps != int(cfg.preview.fps):
+        raise ConfigError("preview.fps must be a whole number of Hz")
+    for field_name in ("vnc_port", "proxy_port"):
+        value = getattr(cfg.preview, field_name)
+        if not 1 <= value <= 65535:
+            raise ConfigError(f"preview.{field_name} must be between 1 and 65535")
+    if cfg.preview.vnc_port == cfg.preview.proxy_port:
+        raise ConfigError("preview.vnc_port and preview.proxy_port must differ")
+    if cfg.dashboard.port != 0 and cfg.dashboard.port in {
+        cfg.preview.vnc_port,
+        cfg.preview.proxy_port,
+    }:
+        raise ConfigError("preview ports must not equal dashboard.port")
     host = cfg.dashboard.host.strip()
     if not host:
         raise ConfigError("dashboard.host must not be empty")
@@ -297,6 +320,19 @@ def load_config(
         if not candidate.is_absolute():
             paths[key] = str((base / candidate).resolve())
 
+    if paths["novnc_web_root"]:
+        candidate = Path(paths["novnc_web_root"])
+        if not candidate.is_absolute():
+            paths["novnc_web_root"] = str((base / candidate).resolve())
+
+    # An explicit noVNC web root wins over the one derived from novnc_bin.
+    if paths["novnc_web_root"] in ("", DEFAULTS["paths"]["novnc_web_root"]):
+        resolved_novnc = _resolve_executable(paths["novnc_bin"])
+        if resolved_novnc is not None:
+            paths["novnc_web_root"] = str(
+                Path(resolved_novnc).resolve().parent.parent / "share" / "webapps" / "novnc"
+            )
+
     cfg = Config(
         paths=PathsConfig(**merged["paths"]),
         launch=LaunchConfig(**merged["launch"]),
@@ -321,9 +357,10 @@ def missing_requirements(cfg: Config) -> list[str]:
     checks = [
         ("monado", cfg.paths.monado_bin, os.X_OK),
         ("weston", cfg.paths.weston_bin, os.X_OK),
-        ("weston-screenshooter", cfg.paths.weston_screenshooter_bin, os.X_OK),
         ("weston-debug", cfg.paths.weston_debug_bin, os.X_OK),
         ("steam", cfg.paths.steam_bin, os.X_OK),
+        ("novnc", cfg.paths.novnc_bin, os.X_OK),
+        ("websockify", cfg.paths.websockify_bin, os.X_OK),
         ("game", cfg.paths.game_exe, os.R_OK),
         ("openxr runtime", cfg.paths.openxr_active_runtime, os.R_OK),
         ("pose client", cfg.paths.pose_client, os.R_OK),
@@ -333,4 +370,8 @@ def missing_requirements(cfg: Config) -> list[str]:
         resolved = _resolve_executable(value)
         if resolved is None or not os.access(resolved, mode):
             missing.append(f"{label} ({value})")
+    web_root = cfg.paths.novnc_web_root
+    rfb = Path(web_root) / "core" / "rfb.js" if web_root else None
+    if rfb is None or not os.access(rfb, os.R_OK):
+        missing.append(f"noVNC assets ({web_root or 'not found'})")
     return missing

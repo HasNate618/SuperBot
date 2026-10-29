@@ -4,17 +4,26 @@
 # before anything is launched. `config.toml` is git-ignored because it holds
 # machine-specific absolute paths.
 #
-# Relative paths (pose_client, game_exe if you make it relative) resolve
-# against the repository root, not your shell's cwd.
+# Relative paths (pose_client, session_root, novnc_web_root) resolve against
+# the repository root, not your shell's cwd.
 
 [paths]
 # Monado service binary. On NixOS this is the setuid wrapper.
 monado_bin = "/run/wrappers/bin/monado-service"
 
-# Tools the orchestrator drives. These must be on PATH or absolute.
+# Tools the orchestrator (and the optional smoke check) drives. These must be
+# on PATH or absolute.
 weston_bin = "weston"
 weston_screenshooter_bin = "weston-screenshooter"
 weston_debug_bin = "weston-debug"
+
+# VNC backend and browser client tools. These must be on PATH or absolute.
+novnc_bin = "novnc"
+websockify_bin = "websockify"
+
+# noVNC web assets directory. Leave empty to derive it from novnc_bin
+# (<prefix>/share/webapps/novnc); set it explicitly to override.
+# novnc_web_root = ""
 
 # Steam launcher and the game executable.
 # steam_bin: the steam *client* launcher, not the runtime's steam binary.
@@ -27,10 +36,10 @@ pose_client = "spike/c0/c0_client.py"
 
 # OpenXR runtime pointer the game will resolve to.
 # READ-ONLY: superbot validates that this file exists and is readable; it never
-# writes or replaces it. Create it yourself, see README "Prerequisites".
+# writes or replaces it. Create it yourself, see README "Requirements".
 openxr_active_runtime = "/home/YOUR_USER/.config/openxr/1/active_runtime.json"
 
-# Where session logs and frames are written.
+# Where session logs are written.
 session_root = "/home/YOUR_USER/.local/state/SuperBot/sessions"
 
 [launch]
@@ -55,12 +64,18 @@ openxr_client_timeout_sec = 60
 startup_timeout_sec = 300
 
 [preview]
-# The dashboard's live preview: a composite of the Weston output with a small
-# status panel drawn above it.
+# The dashboard's live preview: a Weston VNC stream cropped to remove the
+# 32 px status panel. It is not a composite.
 width = 1280
 height = 720
 panel_height = 32
-fps = 12
+fps = 30
+
+# Weston's VNC backend listens on vnc_port; websockify proxies it to the
+# browser on proxy_port. Both must be in 1..65535, differ from each other, and
+# differ from dashboard.port when that is non-zero.
+vnc_port = 5901
+proxy_port = 6080
 
 [dashboard]
 host = "127.0.0.1"

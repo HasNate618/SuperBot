@@ -1,3 +1,4 @@
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -67,7 +68,10 @@ class BodyPreviewTestCase(unittest.TestCase):
 
     def test_preflight_reports_missing_script(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            view = BodyPreview(make_cfg(script="/nonexistent/body_view.py"), out_dir=Path(tmp))
+            view = BodyPreview(
+                make_cfg(python=sys.executable, script="/nonexistent/body_view.py"),
+                out_dir=Path(tmp),
+            )
             self.assertIn("body view not found", view.preflight())
 
     def test_start_refuses_when_preflight_fails(self) -> None:

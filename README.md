@@ -16,9 +16,9 @@ SuperBot is a real-time controls and systems-integration project that uses a com
 
 - **Real-time humanoid control.** 29 DoF (12 legs, 3 waist, 14 arms; no fingers, no neck), MuJoCo 3.17 MJCF physics, a 50 Hz policy with 500 Hz PD, and a measured **17.66 ms** of work per 20 ms control tick (encoder 7.54, decoder 5.42, physics 4.71).
 - **Integrating a released learned controller.** NVIDIA GR00T-WholeBodyControl / GEAR-SONIC, the released ONNX weights, encoder 1762→64 and decoder 994→29 through ONNX Runtime — plus a real performance bug found by measurement: onnxruntime opened one intra-op thread per core and consumed 1876 % CPU across 47 threads, load average 21, for two networks that small.
-- **Systems triage across a hostile five-layer stack.** Wine/Proton → OpenXR loader → Monado → headless compositor → game. The working path was found by diagnosing each layer separately: a runtime pointer invisible inside the container, a loader that caches its manifest list per process, and a Wine shim that forwards Windows OpenXR calls to the host loader.
+- **Systems triage across a hostile five-layer stack.** Wine/Proton → OpenXR loader → Monado → hidden compositor → game. The working path was found by diagnosing each layer separately: a runtime pointer invisible inside the container, a loader that caches its manifest list per process, and a Wine shim that forwards Windows OpenXR calls to the host loader.
 - **A designed command contract, not an ad-hoc pipe.** A masked task-space `BodyCommand` / `BodyState` protocol over a Unix socket: authority bitmask, TTL on acceptance, monotonic sequencing, latest-wins sample-and-hold, non-preemptible ballistics, and strict validation that never raises into the control loop. Standard-library Python only.
-- **Process supervision and a reproducible environment.** One command brings up Monado, a headless Weston compositor, Steam, the game and the pose client as supervised process groups, in a session you can see in a browser and kill cleanly. NixOS flake devShell; 238 unit tests, no network, no GPU.
+- **Process supervision and a reproducible environment.** One command brings up Monado, a hidden Weston VNC compositor, websockify, Steam, the game and the pose client as supervised process groups, in a session you can see in a browser and kill cleanly. NixOS flake devShell; 288 unit tests, no network, no GPU.
 - **Measuring instead of assuming.** Latency budgets, an A/B pixel proof that the view really follows our poses, and documented negative results — including two of this project's own hypotheses being falsified, and one of its own harness bugs being caught and corrected.
 
 ---
@@ -29,11 +29,11 @@ Two pipes. The game pipe runs today. The body pipe is measured today. The edge b
 
 ```text
 GAME PIPE — live today
-  weston --backend=headless --renderer=gl     private display, no desktop window
+  weston --backend=vnc --renderer=gl     private display, no desktop window
     ├─ Steam client UI → Proton/Wine → SUPERHOT_VR.exe
     │    UnityOpenXR.dll → wineopenxr.dll → host OpenXR loader
     │    → Monado [remote driver] :4242, with XRT_COMPOSITOR_NULL=1
-    └─ game mirror window → weston-screenshooter → preview + PNG frames
+    └─ VNC → websockify → noVNC dashboard view, operator-only
 
   ✗  NOT CONNECTED. Nothing forwards BodyState into the game.
 
@@ -110,7 +110,7 @@ All values below are read from this repository. `research/` holds the per-spike 
 | Game session | **`FOCUSED`**, 58 runtime extensions, system `Monado: Remote HMD` | Superhot VR, Proton, RTX 4060 | `research/c0-results.md` |
 | View follows pose | static **4.74** mean Δ / **4.0 %** pixels vs sweeping **41.97** / **59.3 %** | same session, same scene, 3.4 s apart | `research/c0-results.md` |
 | Capture and latency | **36.9 fps**; pose → pixel **30–59 ms** (mid 44 ms, incl. ~27 ms capture overhead) | `grim` on the laptop panel, `hello_xr` | `research/e2-spike-results.md` |
-| Repo test suite | **238 tests**, standard library only | no network, no GPU, no game | `python3 -m unittest discover -s tests -t .` |
+| Repo test suite | **288 tests**, standard library only | no network, no GPU, no game | `python3 -m unittest discover -s tests -t .` |
 
 ---
 
@@ -132,7 +132,7 @@ Superhot ships `UnityOpenXR.dll` and binds Monado's `remote` driver directly, so
 Sanctioned pose APIs (VRChat's OSC input, Resonite) are explicit non-goals in the design, because they hand you the interface and delete the systems problem. Equally out of bounds: reading game memory, injecting into the title, or driving it through an unofficial API. The game is unmodified commercial software you must own, and the interface is the deliverable.
 
 **6. Hide the game in a compositor we control.**
-`gamescope --backend headless` with PipeWire capture produced black frames; a Hyprland headless output produced black frames in `grim`. A nested `weston --backend headless --renderer gl --xwayland` session does work: Steam and the game run inside it, never touch the host desktop, and `weston-screenshooter` captures the game's mirror view.
+`gamescope --backend headless` with PipeWire capture produced black frames; a Hyprland headless output produced black frames in `grim`. A nested `weston --backend vnc --renderer gl --xwayland` session does work: Steam and the game run inside it, never touch the host desktop, and the dashboard views it through websockify/noVNC. `weston-screenshooter` remains only for the headless `--preview-smoke` check.
 
 **7. Pin ONNX Runtime to one thread.**
 With default settings onnxruntime opened one intra-op thread per core and the body view held about 19 of 20 logical CPUs: 1876 % CPU, 47 threads, load average 21. The networks are 1762→64 and 994→29; a thread pool costs more in spin-wait than it saves in FLOPs. One intra-op and one inter-op thread, sequential execution: 21 threads, 32 % of one core. That costs latency — 6.8 ms/tick becomes 17.66 ms — and buys back 19 cores, which is the right trade for a body that has to share the machine with the game. It also leaves only 2.3 ms of slack in the control tick, which is worth knowing before anything else is added there.
@@ -148,8 +148,13 @@ The reliable reach is ~0.20 m, so a standing body cannot touch The Fall's 0.70 m
 - **NixOS** with Steam. Tested on a Hyprland/Wayland host; nothing else is claimed.
 - **Your own copy of Superhot VR** (not included, never will be), added to Steam as a non-Steam game and running under Proton.
 - **Monado** with the `remote` driver built in.
-- **weston**, **weston-screenshooter**, **weston-debug** — supplied by `flake.nix`; `run.sh` re-enters `nix develop` when they are not on `PATH`.
+- **weston** (VNC backend), **weston-debug** for Steam window detection, and **weston-screenshooter** only for the headless `--preview-smoke` check — supplied by `flake.nix`; `run.sh` re-enters `nix develop` when they are not on `PATH`.
+- **novnc** and **websockify** — the browser client assets and the WebSocket-to-VNC proxy. Supplied by the devshell.
+- **The NixOS PAM service `weston-remote-access`** — authenticates the VNC viewer. This is host configuration, not something the repo installs.
+- **ImageMagick** (`magick`) and **mpv** — only for `--preview-smoke`; also in the devshell.
 - **Python 3.12+**, standard library only. No headset, no controllers.
+
+## Setup
 
 ```bash
 git clone <this repo> && cd SuperBot
@@ -158,7 +163,17 @@ cp config.example.toml config.toml        # edit paths, Steam shortcut id, Proto
 # run.sh reuses a dashboard already on that port; run.sh --replace stops it first.
 ```
 
-The OpenXR runtime pointer is required and SuperBot only ever reads it. Under Wine the game resolves its runtime through the Proton prefix registry → `wineopenxr.dll` → the host OpenXR loader, which looks for `~/.config/openxr/1/active_runtime.json`:
+In `config.toml`, the values you almost certainly must change:
+
+| Key | What to put there |
+| --- | --- |
+| `paths.steam_bin` | your Steam launcher |
+| `paths.game_exe` | path to `SUPERHOT_VR.exe` |
+| `paths.openxr_active_runtime` | your Monado runtime pointer (below) |
+| `paths.session_root` | where session logs go |
+| `launch.shortcut_id`, `launch.proton_app_id` | your Steam shortcut's AppId |
+
+**The OpenXR runtime pointer is required, and superbot only reads it.** Under Wine the game resolves its runtime through the Proton prefix registry → `wineopenxr.dll` → the host OpenXR loader, which looks for `~/.config/openxr/1/active_runtime.json`. Note that `/etc/xdg` is invisible inside the Proton container and `~/.local/share/openxr/1/` is *not* a searched path. Create it from your Monado install:
 
 ```bash
 mkdir -p ~/.config/openxr/1
@@ -170,10 +185,10 @@ If a game is already running, restart it — the loader caches its runtime list 
 **Development.**
 
 ```bash
-nix develop                                   # python3 + weston + magick, pinned by flake.lock
-python3 -m unittest discover -s tests -t .    # 238 tests, no network, no GPU
+nix develop                                   # python3 + weston + novnc + websockify + mpv + magick, pinned by flake.lock
+python3 -m unittest discover -s tests -t .    # 288 tests, no network, no GPU
 nix flake check                               # same suite, sandboxed
-./run.sh --preview-smoke                      # Weston capture path, without launching Steam
+./run.sh --preview-smoke                      # headless Weston screenshot-tool check, without launching Steam
 ```
 
 **The controller, headless.** The simulator spikes use their own venv because they need MuJoCo, NumPy and ONNX Runtime while `superbot/` stays standard-library only:
@@ -212,28 +227,53 @@ The dashboard is a single local page with a state badge, session id, uptime, log
 
 | Control | Effect |
 | --- | --- |
-| **Start** | Runs the sequence: Monado → headless Weston → pose client → Steam → game. Returns `409` if a session is already running. |
+| **Start** | Runs the full sequence: Monado → Weston (VNC) → websockify → pose client → Steam → game. `409` if a session is already running. |
 | **Stop** | Tears the session down; idempotent, and cleanup is verified rather than assumed — surviving processes are logged and surfaced in `/api/state`. |
 | **mode** | Switches the pose client: `hold`, `yaw`, `trigger`, `dodge`, `walk`, `clock`, `manual`. |
 | **kill** | Force-stops the game or Steam specifically. These are force kills and they hit *your* Steam. |
-| **preview** | Live `/preview.png`, plus `/api/frame.png` for the current frame. Frames are the raw Weston output: vertically flipped and including the 32 px status panel. API consumers must flip and crop, as the browser does. |
+| **preview** | VNC stream with PAM login; view-only. The stream is 1280x720 at a target 30 fps; the dashboard crops the top 32 px status panel, so the display area is 1280x688. Manual mode still uses pointer lock. |
 | **body** | Optional third-person MuJoCo tile (`/api/body.jpg`), run as a sidecar that cannot delay or break a session. It needs the spike venv and weights, and is a *viewer* — it is not the pose source. |
+| **mute** | `POST /api/audio/mute` toggles the game’s PipeWire output mute from the dashboard header button. |
 
-In `manual` mode, click the preview to pointer-lock the browser and drive the hidden game directly: mouse look, WASD move, arrows move the active hand, wheel reaches, LMB/T fires, RMB/G grips, Tab switches hands. Esc releases the pointer immediately; the last pose keeps streaming. Browser batches go to `POST /api/manual/input` and are forwarded to the manual pose client over a per-session Unix datagram socket.
+In `manual` mode, click the preview to pointer-lock the browser and drive the hidden game directly: mouse look, WASD move, arrows move the active hand, wheel reaches, F throws a one-shot punch with the active hand, LMB/T fires, RMB/G grips, Tab switches hands. Esc releases the pointer immediately; the last pose keeps streaming. Browser batches go to `POST /api/manual/input` and are forwarded to the manual pose client over a per-session Unix datagram socket.
 
----
+## Safety notes
+
+- **This launches Steam and Superhot on your machine**, in a nested Weston session with a NULL-compositor Monado, so it does not draw on your desktop. Your mouse and keyboard focus stay yours until you click the preview in `manual` mode to capture the pointer; Esc returns them.
+- **The preview stream is loopback-only.** Weston's VNC backend listens on `127.0.0.1:5901` and websockify on `127.0.0.1:6080`; noVNC assets are served by the dashboard, and credentials are not stored.
+- **The kill buttons are force kills.** They terminate *your* Steam and the game process. Anything you had unsaved in other Steam games does not survive a `kill steam`.
+- **One session at a time** by design; concurrent starts are guarded and rejected.
+- **It does not modify your OpenXR configuration.** It validates that the runtime pointer exists and is readable, and fails preflight with a message if it does not.
+- **No game files are included.** Superhot VR is commercial software you must own.
+- Cleanup is best-effort and verified rather than assumed: after a stop, any surviving process is logged and surfaced in `/api/state`.
+
+### VNC and PAM
+
+The VNC viewer authenticates through this NixOS PAM service:
+
+```nix
+security.pam.services.weston-remote-access = {
+  text = ''
+    auth sufficient pam_unix.so likeauth try_first_pass
+    auth required pam_deny.so
+    account required pam_unix.so
+  '';
+};
+```
+
+VNC TLS is disabled: the stream has no confidentiality or server authentication, so keep it on loopback. The dashboard control API has no authentication either; keep `dashboard.host` on loopback and do not expose it.
 
 ## Repo map
 
 | Path | What it is |
 | --- | --- |
-| `superbot/` | **The app.** Config validation, process-group supervision, session orchestrator, preview capture, dashboard HTTP API and UI, the `BodyCommand`/`BodyState` bus and its validator, manual input bridge. Standard library only. |
-| `tests/` | 238 unittest cases: config, process groups, orchestrator concurrency guards, dashboard API, preview lifecycle, command bus, validation. |
+| `superbot/` | **The app.** Config validation, process-group supervision, session orchestrator, VNC preview transport, dashboard HTTP API and UI, the `BodyCommand`/`BodyState` bus and its validator, manual input bridge. Standard library only. |
+| `tests/` | Unit tests: config, process groups, orchestrator concurrency guards, dashboard API, VNC preview lifecycle, command bus, validation. |
 | `spike/c0/` | **Pose client and launchers.** The `remote`-driver client (`hold`, `yaw`, `trigger`, `dodge`, `walk`, `clock`), the manual client, the runtime launcher. |
-| `spike/e1/`–`spike/e3/` | **Injection and evidence.** OpenXR pose injection, NVIDIA compositor capture and latency measurement, and the MuJoCo body → OpenXR bridge with its honesty CSV. |
+| `spike/e1/`–`spike/e3/` | **Injection and evidence.** OpenXR pose injection, compositor capture and latency measurement, and the MuJoCo body → OpenXR bridge with its honesty CSV. |
 | `spike/c3/`, `spike/wbc/`, `spike/wbc_classical/`, `spike/wbc_game/` | **Controller harnesses and logs.** SONIC gates and arm-override matrix, hold/look investigation, classical QP, the 0.70 m reach probe. |
 | `research/` | **Findings.** Per-spike results with measured numbers, plus controller and game-side surveys — the source for nearly every figure in this README. |
-| `docs/` | **Design.** The design document, its builder-check, the state of findings, and the dashboard spec. |
+| `docs/` | **Design.** The design document, its builder-check, the state of findings, and the dashboard spec (historical for the PNG preview; the current preview is VNC). |
 | `RESEARCH.md` | The original feasibility study (partly superseded; see its banner). |
 | `flake.nix`, `run.sh` | Pinned devShell and the one-command entry point. |
 

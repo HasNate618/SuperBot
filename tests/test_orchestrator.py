@@ -47,36 +47,13 @@ class FakeHandle:
         self._alive = False
 
 
-class FakePreview:
-    def __init__(self) -> None:
-        self.started = False
-        self.stopped = False
-
-    def start(self) -> None:
-        self.started = True
-
-    def stop(self, timeout: float = 5.0) -> None:
-        self.stopped = True
-
-    def status(self) -> dict:
-        return {
-            "width": 1280,
-            "height": 688,
-            "fps_target": 8,
-            "fps_actual": 7.4,
-            "last_frame_at": "2026-10-25T22:39:00Z",
-            "errors": 0,
-            "frames": 10,
-        }
-
-
 class FakeRunner:
     def __init__(self) -> None:
         self.handles: dict[str, FakeHandle] = {}
         self.next_pid = 100
         self.host_steam = False
         self.units: set[str] = set()
-        self.port = False
+        self.ports_in_use: set[tuple[str, int]] = set()
         self.pointer = None
         self.game_started = False
         self.scene_graph: str | None = "window: title: Steam"
@@ -84,6 +61,7 @@ class FakeRunner:
         self.block_wait: threading.Event | None = None
         self.runs: list[list[str]] = []
         self.starts: list[tuple[str, list[str]]] = []
+        self.waits: list[tuple[str, int]] = []
         self.alive_pids: set[int] = set()
         self.removed_socket = False
         self.stopped_units: list[str] = []
@@ -110,6 +88,7 @@ class FakeRunner:
         return handle
 
     def wait_port(self, host, port, timeout, abort=None):
+        self.waits.append((host, port))
         if self.fail_at == "wait_port":
             raise RuntimeError("monado port timeout")
         if self.block_wait is not None:
@@ -136,7 +115,7 @@ class FakeRunner:
         self.units.discard(unit)
 
     def port_in_use(self, host, port):
-        return self.port
+        return (host, port) in self.ports_in_use
 
     def remove_stale_socket(self, path):
         self.removed_socket = True
@@ -210,12 +189,7 @@ class OrchestratorTests(unittest.TestCase):
         )
         self.cfg = cfg
         self.runner = FakeRunner()
-        self.preview = FakePreview()
-        self.manager = SessionManager(
-            cfg,
-            runner=self.runner,
-            preview_factory=lambda **kwargs: self.preview,
-        )
+        self.manager = SessionManager(cfg, runner=self.runner)
 
     def tearDown(self) -> None:
         self.manager.stop()
@@ -230,12 +204,87 @@ class OrchestratorTests(unittest.TestCase):
 
     def test_start_reaches_running(self) -> None:
         self.start()
-        self.assertEqual(set(self.runner.handles), {"monado", "weston", "steam", "pose"})
-        self.assertTrue(self.preview.started)
+        self.assertEqual(
+            set(self.runner.handles),
+            {"monado", "weston", "proxy", "steam", "pose"},
+        )
         self.assertIsNotNone(self.runner.pointer)
         snapshot = self.manager.snapshot()
         self.assertIsNotNone(snapshot["session_id"])
         self.assertIsNotNone(snapshot["started_at"])
+
+    def test_start_uses_vnc_and_proxy(self) -> None:
+        self.start()
+        self.assertIn("proxy", self.runner.handles)
+        weston_argv = next(
+            argv for name, argv in self.runner.starts if name == "weston"
+        )
+        for expected in (
+            "--backend=vnc",
+            "--renderer=gl",
+            "--address=127.0.0.1",
+            "--port=5901",
+            "--disable-transport-layer-security",
+        ):
+            self.assertIn(expected, weston_argv)
+        config_arg = next(arg for arg in weston_argv if arg.startswith("--config="))
+        config_path = Path(config_arg.split("=", 1)[1])
+        config = config_path.read_text()
+        self.assertIn("[core]", config)
+        self.assertIn("idle-time=0", config)
+        self.assertIn("[vnc]", config)
+        self.assertIn("refresh-rate=30", config)
+        proxy_argv = next(
+            argv for name, argv in self.runner.starts if name == "proxy"
+        )
+        self.assertEqual(proxy_argv[-2:], ["127.0.0.1:6080", "127.0.0.1:5901"])
+        self.assertIn(("127.0.0.1", 5901), self.runner.waits)
+        self.assertIn(("127.0.0.1", 6080), self.runner.waits)
+
+    def test_snapshot_reports_vnc_transport(self) -> None:
+        self.start()
+        snapshot = self.manager.snapshot()
+        preview = snapshot["preview"]
+        self.assertEqual(preview["mode"], "vnc")
+        self.assertEqual(preview["width"], self.cfg.preview.width)
+        self.assertEqual(
+            preview["height"],
+            self.cfg.preview.height - self.cfg.preview.panel_height,
+        )
+        self.assertEqual(preview["fps_target"], 30.0)
+        self.assertEqual(preview["vnc_port"], 5901)
+        self.assertEqual(preview["proxy_port"], 6080)
+        self.assertTrue(preview["vnc_alive"])
+        self.assertTrue(preview["proxy_alive"])
+        self.assertIn("proxy", snapshot["processes"])
+        self.assertTrue(snapshot["processes"]["proxy"]["alive"])
+        self.assertIn("proxy", snapshot["logs"])
+
+    def test_vnc_port_conflict_fails(self) -> None:
+        self.runner.ports_in_use.add(("127.0.0.1", 5901))
+        with patch("superbot.orchestrator.missing_requirements", return_value=[]):
+            self.manager.start()
+        self.assertTrue(self.manager.wait_idle(2))
+        snapshot = self.manager.snapshot()
+        self.assertEqual(snapshot["state"], "failed")
+        self.assertIn("5901", snapshot["last_error"])
+        self.assertIsNone(self.runner.pointer)
+        self.assertTrue(
+            all(not handle.alive() for handle in self.runner.handles.values())
+        )
+
+    def test_proxy_port_conflict_fails(self) -> None:
+        self.runner.ports_in_use.add(("127.0.0.1", 6080))
+        with patch("superbot.orchestrator.missing_requirements", return_value=[]):
+            self.manager.start()
+        self.assertTrue(self.manager.wait_idle(2))
+        snapshot = self.manager.snapshot()
+        self.assertEqual(snapshot["state"], "failed")
+        self.assertIn("6080", snapshot["last_error"])
+        self.assertIsNone(self.runner.pointer)
+        self.assertTrue(
+            all(not handle.alive() for handle in self.runner.handles.values())
+        )
 
     def test_weston_stdout_log_is_written_but_not_public(self) -> None:
         self.start()
@@ -484,7 +533,7 @@ class OrchestratorTests(unittest.TestCase):
         self.assertIsNone(snapshot["session_dir"])
         self.assertIsNone(snapshot["session_id"])
         self.assertIsNone(snapshot["started_at"])
-        self.assertIsNone(self.manager.preview_path())
+        self.assertIsNone(self.manager.log_path("weston"))
 
     def test_snapshot_clears_openxr_client_after_stop(self) -> None:
         self.start()
@@ -588,6 +637,62 @@ class OrchestratorTests(unittest.TestCase):
                 self.manager.start()
         self.assertIn("stale", str(raised.exception))
         self.assertEqual(self.manager.state_value(), "failed")
+
+    def test_stale_proxy_wrapper_blocks_start(self) -> None:
+        self.runner.alive_pids.add(999)
+        self.runner.pointer = {
+            "session": "/old",
+            "processes": {
+                "proxy": {
+                    "pid": 999,
+                    "command": "/nix/store/example/bin/websockify",
+                }
+            },
+        }
+        with (
+            patch.object(
+                self.runner,
+                "pid_cmdline",
+                return_value=[
+                    "/nix/store/example/bin/python3",
+                    "/nix/store/example/bin/websockify",
+                    "127.0.0.1:6080",
+                    "127.0.0.1:5901",
+                ],
+            ),
+            patch("superbot.orchestrator.missing_requirements", return_value=[]),
+        ):
+            with self.assertRaises(PreflightError) as raised:
+                self.manager.start()
+        self.assertIn("stale", str(raised.exception))
+        self.assertIn("proxy", str(raised.exception))
+        self.assertEqual(self.manager.state_value(), "failed")
+
+    def test_non_matching_stale_pointer_process_is_ignored(self) -> None:
+        self.runner.alive_pids.add(999)
+        self.runner.pointer = {
+            "session": "/old",
+            "processes": {
+                "proxy": {
+                    "pid": 999,
+                    "command": "/nix/store/example/bin/websockify",
+                }
+            },
+        }
+        with (
+            patch.object(
+                self.runner,
+                "pid_cmdline",
+                return_value=[
+                    "/nix/store/example/bin/python3",
+                    "/nix/store/example/bin/unrelated",
+                ],
+            ),
+            patch("superbot.orchestrator.missing_requirements", return_value=[]),
+        ):
+            self.manager.start()
+        self.assertTrue(self.manager.wait_idle(2))
+        self.assertEqual(self.manager.state_value(), "running")
 
     def test_startup_failure_cleans_up(self) -> None:
         self.runner.fail_at = "wait_port"
@@ -715,7 +820,7 @@ class OrchestratorTests(unittest.TestCase):
         self.manager.stop()
         self.assertEqual(self.manager.state_value(), "stopped")
         self.assertIsNone(self.runner.pointer)
-        self.assertTrue(self.preview.stopped)
+        self.assertFalse(self.runner.handles["proxy"].alive())
 
     def test_clean_stop_reports_no_survivors(self) -> None:
         self.start()
@@ -789,8 +894,7 @@ class OrchestratorTests(unittest.TestCase):
             self.assertTrue(self.manager.wait_idle(2))
         snapshot = self.manager.snapshot()
         self.assertEqual(snapshot["state"], "stopped")
-        self.assertTrue(self.preview.stopped)
-        self.assertIsNone(self.manager._preview)
+        self.assertFalse(self.runner.handles["proxy"].alive())
         self.assertTrue(all(not handle.alive() for handle in self.runner.handles.values()))
         self.assertEqual(snapshot["survivors"], ["steam"])
         session_log = Path(snapshot["session_dir"]) / "session.log"
@@ -813,8 +917,7 @@ class OrchestratorTests(unittest.TestCase):
         self.assertTrue(self.manager.wait_idle(2))
         snapshot = self.manager.snapshot()
         self.assertEqual(snapshot["state"], "stopped")
-        self.assertTrue(self.preview.stopped)
-        self.assertIsNone(self.manager._preview)
+        self.assertFalse(self.runner.handles["proxy"].alive())
         self.assertIn("pose", snapshot["survivors"])
         self.assertTrue(all(not handle.alive() for handle in later.values()))
         session_log = Path(snapshot["session_dir"]) / "session.log"
@@ -974,7 +1077,7 @@ class OrchestratorTests(unittest.TestCase):
             self.assertTrue(self.manager.wait_idle(2))
         self.assertEqual(self.manager.state_value(), "stopped")
         self.assertEqual(len(cleanup_calls), 1)
-        self.assertTrue(self.preview.stopped)
+        self.assertFalse(self.runner.handles["proxy"].alive())
         self.assertIsNone(self.runner.pointer)
 
     def test_stop_during_starting_cleans_up_once(self) -> None:
@@ -1003,7 +1106,7 @@ class OrchestratorTests(unittest.TestCase):
             self.assertTrue(self.manager.wait_idle(2))
         self.assertEqual(self.manager.state_value(), "stopped")
         self.assertEqual(len(cleanup_calls), 1)
-        self.assertFalse(self.preview.started)
+        self.assertNotIn("proxy", self.runner.handles)
         self.assertIsNone(self.runner.pointer)
 
     def test_stop_during_starting_has_no_failure_tail(self) -> None:
@@ -1499,7 +1602,10 @@ class OrchestratorTests(unittest.TestCase):
         self.assertTrue(session_dir.exists())
         self.assertEqual(self.runner.pointer, pointer)
         self.assertEqual(self.manager.snapshot()["session_dir"], str(session_dir))
-        self.assertEqual(sorted(starts), ["monado", "pose", "steam", "weston"])
+        self.assertEqual(
+            sorted(starts),
+            ["monado", "pose", "proxy", "steam", "weston"],
+        )
 
     def test_startup_failure_log_error_still_cleans_up(self) -> None:
         original_log = self.manager._session_log
@@ -1853,6 +1959,20 @@ class OrchestratorTests(unittest.TestCase):
         self.assertTrue(self.manager.wait_for_state("failed", 3))
         self.assertIn("monado", self.manager.snapshot()["last_error"])
         self.assertIsNone(self.runner.pointer)
+        self.assertTrue(all(not handle.alive() for handle in self.runner.handles.values()))
+
+    def test_proxy_death_fails_and_cleans_up(self) -> None:
+        self.start()
+        self.runner.handles["proxy"]._alive = False
+        self.assertTrue(self.manager.wait_for_state("failed", 3))
+        snapshot = self.manager.snapshot()
+        self.assertEqual(snapshot["state"], "failed")
+        self.assertIn("proxy exited while running", snapshot["last_error"])
+        self.assertIsNone(self.runner.pointer)
+        self.assertFalse(snapshot["processes"]["game"]["alive"])
+        self.assertFalse(self.runner.game_started)
+        self.assertEqual(snapshot["survivors"], [])
+        self.assertNotIn("proxy", snapshot["survivors"])
         self.assertTrue(all(not handle.alive() for handle in self.runner.handles.values()))
 
 

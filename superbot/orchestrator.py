@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import codecs
 import contextlib
+import json
+import subprocess
 import os
 import re
 import shutil
@@ -15,7 +17,6 @@ from pathlib import Path
 
 from .config import Config, missing_requirements
 from .manual_input import ManualInputBridge
-from .preview import PreviewCapture
 from .processes import Aborted, ProcessHandle, ProcessRunner
 
 
@@ -111,6 +112,7 @@ class SessionManager:
     LOG_FILES = {
         "monado": "monado.log",
         "weston": "weston.log",
+        "proxy": "proxy.log",
         "steam": "steam.log",
         "pose": "pose.log",
         "session": "session.log",
@@ -121,13 +123,11 @@ class SessionManager:
         self,
         cfg: Config,
         runner: ProcessRunner | None = None,
-        preview_factory: Callable[..., PreviewCapture] | None = None,
     ) -> None:
         self.cfg = cfg
         self.runtime_dir = Path(os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}")
         session_root = Path(cfg.paths.session_root)
         self.runner = runner or ProcessRunner(session_root.parent / "current-session.json")
-        self.preview_factory = preview_factory or PreviewCapture
         self._lock = threading.RLock()
         self._condition = threading.Condition(self._lock)
         self._lifecycle_lock = threading.Lock()
@@ -140,9 +140,9 @@ class SessionManager:
         self._mode = "hold"
         self._handles: dict[str, ProcessHandle] = {}
         self._game_pids: list[int] = []
+        self._game_audio_muted: bool = False
         self._display: str | None = None
         self._socket_name: str | None = None
-        self._preview: PreviewCapture | None = None
         self._pointer: dict = {}
         self._stop_event = threading.Event()
         self._idle = threading.Event()
@@ -184,11 +184,6 @@ class SessionManager:
             return None
         return self._session_dir / filename
 
-    def preview_path(self) -> Path | None:
-        if self._session_dir is None:
-            return None
-        return self._session_dir / "latest.png"
-
     def start(self) -> None:
         with self._lock:
             if self._state not in (State.STOPPED, State.FAILED):
@@ -199,7 +194,6 @@ class SessionManager:
             self._session_id = None
             self._session_dir = None
             self._started_at = None
-            self._preview = None
             self._display = None
             self._socket_name = None
             self._state = State.STARTING
@@ -320,6 +314,73 @@ class SessionManager:
                 raise ConflictError("manual mode is not active")
         return self._manual_input.update(payload)
 
+    def game_audio_muted(self) -> bool:
+        with self._lock:
+            return self._game_audio_muted
+
+    def set_game_audio_muted(self, muted: bool) -> bool:
+        muted = bool(muted)
+        with self._lock:
+            self._game_audio_muted = muted
+        self._apply_game_audio_mute()
+        return muted
+
+    def mute_game_audio(self, muted: bool) -> bool:
+        return self.set_game_audio_muted(muted)
+
+    def toggle_game_audio_mute(self) -> bool:
+        with self._lock:
+            next_muted = not self._game_audio_muted
+        return self.set_game_audio_muted(next_muted)
+
+    def _game_audio_node_ids(self) -> list[int]:
+        pids = {str(pid) for pid in (self._game_pids or self.runner.pids_by_argv0(self._game_argv0()))}
+        if not pids:
+            return []
+        try:
+            completed = subprocess.run(
+                ["pw-dump"], capture_output=True, text=True, timeout=5
+            )
+            data = json.loads(completed.stdout or "[]")
+        except Exception:
+            return []
+        client_ids: set[str] = set()
+        for obj in data:
+            if obj.get("type") != "PipeWire:Interface:Client":
+                continue
+            props = ((obj.get("info") or {}).get("props") or {})
+            pid = props.get("application.process.id")
+            if pid is not None and str(pid) in pids:
+                client_ids.add(str(obj.get("id")))
+        nodes: list[int] = []
+        for obj in data:
+            if obj.get("type") != "PipeWire:Interface:Node":
+                continue
+            props = ((obj.get("info") or {}).get("props") or {})
+            if str(props.get("client.id")) not in client_ids:
+                continue
+            if props.get("media.class") != "Stream/Output/Audio":
+                continue
+            try:
+                nodes.append(int(obj.get("id")))
+            except (TypeError, ValueError):
+                continue
+        return nodes
+
+    def _apply_game_audio_mute(self) -> None:
+        muted = self.game_audio_muted()
+        value = "1" if muted else "0"
+        for node_id in self._game_audio_node_ids():
+            try:
+                subprocess.run(
+                    ["wpctl", "set-mute", str(node_id), value],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+            except Exception:
+                pass
+
     def kill(self, target: str) -> None:
         with self._lock:
             if self._state != State.RUNNING:
@@ -356,11 +417,10 @@ class SessionManager:
             survivors = list(self._survivors)
             handles = dict(self._handles)
             display = self._display
-            preview = self._preview
             session_dir = self._session_dir
         game_pids = self.runner.pids_by_argv0(self._game_argv0()) if state in ("running", "stopping") else []
         processes: dict[str, dict] = {}
-        for name in ("monado", "weston", "steam", "pose"):
+        for name in ("monado", "weston", "proxy", "steam", "pose"):
             handle = handles.get(name)
             processes[name] = {
                 "alive": bool(handle and handle.alive()),
@@ -378,21 +438,21 @@ class SessionManager:
             monado_log = self.log_path("monado")
             if monado_log is not None:
                 openxr_client = self._openxr_client(monado_log)
-        if preview is not None:
-            preview_status = preview.status()
-        else:
-            preview_status = {
-                "width": self.cfg.preview.width,
-                "height": self.cfg.preview.height - self.cfg.preview.panel_height,
-                "fps_target": self.cfg.preview.fps,
-                "fps_actual": 0,
-                "last_frame_at": None,
-                "errors": 0,
-                "frames": 0,
-            }
+        weston_handle = handles.get("weston")
+        proxy_handle = handles.get("proxy")
+        preview_status = {
+            "mode": "vnc",
+            "width": self.cfg.preview.width,
+            "height": self.cfg.preview.height - self.cfg.preview.panel_height,
+            "fps_target": self.cfg.preview.fps,
+            "vnc_port": self.cfg.preview.vnc_port,
+            "proxy_port": self.cfg.preview.proxy_port,
+            "vnc_alive": bool(weston_handle and weston_handle.alive()),
+            "proxy_alive": bool(proxy_handle and proxy_handle.alive()),
+        }
         logs = {
             name: str(self.log_path(name)) if self.log_path(name) is not None else None
-            for name in ("session", "monado", "weston", "steam", "pose")
+            for name in ("session", "monado", "weston", "proxy", "steam", "pose")
         }
         player_log = (
             Path.home()
@@ -414,6 +474,11 @@ class SessionManager:
             "session_dir": str(session_dir) if session_dir is not None else None,
             "player_log": str(player_log),
             "manual": self._manual_input.snapshot(),
+            "audio": {
+                "muted": self.game_audio_muted(),
+                "available": bool(game_pids),
+                "target": "game",
+            },
         }
 
     def _reset_openxr(self) -> None:
@@ -577,7 +642,10 @@ class SessionManager:
                 pid = int(record.get("pid") or 0)
                 if pid and self.runner.pid_alive(pid):
                     args = self.runner.pid_cmdline(pid)
-                    if args and self._matches_command(args[0], str(record.get("command", ""))):
+                    command = str(record.get("command", ""))
+                    if args and any(
+                        self._matches_command(arg, command) for arg in args
+                    ):
                         stale.append(f"{name} pid {pid}")
             if stale:
                 raise PreflightError(
@@ -682,20 +750,40 @@ class SessionManager:
             raise StartupError("no active session")
         self._socket_name = f"superbot-{self._session_id.split('-')[-1]}"
         weston_log = self._log("weston")
+        weston_ini = self._session_dir / "weston.ini"
+        weston_ini.write_text(
+            "[core]\n"
+            "idle-time=0\n"
+            "\n"
+            f"[vnc]\nrefresh-rate={int(self.cfg.preview.fps)}\n",
+            encoding="utf-8",
+        )
+        vnc_port = self.cfg.preview.vnc_port
+        if self.runner.port_in_use("127.0.0.1", vnc_port):
+            raise StartupError(f"VNC port {vnc_port} is already in use")
         argv = [
             self.cfg.paths.weston_bin,
-            "--backend=headless",
+            "--backend=vnc",
             "--renderer=gl",
             f"--width={self.cfg.preview.width}",
             f"--height={self.cfg.preview.height}",
             f"--socket={self._socket_name}",
-            "--no-config",
+            f"--config={weston_ini}",
             "--xwayland",
             "--debug",
             f"--log={weston_log}",
+            "--address=127.0.0.1",
+            f"--port={vnc_port}",
+            "--disable-transport-layer-security",
         ]
         handle = self._start("weston", argv, self._base_env(), Path.home(), self._log("weston-stdout"))
         self._wait_weston_display(handle, weston_log)
+        self.runner.wait_port(
+            "127.0.0.1",
+            vnc_port,
+            self._startup_timeout(self.cfg.timeouts.weston_startup_sec),
+            self._stop_event,
+        )
 
     def _wait_weston_display(self, handle: ProcessHandle, log_path: Path) -> None:
         deadline = time.monotonic() + self._startup_timeout(self.cfg.timeouts.weston_startup_sec)
@@ -715,23 +803,23 @@ class SessionManager:
             time.sleep(0.2)
         raise StartupError("Weston did not publish an Xwayland display")
 
-    def _start_preview(self) -> None:
-        if self._socket_name is None or self._session_dir is None:
-            raise StartupError("no active session directory")
-        self._preview = self.preview_factory(
-            width=self.cfg.preview.width,
-            height=self.cfg.preview.height,
-            panel_height=self.cfg.preview.panel_height,
-            fps=self.cfg.preview.fps,
-            screenshooter=self.cfg.paths.weston_screenshooter_bin,
-            runtime_dir=self.runtime_dir,
-            wayland_display=self._socket_name,
-            work_dir=self._session_dir,
-            publish_path=self._session_dir / "latest.png",
-            stop_event=self._stop_event,
-            log=self._session_log,
+    def _start_proxy(self) -> None:
+        proxy_port = self.cfg.preview.proxy_port
+        vnc_port = self.cfg.preview.vnc_port
+        if self.runner.port_in_use("127.0.0.1", proxy_port):
+            raise StartupError(f"websockify port {proxy_port} is already in use")
+        argv = [
+            self.cfg.paths.websockify_bin,
+            f"127.0.0.1:{proxy_port}",
+            f"127.0.0.1:{vnc_port}",
+        ]
+        self._start("proxy", argv, self._base_env(), Path.home(), self._log("proxy"))
+        self.runner.wait_port(
+            "127.0.0.1",
+            proxy_port,
+            self._startup_timeout(self.cfg.timeouts.weston_startup_sec),
+            self._stop_event,
         )
-        self._preview.start()
 
     def _start_pose(self, mode: str) -> None:
         if self._session_dir is None:
@@ -822,6 +910,7 @@ class SessionManager:
             self._stop_event,
         )
         self._game_pids = pids
+        self._apply_game_audio_mute()
         self._pointer.setdefault("processes", {})["game"] = {
             "pid": pids[0],
             "command": self._game_argv0(),
@@ -862,7 +951,7 @@ class SessionManager:
     def _startup(self) -> None:
         self._step("monado", "monado", self._start_monado)
         self._step("weston", "weston", self._start_weston, "weston-stdout")
-        self._step("preview", "session", self._start_preview)
+        self._step("proxy", "proxy", self._start_proxy)
         self._step("pose", "pose", lambda: self._start_pose(self._mode))
         self._step("steam", "steam", self._start_steam)
         self._step("game", "monado", self._launch_game)
@@ -972,11 +1061,14 @@ class SessionManager:
                     return
                 monado = self._handles.get("monado")
                 weston = self._handles.get("weston")
+                proxy = self._handles.get("proxy")
             dead = None
             if monado is None or not monado.alive():
                 dead = "monado"
             elif weston is None or not weston.alive():
                 dead = "weston"
+            elif proxy is None or not proxy.alive():
+                dead = "proxy"
             if dead is None:
                 continue
             with self._lifecycle_lock:
@@ -1068,21 +1160,14 @@ class SessionManager:
                 if monado is None or not monado.alive():
                     self.runner.remove_stale_socket(self.runtime_dir / "monado_comp_ipc")
 
-            def stop_preview() -> None:
-                try:
-                    if self._preview is not None:
-                        self._preview.stop(budget(5))
-                finally:
-                    self._preview = None
-
             phase("pose", lambda: stop_handle("pose", budget(2)))
             phase("steam-shutdown", shutdown_steam)
             phase("steam", lambda: stop_handle("steam", budget(5)))
             phase("game", kill_game)
+            phase("proxy", lambda: stop_handle("proxy", budget(5)))
             phase("weston", lambda: stop_handle("weston", budget(5)))
             phase("monado", lambda: stop_handle("monado", budget(5)))
             phase("monado-socket", remove_socket)
-            phase("preview", stop_preview)
 
             survivors: list[str] = []
 
@@ -1091,7 +1176,7 @@ class SessionManager:
                     survivors.append("game")
 
             def probe_handles() -> None:
-                for name in ("pose", "steam", "weston", "monado"):
+                for name in ("pose", "steam", "proxy", "weston", "monado"):
                     handle = stopped.get(name)
                     if handle is None:
                         continue

@@ -14,8 +14,8 @@
     in
     {
       # The app itself is standard-library-only Python; what this shell pins is
-      # the host tooling the launch path needs (nested Weston + capture, and
-      # optional magick for --preview-smoke).
+      # the host tooling the launch path needs (nested Weston VNC, websockify
+      # and noVNC, plus optional magick and mpv for --preview-smoke).
       devShells = forAllSystems (
         system:
         let
@@ -27,6 +27,9 @@
               pkgs.python3
               pkgs.weston
               pkgs.imagemagick
+              pkgs.mpv
+              pkgs.novnc
+              pkgs.python3Packages.websockify
             ];
           };
         }

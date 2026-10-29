@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import http.client
-import json
 import os
 import re
 import shutil
@@ -198,95 +196,6 @@ class PreviewCapture:
             self.log(f"preview: {message}")
 
 
-class _SmokeManager:
-    def __init__(self, latest: Path, cfg: Config) -> None:
-        self._latest = latest
-        self._cfg = cfg
-
-    def snapshot(self) -> dict:
-        return {
-            "state": "running",
-            "session_id": "preview-smoke",
-            "started_at": None,
-            "mode": "hold",
-            "processes": {},
-            "openxr_client": None,
-            "preview": {
-                "width": self._cfg.preview.width,
-                "height": self._cfg.preview.height - self._cfg.preview.panel_height,
-                "fps_target": self._cfg.preview.fps,
-                "fps_actual": 0,
-                "last_frame_at": None,
-                "errors": 0,
-                "frames": 0,
-            },
-            "last_error": None,
-            "survivors": [],
-            "logs": {},
-        }
-
-    def preview_path(self) -> Path:
-        return self._latest
-
-    def state_value(self) -> str:
-        return "running"
-
-    def log_path(self, name: str) -> None:
-        return None
-
-
-def _smoke_http(cfg: Config, latest: Path) -> bool:
-    from .dashboard import DashboardServer
-
-    latest = Path(latest)
-    if not latest.exists():
-        return False
-    manager = _SmokeManager(latest, cfg)
-    static_dir = Path(__file__).resolve().parent / "static"
-    server = None
-    thread = None
-    started = False
-    try:
-        server = DashboardServer(("127.0.0.1", 0), manager, cfg, static_dir)
-        thread = threading.Thread(target=server.serve_forever, name="superbot-smoke-http", daemon=True)
-        thread.start()
-        started = True
-        port = server.server_address[1]
-        connection = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
-        try:
-            connection.request("GET", "/api/state")
-            response = connection.getresponse()
-            if response.status != 200:
-                return False
-            payload = json.loads(response.read())
-            if not isinstance(payload, dict) or payload.get("state") != "running":
-                return False
-            connection.request("GET", "/api/frame.png")
-            response = connection.getresponse()
-            if response.status != 200:
-                return False
-            if response.read() != latest.read_bytes():
-                return False
-        finally:
-            connection.close()
-        return True
-    except Exception:
-        return False
-    finally:
-        if server is not None:
-            if started:
-                try:
-                    server.shutdown()
-                except Exception:
-                    pass
-            try:
-                server.server_close()
-            except Exception:
-                pass
-        if started and thread is not None:
-            thread.join(2)
-
-
 def _kill_group(pid: int) -> None:
     try:
         os.killpg(os.getpgid(pid), signal.SIGTERM)
@@ -401,9 +310,6 @@ def preview_smoke(cfg: Config) -> int:
                             ok = float(result.stdout.strip()) > 0.01
                         except ValueError:
                             ok = False
-            if ok and not _smoke_http(cfg, latest):
-                print("preview smoke failed: /api/state or /api/frame.png check failed")
-                return 1
             print("preview smoke ok" if ok else "preview smoke failed")
             return 0 if ok else 1
     finally:

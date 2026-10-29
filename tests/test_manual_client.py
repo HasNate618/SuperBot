@@ -4,6 +4,7 @@ import importlib.util
 import json
 import socket
 import tempfile
+import types
 import unittest
 from pathlib import Path
 
@@ -89,6 +90,118 @@ class BrowserInputTests(unittest.TestCase):
     def test_close_removes_socket(self) -> None:
         self.input.close()
         self.assertFalse(self.path.exists())
+
+
+class KeyInput:
+    def __init__(self, keys=()) -> None:
+        self.keys = set(keys)
+        self.buttons: set[int] = set()
+        self.armed = True
+
+    def down(self, name: str) -> bool:
+        return name in self.keys
+
+    def take_mouse(self):
+        return 0.0, 0.0, 0.0
+
+
+def make_manual():
+    args = types.SimpleNamespace(
+        hand=(0.0, 0.056, -0.702),
+        sens=0.072,
+        invert_y=False,
+        speed=0.8,
+        hand_speed=0.5,
+    )
+    return manual.Manual(args)
+
+
+class ManualPunchTests(unittest.TestCase):
+    DT = 1.0 / 90.0
+
+    def run_for(self, m, inp, seconds):
+        steps = max(1, round(seconds / self.DT))
+        packet = None
+        for _ in range(steps):
+            m.update(inp, self.DT)
+            packet = m.packet()
+        return packet
+
+    def test_f_punches_active_hand_forward_then_returns(self) -> None:
+        m = make_manual()
+        inp = KeyInput(["f"])
+        base = list(m.hand)
+
+        packet = self.run_for(m, inp, 0.14)
+        self.assertTrue(m.punch_active)
+        self.assertTrue(m.grip)
+        self.assertLess(packet.right.pose.position.z, -1.0)
+        self.assertEqual(m.hand, base)
+
+        packet = self.run_for(m, inp, 0.25)
+        self.assertFalse(m.punch_active)
+        self.assertFalse(m.grip)
+        self.assertAlmostEqual(packet.right.pose.position.z, base[2], places=5)
+
+    def test_punch_uses_active_left_hand_only(self) -> None:
+        m = make_manual()
+        inp = KeyInput(["2"])
+        m.update(inp, self.DT)
+        right_base = m.packet().right.pose.position.z
+        inp.keys.add("f")
+
+        packet = self.run_for(m, inp, 0.14)
+        self.assertLess(packet.left.pose.position.z, -0.6)
+        self.assertAlmostEqual(packet.right.pose.position.z, right_base, places=5)
+
+    def test_punch_does_not_retrigger_while_key_is_held(self) -> None:
+        m = make_manual()
+        inp = KeyInput(["f"])
+        self.run_for(m, inp, 0.14)
+        self.assertTrue(m.punch_active)
+        self.run_for(m, inp, 0.25)
+        self.assertFalse(m.punch_active)
+
+        self.run_for(m, inp, 0.20)
+        self.assertFalse(m.punch_active, "holding F must not loop the punch")
+
+        inp.keys.clear()
+        m.update(inp, self.DT)
+        inp.keys.add("f")
+        m.update(inp, self.DT)
+        self.assertTrue(m.punch_active)
+
+    def test_reset_cancels_punch_and_restores_hand(self) -> None:
+        m = make_manual()
+        inp = KeyInput(["f"])
+        self.run_for(m, inp, 0.14)
+        self.assertTrue(m.punch_active)
+
+        inp.keys.add("r")
+        m.update(inp, self.DT)
+        packet = m.packet()
+        self.assertFalse(m.punch_active)
+        self.assertFalse(m.grip)
+        self.assertAlmostEqual(packet.right.pose.position.z, -0.702, places=5)
+
+    def test_punch_sets_active_hand_linear_velocity(self) -> None:
+        m = make_manual()
+        inp = KeyInput(["f"])
+        m.update(inp, self.DT)
+        m.packet()
+
+        packet = self.run_for(m, inp, 0.10)
+        self.assertLess(packet.right.linear_velocity.z, -1.0)
+        self.assertAlmostEqual(packet.left.linear_velocity.z, 0.0, places=5)
+
+        packet = self.run_for(m, inp, 0.30)
+        self.assertAlmostEqual(packet.right.linear_velocity.z, 0.0, places=5)
+
+    def test_status_reports_punch(self) -> None:
+        m = make_manual()
+        inp = KeyInput(["f"])
+        m.update(inp, self.DT)
+        self.assertIn("punch=1", m.status())
 
 
 if __name__ == "__main__":
