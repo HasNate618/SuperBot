@@ -14,10 +14,109 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(cfg.preview.width, 1280)
         self.assertEqual(cfg.preview.height, 720)
         self.assertEqual(cfg.preview.panel_height, 32)
-        self.assertEqual(cfg.preview.fps, 12.0)
+        self.assertEqual(cfg.preview.fps, 30.0)
         self.assertEqual(cfg.dashboard.port, 8765)
         self.assertEqual(cfg.launch.shortcut_id, "18251483899710406656")
         self.assertTrue(cfg.paths.pose_client.endswith("spike/c0/c0_client.py"))
+
+    def test_vnc_defaults(self) -> None:
+        cfg = load_config(None, env={})
+        self.assertEqual(cfg.preview.vnc_port, 5901)
+        self.assertEqual(cfg.preview.proxy_port, 6080)
+        self.assertEqual(cfg.paths.novnc_bin, "novnc")
+        self.assertEqual(cfg.paths.websockify_bin, "websockify")
+
+    def test_preview_fps_must_be_whole(self) -> None:
+        cfg = load_config(None, env={})
+        with self.assertRaises(ConfigError):
+            validate_config(
+                replace(cfg, preview=replace(cfg.preview, fps=29.97))
+            )
+
+    def test_vnc_ports_must_differ(self) -> None:
+        cfg = load_config(None, env={})
+        with self.assertRaises(ConfigError):
+            validate_config(
+                replace(
+                    cfg,
+                    preview=replace(cfg.preview, proxy_port=cfg.preview.vnc_port),
+                )
+            )
+
+    def test_vnc_ports_are_bounded(self) -> None:
+        cfg = load_config(None, env={})
+        for key in ("vnc_port", "proxy_port"):
+            with self.subTest(key=key):
+                with self.assertRaises(ConfigError):
+                    validate_config(replace(cfg, preview=replace(cfg.preview, **{key: 0})))
+                with self.assertRaises(ConfigError):
+                    validate_config(replace(cfg, preview=replace(cfg.preview, **{key: 70000})))
+
+    def test_vnc_port_boundaries_are_accepted(self) -> None:
+        cfg = load_config(None, env={})
+        for key in ("vnc_port", "proxy_port"):
+            for value in (1, 65535):
+                with self.subTest(key=key, value=value):
+                    validate_config(
+                        replace(cfg, preview=replace(cfg.preview, **{key: value}))
+                    )
+
+    def test_dashboard_port_conflicts_are_rejected(self) -> None:
+        cfg = load_config(None, env={})
+        for key in ("vnc_port", "proxy_port"):
+            with self.subTest(key=key):
+                with self.assertRaises(ConfigError):
+                    validate_config(
+                        replace(
+                            cfg,
+                            preview=replace(
+                                cfg.preview, **{key: cfg.dashboard.port}
+                            ),
+                        )
+                    )
+        validate_config(
+            replace(
+                cfg,
+                dashboard=replace(cfg.dashboard, port=0),
+                preview=replace(cfg.preview, vnc_port=8765),
+            )
+        )
+
+    def test_novnc_web_root_is_derived(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            base = Path(raw)
+            bin_dir = base / "novnc" / "bin"
+            web = base / "novnc" / "share" / "webapps" / "novnc"
+            (web / "core").mkdir(parents=True)
+            (web / "core" / "rfb.js").write_text("")
+            bin_dir.mkdir(parents=True)
+            tool = bin_dir / "novnc"
+            tool.write_text("")
+            tool.chmod(0o755)
+            cfg = load_config(None, env={"SUPERBOT_PATHS_NOVNC_BIN": str(tool)})
+            self.assertEqual(cfg.paths.novnc_web_root, str(web))
+
+    def test_explicit_novnc_web_root_wins(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            base = Path(raw)
+            bin_dir = base / "novnc" / "bin"
+            web = base / "novnc" / "share" / "webapps" / "novnc"
+            (web / "core").mkdir(parents=True)
+            (web / "core" / "rfb.js").write_text("")
+            bin_dir.mkdir(parents=True)
+            tool = bin_dir / "novnc"
+            tool.write_text("")
+            tool.chmod(0o755)
+            explicit = base / "explicit-web-root"
+            explicit.mkdir()
+            cfg = load_config(
+                None,
+                env={
+                    "SUPERBOT_PATHS_NOVNC_BIN": str(tool),
+                    "SUPERBOT_PATHS_NOVNC_WEB_ROOT": str(explicit),
+                },
+            )
+            self.assertEqual(cfg.paths.novnc_web_root, str(explicit))
 
     def test_steam_extra_args_default_is_tuple(self) -> None:
         cfg = load_config(None, env={})
@@ -59,6 +158,17 @@ class ConfigTests(unittest.TestCase):
             path.write_text('[paths]\npose_client = "pose.py"\n')
             cfg = load_config(path, env={})
             self.assertEqual(cfg.paths.pose_client, str((base / "pose.py").resolve()))
+
+    def test_relative_novnc_web_root_resolves_from_config_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            base = Path(raw)
+            path = base / "config.toml"
+            path.write_text('[paths]\nnovnc_web_root = "web"\n')
+            cfg = load_config(
+                path,
+                env={"SUPERBOT_PATHS_NOVNC_BIN": "/nonexistent/novnc"},
+            )
+            self.assertEqual(cfg.paths.novnc_web_root, str((base / "web").resolve()))
 
     def test_explicit_base_dir_wins_for_relative_paths(self) -> None:
         with tempfile.TemporaryDirectory() as raw, tempfile.TemporaryDirectory() as other:
@@ -147,6 +257,7 @@ class ConfigTests(unittest.TestCase):
                 "weston-screenshooter",
                 "weston-debug",
                 "steam",
+                "websockify",
                 "game.exe",
                 "pose.py",
                 "runtime.json",
@@ -155,10 +266,20 @@ class ConfigTests(unittest.TestCase):
                 path = base / name
                 path.write_text("")
                 path.chmod(0o755)
+            novnc_bin = base / "novnc" / "bin"
+            novnc_web = base / "novnc" / "share" / "webapps" / "novnc"
+            (novnc_web / "core").mkdir(parents=True)
+            (novnc_web / "core" / "rfb.js").write_text("")
+            novnc_bin.mkdir(parents=True)
+            novnc_tool = novnc_bin / "novnc"
+            novnc_tool.write_text("")
+            novnc_tool.chmod(0o755)
             env = {
                 "SUPERBOT_PATHS_MONADO_BIN": str(base / "monado-service"),
                 "SUPERBOT_PATHS_WESTON_BIN": str(base / "weston"),
                 "SUPERBOT_PATHS_STEAM_BIN": str(base / "steam"),
+                "SUPERBOT_PATHS_NOVNC_BIN": str(novnc_tool),
+                "SUPERBOT_PATHS_WEBSOCKIFY_BIN": str(base / "websockify"),
                 "SUPERBOT_PATHS_GAME_EXE": str(base / "game.exe"),
                 "SUPERBOT_PATHS_POSE_CLIENT": str(base / "pose.py"),
                 "SUPERBOT_PATHS_OPENXR_ACTIVE_RUNTIME": str(base / "runtime.json"),
@@ -168,6 +289,30 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(missing_requirements(cfg), [])
             (base / "steam").unlink()
             self.assertTrue(any("steam" in item for item in missing_requirements(cfg)))
+            (base / "steam").write_text("")
+            (base / "steam").chmod(0o755)
+            novnc_tool.unlink()
+            self.assertTrue(
+                any(item.startswith("novnc (") for item in missing_requirements(cfg))
+            )
+            novnc_tool.write_text("")
+            novnc_tool.chmod(0o755)
+            (base / "websockify").unlink()
+            self.assertTrue(
+                any(
+                    item.startswith("websockify (")
+                    for item in missing_requirements(cfg)
+                )
+            )
+            (base / "websockify").write_text("")
+            (base / "websockify").chmod(0o755)
+            (novnc_web / "core" / "rfb.js").unlink()
+            self.assertTrue(
+                any(
+                    item.startswith("noVNC assets")
+                    for item in missing_requirements(cfg)
+                )
+            )
 
 
 if __name__ == "__main__":

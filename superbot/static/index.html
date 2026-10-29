@@ -14,11 +14,12 @@
     <span id="uptime"></span>
     <button id="start" disabled>Start</button>
     <button id="stop" disabled>Stop</button>
+    <button id="mute-audio" disabled>Mute game audio</button>
   </header>
   <main>
     <section class="preview" id="preview-box">
       <div class="preview-clip" id="preview-clip">
-        <img id="preview" alt="live C0 preview">
+        <div id="preview" tabindex="-1"></div>
       </div>
       <div id="preview-wait">session stopped</div>
       <div id="manual-overlay" class="manual-overlay">
@@ -27,6 +28,12 @@
           <span id="manual-detail"></span>
         </div>
       </div>
+      <form id="vnc-auth" class="vnc-auth">
+        <label>Username <input id="vnc-user" autocomplete="username" required></label>
+        <label>Password <input id="vnc-pass" type="password" autocomplete="current-password" aria-describedby="vnc-error" required></label>
+        <button type="submit">Connect preview</button>
+        <p id="vnc-error" role="alert"></p>
+      </form>
     </section>
 
     <section>
@@ -61,6 +68,7 @@
         <option value="weston">weston</option>
         <option value="steam">steam</option>
         <option value="pose">pose</option>
+        <option value="proxy">proxy</option>
       </select>
       <button id="log-refresh">Refresh</button>
       <pre id="log-tail"></pre>

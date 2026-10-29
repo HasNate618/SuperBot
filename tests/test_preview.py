@@ -7,10 +7,8 @@ import threading
 import time
 import unittest
 from pathlib import Path
-from unittest import mock
 
-from superbot.config import load_config
-from superbot.preview import PreviewCapture, _smoke_http, atomic_replace, newest_png
+from superbot.preview import PreviewCapture, atomic_replace, newest_png
 
 
 class FakeRun:
@@ -225,43 +223,6 @@ class PreviewTests(unittest.TestCase):
             self.assertFalse(capture.capture_once())
             self.assertEqual((base / "latest.png").read_bytes(), before)
             self.assertEqual(capture.status()["errors"], 1)
-
-
-class SmokeHttpTests(unittest.TestCase):
-    def test_smoke_http_serves_state_and_frame(self) -> None:
-        with tempfile.TemporaryDirectory() as raw:
-            latest = Path(raw) / "latest.png"
-            latest.write_bytes(b"PNGDATA")
-            cfg = load_config(None, env={})
-            self.assertTrue(_smoke_http(cfg, latest))
-            self.assertFalse(
-                any(
-                    thread.name == "superbot-smoke-http" and thread.is_alive()
-                    for thread in threading.enumerate()
-                )
-            )
-
-    def test_smoke_http_missing_frame_fails(self) -> None:
-        with tempfile.TemporaryDirectory() as raw:
-            cfg = load_config(None, env={})
-            self.assertFalse(_smoke_http(cfg, Path(raw) / "latest.png"))
-
-    def test_smoke_http_bind_failure_returns_false(self) -> None:
-        with tempfile.TemporaryDirectory() as raw:
-            latest = Path(raw) / "latest.png"
-            latest.write_bytes(b"PNGDATA")
-            cfg = load_config(None, env={})
-            with mock.patch(
-                "superbot.dashboard.DashboardServer",
-                side_effect=OSError("bind failed"),
-            ):
-                self.assertFalse(_smoke_http(cfg, latest))
-            self.assertFalse(
-                any(
-                    thread.name == "superbot-smoke-http" and thread.is_alive()
-                    for thread in threading.enumerate()
-                )
-            )
 
 
 if __name__ == "__main__":

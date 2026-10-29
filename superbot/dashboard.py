@@ -1,12 +1,12 @@
 from __future__ import annotations
 
+import getpass
 import json
-import select
+import mimetypes
+import os
 import signal
-import socket
 import sys
 import threading
-import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlparse
@@ -54,17 +54,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return self._static("app.js", "application/javascript; charset=utf-8")
         if path == "/api/state":
             return self._json(self.server.manager.snapshot())
-        if path == "/api/frame.png":
-            latest = self.server.manager.preview_path()
-            if latest is None:
-                return self._error(404, "no preview frame")
-            try:
-                data = latest.read_bytes()
-            except OSError:
-                return self._error(404, "no preview frame")
-            return self._bytes(200, data, "image/png")
-        if path == "/preview.png":
-            return self._preview_stream()
+        if path == "/api/preview/config":
+            return self._preview_config()
+        if path.startswith("/novnc/"):
+            return self._novnc(path[len("/novnc/"):])
         if path.startswith("/api/logs/"):
             name = path[len("/api/logs/"):]
             decoded = unquote(name)
@@ -131,6 +124,19 @@ class DashboardHandler(BaseHTTPRequestHandler):
             except Exception:
                 return self._error(500, "internal server error")
             return self._json({"killed": body.get("target")})
+        if path in ("/api/audio/mute", "/api/audio", "/api/game/audio", "/api/game/audio/mute", "/api/audio/toggle"):
+            try:
+                if path.endswith("/toggle"):
+                    muted = self.server.manager.toggle_game_audio_mute()
+                elif "muted" in body:
+                    muted = self.server.manager.set_game_audio_muted(bool(body.get("muted")))
+                elif "mute" in body:
+                    muted = self.server.manager.set_game_audio_muted(bool(body.get("mute")))
+                else:
+                    muted = self.server.manager.set_game_audio_muted(True)
+            except Exception:
+                return self._error(500, "internal server error")
+            return self._json({"muted": bool(muted), "audio": self.server.manager.snapshot().get("audio", {})})
         return self._error(404, "not found")
 
     def _origin_allowed(self) -> bool:
@@ -196,48 +202,52 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return self._error(404, "log not found")
         self._bytes(200, data, "text/plain; charset=utf-8")
 
-    def _preview_stream(self) -> None:
-        if self.server.manager.state_value() in ("stopped", "failed"):
-            return self._error(404, "session is not running")
-        self.send_response(200)
-        self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.connection.settimeout(5)
-        boundary = b"--frame\r\n"
-        interval = 1.0 / max(1.0, self.server.config.preview.fps)
-        while True:
-            if self.server.manager.state_value() in ("stopped", "failed"):
-                break
-            if self.server.shutdown_event.is_set() or self._peer_closed():
-                break
-            latest = self.server.manager.preview_path()
-            data = None
-            if latest is not None:
-                try:
-                    data = latest.read_bytes()
-                except OSError:
-                    data = None
-            if data:
-                try:
-                    self.wfile.write(boundary)
-                    self.wfile.write(b"Content-Type: image/png\r\n")
-                    self.wfile.write(f"Content-Length: {len(data)}\r\n\r\n".encode())
-                    self.wfile.write(data)
-                    self.wfile.write(b"\r\n")
-                    self.wfile.flush()
-                except OSError:
-                    break
-            time.sleep(interval)
-
-    def _peer_closed(self) -> bool:
+    def _preview_config(self) -> None:
+        preview = self.server.manager.snapshot().get("preview") or {}
+        web_root = self.server.config.paths.novnc_web_root
+        rfb = Path(web_root) / "core" / "rfb.js" if web_root else None
         try:
-            readable, _, _ = select.select([self.connection], [], [], 0)
-            if not readable:
-                return False
-            return self.connection.recv(1, socket.MSG_PEEK) == b""
+            username = getpass.getuser()
+        except Exception:
+            username = ""
+        self._json({
+            "mode": "vnc",
+            "vnc_port": self.server.config.preview.vnc_port,
+            "proxy_port": self.server.config.preview.proxy_port,
+            "ws_url": f"ws://127.0.0.1:{self.server.config.preview.proxy_port}/",
+            "username": username,
+            "available": self.server.manager.state_value()
+            in ("starting", "running", "stopping"),
+            "transport_alive": bool(preview.get("vnc_alive"))
+            and bool(preview.get("proxy_alive")),
+            "assets_available": bool(
+                rfb is not None and rfb.is_file() and os.access(rfb, os.R_OK)
+            ),
+        })
+
+    def _novnc(self, name: str) -> None:
+        web_root = self.server.config.paths.novnc_web_root
+        if not web_root:
+            return self._error(404, "noVNC assets unavailable")
+        root = Path(web_root)
+        if not (root / "core" / "rfb.js").is_file():
+            return self._error(404, "noVNC assets unavailable")
+        decoded = unquote(name)
+        if any(part.startswith(".") for part in decoded.split("/") if part):
+            return self._error(404, "not found")
+        try:
+            target = (root / decoded).resolve()
+            target.relative_to(root.resolve())
         except (OSError, ValueError):
-            return True
+            return self._error(404, "not found")
+        if not target.is_file():
+            return self._error(404, "not found")
+        content_type = mimetypes.guess_type(str(target))[0] or "application/octet-stream"
+        try:
+            data = target.read_bytes()
+        except OSError:
+            return self._error(404, "not found")
+        self._bytes(200, data, content_type)
 
 
 def run_dashboard(cfg: Config) -> None:

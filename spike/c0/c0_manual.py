@@ -12,6 +12,7 @@ Controls
   Shift / Ctrl      fast / slow
   arrows            move the active hand
   wheel             reach the active hand forward/back
+  F                 one-shot punch with the active hand
   left mouse / T    trigger (fire)
   right mouse / G   grip (grab/hold)
   Tab               switch active hand
@@ -44,6 +45,11 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import c0_client as c0
 
 INPUT_LEASE_SECONDS = 0.5
+PUNCH_OUT_SECONDS = 0.12
+PUNCH_HOLD_SECONDS = 0.04
+PUNCH_BACK_SECONDS = 0.18
+PUNCH_TOTAL_SECONDS = PUNCH_OUT_SECONDS + PUNCH_HOLD_SECONDS + PUNCH_BACK_SECONDS
+PUNCH_REACH_M = 0.5
 INPUT_KEYS = frozenset(
     {
         "1", "2", "3", "4", "5", "tab", "q", "w", "e", "r", "t", "u", "i",
@@ -189,6 +195,10 @@ class Manual:
         self.prev_squeeze = False
         self.prev_keys: set[str] = set()
         self.crouching = False
+        self.punch_elapsed: float | None = None
+        self.punch_side = "R"
+        self._last_dt = 0.0
+        self._last_packet_positions: dict[str, tuple[float, float, float]] = {}
         self.reset()
 
     def reset(self):
@@ -198,6 +208,28 @@ class Manual:
         self.trigger = self.grip = False
         self.prev_trigger = False
         self.crouching = False
+        self.cancel_punch()
+        self._last_packet_positions = {}
+
+    @property
+    def punch_active(self) -> bool:
+        return self.punch_elapsed is not None
+
+    def cancel_punch(self) -> None:
+        self.punch_elapsed = None
+
+    def punch_extension(self) -> float:
+        t = self.punch_elapsed
+        if t is None:
+            return 0.0
+        if t < PUNCH_OUT_SECONDS:
+            return PUNCH_REACH_M * c0.smoothstep(t / PUNCH_OUT_SECONDS)
+        if t < PUNCH_OUT_SECONDS + PUNCH_HOLD_SECONDS:
+            return PUNCH_REACH_M
+        remaining = PUNCH_TOTAL_SECONDS - t
+        if remaining <= 0.0:
+            return 0.0
+        return PUNCH_REACH_M * c0.smoothstep(remaining / PUNCH_BACK_SECONDS)
 
     def quat(self):
         cy, sy = math.cos(self.yaw / 2), math.sin(self.yaw / 2)
@@ -224,11 +256,17 @@ class Manual:
         if pressed("h"):
             self.hand = list(self.args.hand)
         if pressed("tab"):
+            self.cancel_punch()
             self.active = "L" if self.active == "R" else "R"
         if pressed("1"):
+            self.cancel_punch()
             self.active = "R"
         if pressed("2"):
+            self.cancel_punch()
             self.active = "L"
+        if pressed("f") and not self.punch_active:
+            self.punch_elapsed = 0.0
+            self.punch_side = self.active
 
         dx, dy, wheel = inp.take_mouse()
         self.yaw -= dx * math.radians(self.args.sens)
@@ -284,14 +322,25 @@ class Manual:
         self.hand[1] = max(-0.8, min(0.8, self.hand[1]))
         self.hand[2] = max(-1.2, min(-0.15, self.hand[2]))
 
+        if self.punch_active:
+            self.punch_elapsed = (self.punch_elapsed or 0.0) + dt
+            if self.punch_elapsed >= PUNCH_TOTAL_SECONDS:
+                self.punch_elapsed = None
+
         self.trigger = inp.down("t") or BTN_LEFT in inp.buttons
-        self.grip = inp.down("g") or BTN_RIGHT in inp.buttons
+        self.grip = inp.down("g") or BTN_RIGHT in inp.buttons or self.punch_active
         self.prev_keys = {name for name in KEY if inp.down(name)}
+        self._last_dt = dt
 
     def packet(self):
         q = self.quat()
         hp = self.pos
-        active_off = self.hand
+        active_off = list(self.hand)
+        if self.punch_active and self.punch_side == self.active:
+            active_off[2] -= self.punch_extension()
+            active_off[0] = max(-0.8, min(0.8, active_off[0]))
+            active_off[1] = max(-0.8, min(0.8, active_off[1]))
+            active_off[2] = max(-1.2, min(-0.15, active_off[2]))
         rest_l = (-0.222, -0.5, 0.017)
         rest_r = (0.222, -0.5, 0.017)
         hand = {
@@ -327,6 +376,21 @@ class Manual:
         inactive.thumbstick.x = inactive.thumbstick.y = 0.0
         for i in range(5):
             inactive.hand_curl[i] = 0.0
+
+        current = {"L": st.l_p, "R": st.r_p}
+        dt = self._last_dt
+        for side, controller in (("L", d.left), ("R", d.right)):
+            previous = self._last_packet_positions.get(side)
+            if previous is not None and dt > 0.0:
+                controller.linear_velocity.x = (current[side][0] - previous[0]) / dt
+                controller.linear_velocity.y = (current[side][1] - previous[1]) / dt
+                controller.linear_velocity.z = (current[side][2] - previous[2]) / dt
+            else:
+                controller.linear_velocity.x = 0.0
+                controller.linear_velocity.y = 0.0
+                controller.linear_velocity.z = 0.0
+        self._last_packet_positions = current
+
         self.prev_trigger = self.trigger
         self.prev_squeeze = self.grip
         return d
@@ -335,7 +399,7 @@ class Manual:
         return (f"yaw={math.degrees(self.yaw):+6.1f} pitch={math.degrees(self.pitch):+5.1f} "
                 f"pos=({self.pos[0]:+.2f},{self.pos[1]:.2f},{self.pos[2]:+.2f}) "
                 f"hand={self.active} off=({self.hand[0]:+.2f},{self.hand[1]:+.2f},{self.hand[2]:+.2f}) "
-                f"trig={int(self.trigger)} grip={int(self.grip)}")
+                f"trig={int(self.trigger)} grip={int(self.grip)} punch={int(self.punch_active)}")
 
 
 def main():
@@ -356,7 +420,7 @@ def main():
     inp = BrowserInput(Path(args.input_socket))
     print(f"[manual] input socket: {args.input_socket}", flush=True)
     print("[manual] controls: mouse look | WASD move | Space/Z up/down | arrows hand | wheel reach")
-    print("[manual]           LMB/T fire | RMB/G grip | Tab/1/2 hand | R reset | H hand | Esc release")
+    print("[manual]           F punch | LMB/T fire | RMB/G grip | Tab/1/2 hand | R reset | H hand | Esc release")
 
     c0.assert_layout()
     sock = socket.create_connection((args.host, args.port), timeout=5)

@@ -1,11 +1,16 @@
 const $ = (id) => document.getElementById(id);
 
-const LIVE_STATES = ["starting", "running", "stopping"];
+const LIVE_STATES = new Set(["starting", "running", "stopping"]);
 
-let currentState = null;
 let lastState = null;
-let previewOpen = false;
-let previewRetry = null;
+let previewRfb = null;
+let previewConnected = false;
+let previewConnecting = false;
+let previewCreds = null;
+let previewConfig = null;
+let previewConfigPromise = null;
+let previewGeneration = 0;
+let previewError = "";
 let pollInFlight = false;
 let actionInFlight = false;
 let clientError = "";
@@ -100,48 +105,194 @@ function uptime(startedAt) {
   return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
 }
 
-function isLive(state) {
-  return LIVE_STATES.includes(state);
+function previewAuthVisible() {
+  return $("vnc-auth").classList.contains("visible");
 }
 
-function clearPreviewRetry() {
-  if (previewRetry !== null) {
-    clearTimeout(previewRetry);
-    previewRetry = null;
+function setPreviewError(message) {
+  previewError = message || "";
+  $("vnc-error").textContent = previewError;
+}
+
+function setPreviewConnecting(connecting) {
+  previewConnecting = connecting;
+  const button = $("vnc-auth").querySelector("button[type=submit]");
+  if (!button) return;
+  button.disabled = connecting;
+  button.textContent = connecting ? "Connecting…" : "Connect preview";
+}
+
+function showPreviewAuth() {
+  const wasVisible = previewAuthVisible();
+  $("vnc-auth").classList.add("visible");
+  $("vnc-error").textContent = previewError || "";
+  if (!wasVisible) $("vnc-pass").focus();
+}
+
+function hidePreviewAuth() {
+  $("vnc-auth").classList.remove("visible");
+  $("vnc-pass").value = "";
+}
+
+async function loadPreviewConfig() {
+  if (previewConfig) return previewConfig;
+  const generation = previewGeneration;
+  if (!previewConfigPromise) {
+    const promise = api("/api/preview/config");
+    previewConfigPromise = promise;
+    const clear = () => {
+      if (previewConfigPromise === promise) previewConfigPromise = null;
+    };
+    promise.then(clear, clear);
   }
-}
-
-function openPreview() {
-  clearPreviewRetry();
-  if (previewOpen) return;
-  previewOpen = true;
-  $("preview").src = `/preview.png?t=${Date.now()}`;
+  const config = await previewConfigPromise;
+  if (generation === previewGeneration) {
+    previewConfig = config;
+    $("vnc-user").value = config.username || "";
+    if (config.assets_available === false) {
+      setPreviewError("noVNC assets are unavailable");
+    }
+  }
+  return config;
 }
 
 function closePreview() {
-  clearPreviewRetry();
-  previewOpen = false;
-  $("preview").removeAttribute("src");
+  previewGeneration += 1;
+  const rfb = previewRfb;
+  previewRfb = null;
+  previewConnected = false;
+  setPreviewConnecting(false);
+  if (rfb) {
+    try {
+      rfb.disconnect();
+    } catch (_) {
+      // already gone
+    }
+  }
+  previewConfig = null;
+  previewConfigPromise = null;
+  hidePreviewAuth();
+  $("vnc-pass").value = "";
+  previewCreds = null;
+  setPreviewError("");
 }
 
-function schedulePreviewRetry() {
-  clearPreviewRetry();
-  if (!isLive(currentState)) return;
-  previewRetry = setTimeout(() => {
-    previewRetry = null;
-    if (!isLive(currentState) || previewOpen) return;
-    openPreview();
-  }, 1000);
+async function connectPreview() {
+  if (previewRfb || previewConnecting || !previewCreds) return;
+  const generation = previewGeneration;
+  setPreviewConnecting(true);
+  try {
+    const config = await loadPreviewConfig();
+    if (generation !== previewGeneration || !previewCreds) return;
+    if (!config || config.assets_available === false) {
+      setPreviewError("noVNC assets are unavailable");
+      previewCreds = null;
+      showPreviewAuth();
+      return;
+    }
+    const { default: RFB } = await import("/novnc/core/rfb.js");
+    if (generation !== previewGeneration || !previewCreds) return;
+    const protocol = location.protocol === "https:" ? "wss" : "ws";
+    const wsUrl = config.ws_url || `${protocol}://${location.hostname}:${config.proxy_port}/`;
+    const rfb = new RFB($("preview"), wsUrl, {
+      credentials: previewCreds,
+      wsProtocols: ["binary"],
+    });
+    if (generation !== previewGeneration || !previewCreds) {
+      try {
+        rfb.disconnect();
+      } catch (_) {
+        // already gone
+      }
+      return;
+    }
+    previewRfb = rfb;
+    previewConnected = false;
+    rfb.viewOnly = true;
+    rfb.scaleViewport = false;
+    rfb.resizeSession = false;
+    rfb.focusOnClick = false;
+
+    rfb.addEventListener("connect", () => {
+      if (previewRfb !== rfb) return;
+      previewConnected = true;
+      setPreviewConnecting(false);
+      previewCreds = null;
+      previewError = "";
+      $("vnc-error").textContent = "";
+      hidePreviewAuth();
+      $("preview-wait").style.display = "none";
+    });
+
+    rfb.addEventListener("securityfailure", (event) => {
+      if (previewRfb !== rfb) return;
+      previewConnected = false;
+      setPreviewConnecting(false);
+      setPreviewError(event.detail?.reason || "authentication failed");
+      showPreviewAuth();
+    });
+
+    rfb.addEventListener("credentialsrequired", () => {
+      if (previewRfb !== rfb) return;
+      previewConnected = false;
+      setPreviewConnecting(false);
+      setPreviewError("VNC credentials are required");
+      showPreviewAuth();
+      rfb.disconnect();
+    });
+
+    rfb.addEventListener("disconnect", (event) => {
+      if (previewRfb !== rfb) return;
+      previewGeneration += 1;
+      previewRfb = null;
+      previewConnected = false;
+      setPreviewConnecting(false);
+      previewCreds = null;
+      if (!event.detail.clean) {
+        if (!previewError) setPreviewError("VNC connection closed; check the password and that the stream is running");
+        showPreviewAuth();
+      } else if (previewError) {
+        showPreviewAuth();
+      } else {
+        hidePreviewAuth();
+      }
+    });
+  } catch (error) {
+    if (generation !== previewGeneration) return;
+    setPreviewConnecting(false);
+    previewRfb = null;
+    previewConnected = false;
+    previewCreds = null;
+    setPreviewError(error.message || "preview connection failed");
+    showPreviewAuth();
+  } finally {
+    if (generation === previewGeneration && !previewRfb) setPreviewConnecting(false);
+  }
 }
 
-function syncPreview(previous, state) {
-  const changed = state.state !== previous;
-  if (changed) clearPreviewRetry();
-  if (!isLive(state.state)) {
+function syncPreview(state) {
+  if (!LIVE_STATES.has(state.state)) {
     closePreview();
     return;
   }
-  if (changed && !previewOpen) openPreview();
+  const preview = state.preview || {};
+  const transportAlive = Boolean(preview.vnc_alive && preview.proxy_alive);
+  if (transportAlive) {
+    if (previewRfb && previewConnected) {
+      hidePreviewAuth();
+    } else if (previewCreds) {
+      connectPreview();
+    } else {
+      if (!previewConfig) {
+        loadPreviewConfig().catch((error) => {
+          setPreviewError(error.message || "preview configuration unavailable");
+        });
+      }
+      showPreviewAuth();
+    }
+  } else {
+    hidePreviewAuth();
+  }
 }
 
 function updatePreviewWait(state) {
@@ -154,10 +305,19 @@ function updatePreviewWait(state) {
   if (stateText) {
     wait.textContent = stateText;
     wait.style.display = "block";
-  } else if (state.preview.last_frame_at) {
+    return;
+  }
+  const preview = state.preview || {};
+  const transportAlive = Boolean(preview.vnc_alive && preview.proxy_alive);
+  if (previewRfb && previewConnected) {
+    wait.style.display = "none";
+  } else if (!transportAlive) {
+    wait.textContent = "waiting for VNC transport…";
+    wait.style.display = "block";
+  } else if (previewAuthVisible()) {
     wait.style.display = "none";
   } else {
-    wait.textContent = "waiting for the first frame…";
+    wait.textContent = "authenticate to view the preview";
     wait.style.display = "block";
   }
 }
@@ -174,6 +334,10 @@ function applyControls(state) {
   });
   $("kill-game").disabled = actionInFlight || !running;
   $("kill-steam").disabled = actionInFlight || !running;
+  const audio = state.audio || {};
+  const audioButton = $("mute-audio");
+  audioButton.textContent = audio.muted ? "Unmute game audio" : "Mute game audio";
+  audioButton.disabled = actionInFlight || !running || !audio.available;
 }
 
 function clamp(value, limit) {
@@ -313,7 +477,7 @@ function updateManualUi(state) {
   const available = manual.available !== false;
   const foreign = Boolean(manual.armed && manual.client && manual.client !== manualClient);
   let title = "Click preview to control";
-  let detail = "Mouse look · WASD move · LMB fire · RMB grip · Tab hand · Esc releases";
+  let detail = "Mouse look · WASD move · arrows hand · F punch · LMB fire · RMB grip · Tab hand · Esc releases";
   if (manualLocked) {
     if (manual.armed && manual.client === manualClient) {
       title = "Manual control active";
@@ -341,8 +505,6 @@ function manualKey(code) {
 }
 
 function render(state) {
-  const previous = currentState;
-  currentState = state.state;
   lastState = state;
 
   $("state").textContent = state.state;
@@ -371,7 +533,7 @@ function render(state) {
   }
 
   applyControls(state);
-  syncPreview(previous, state);
+  syncPreview(state);
   updatePreviewWait(state);
   updateManualUi(state);
   applyServerError(state.last_error);
@@ -389,10 +551,13 @@ function render(state) {
       <span>${escapeHtml(state.openxr_client || "none")}</span>
     </div>
   `);
+  const preview = state.preview || {};
+  const transportAlive = Boolean(preview.vnc_alive && preview.proxy_alive);
   cards.push(`
     <div class="card">
       <strong>Preview</strong>
-      <span>${escapeHtml(state.preview.fps_actual)} fps</span>
+      <span class="${transportAlive ? "ok" : "bad"}">${transportAlive ? "live" : "waiting"}</span>
+      <small>${escapeHtml(preview.mode)} · ${escapeHtml(preview.fps_target)} fps</small>
     </div>
   `);
   $("health").innerHTML = cards.join("");
@@ -426,10 +591,14 @@ async function runAction(action) {
   }
 }
 
-$("preview").addEventListener("error", () => {
-  previewOpen = false;
-  if (!isLive(currentState)) return;
-  schedulePreviewRetry();
+$("vnc-auth").addEventListener("submit", (event) => {
+  event.preventDefault();
+  setPreviewError("");
+  const username = $("vnc-user").value;
+  const password = $("vnc-pass").value;
+  $("vnc-pass").value = "";
+  previewCreds = { username, password };
+  connectPreview();
 });
 
 $("start").onclick = () => runAction(() => post("/api/session/start"));
@@ -450,6 +619,8 @@ $("kill-steam").onclick = () => {
   runAction(() => post("/api/session/kill", { target: "steam" }));
 };
 
+$("mute-audio").onclick = () => runAction(() => post("/api/audio/mute", { muted: !(lastState?.audio?.muted) }));
+
 $("log-refresh").onclick = async () => {
   try {
     const name = $("log-name").value;
@@ -460,9 +631,10 @@ $("log-refresh").onclick = async () => {
   }
 };
 
-$("preview-box").addEventListener("click", () => {
+$("preview-box").addEventListener("click", (event) => {
+  if (event.target.closest("#vnc-auth")) return;
   if (!manualLocked) requestManualControl();
-});
+}, true);
 
 document.addEventListener("pointerlockchange", () => {
   const locked = document.pointerLockElement === $("preview-box");

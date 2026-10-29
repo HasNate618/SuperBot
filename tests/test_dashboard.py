@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import http.client
 import json
+import os
 import socket
 import tempfile
 import threading
-import time
 import unittest
 import urllib.error
 import urllib.request
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -33,10 +34,12 @@ class FakeManager:
         self.stop_calls = 0
         self.kill_calls: list[str] = []
         self.manual_calls: list[dict] = []
-        self.logs = {name: base / f"{name}.log" for name in ("session", "monado", "weston", "steam", "pose")}
+        self.logs = {
+            name: base / f"{name}.log"
+            for name in ("session", "monado", "weston", "proxy", "steam", "pose")
+        }
         for path in self.logs.values():
             path.write_text("")
-        self.latest = base / "latest.png"
 
     def start(self) -> None:
         self.start_calls += 1
@@ -81,10 +84,8 @@ class FakeManager:
             return None
         return self.base / filename
 
-    def preview_path(self) -> Path:
-        return self.latest
-
     def snapshot(self) -> dict:
+        transport_alive = self.state in ("starting", "running", "stopping")
         return {
             "state": self.state,
             "session_id": self.session_id,
@@ -99,13 +100,14 @@ class FakeManager:
             },
             "openxr_client": "Unity Application",
             "preview": {
+                "mode": "vnc",
                 "width": 1280,
                 "height": 688,
-                "fps_target": 8,
-                "fps_actual": 7.4,
-                "last_frame_at": "2026-10-25T22:39:00Z",
-                "errors": 0,
-                "frames": 10,
+                "fps_target": 30,
+                "vnc_port": 5901,
+                "proxy_port": 6080,
+                "vnc_alive": transport_alive,
+                "proxy_alive": transport_alive,
             },
             "last_error": self.last_error,
             "logs": {name: str(path) for name, path in self.logs.items()},
@@ -119,8 +121,12 @@ class DashboardTests(unittest.TestCase):
         (self.base / "index.html").write_text("<h1>C0</h1>")
         (self.base / "style.css").write_text("body{}")
         (self.base / "app.js").write_text("console.log('x')")
+        self.novnc_root = self.base / "novnc"
+        (self.novnc_root / "core").mkdir(parents=True)
+        (self.novnc_root / "core" / "rfb.js").write_bytes(b"/* test noVNC */")
         self.manager = FakeManager(self.base)
-        self.cfg = load_config(None, env={})
+        cfg = load_config(None, env={})
+        self.cfg = replace(cfg, paths=replace(cfg.paths, novnc_web_root=str(self.novnc_root)))
         self.server = DashboardServer(("127.0.0.1", 0), self.manager, self.cfg, self.base)
         self.port = self.server.server_address[1]
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
@@ -151,6 +157,17 @@ class DashboardTests(unittest.TestCase):
             finally:
                 exc.close()
 
+    def request_with_headers(self, path: str):
+        request = urllib.request.Request(f"http://127.0.0.1:{self.port}{path}")
+        try:
+            with urllib.request.urlopen(request, timeout=5) as response:
+                return response.status, response.headers, response.read()
+        except urllib.error.HTTPError as exc:
+            try:
+                return exc.code, exc.headers, exc.read()
+            finally:
+                exc.close()
+
     def raw_request(self, method: str, path: str, headers: dict[str, str] | None = None):
         connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=2)
         try:
@@ -164,11 +181,97 @@ class DashboardTests(unittest.TestCase):
             connection.close()
 
     def test_state(self) -> None:
+        self.manager.state = "running"
         status, body = self.request("GET", "/api/state")
         self.assertEqual(status, 200)
         payload = json.loads(body)
         self.assertEqual(payload["openxr_client"], "Unity Application")
-        self.assertEqual(payload["preview"]["height"], 688)
+        preview = payload["preview"]
+        self.assertEqual(preview["mode"], "vnc")
+        self.assertEqual(preview["height"], 688)
+        self.assertEqual(preview["vnc_port"], 5901)
+        self.assertEqual(preview["proxy_port"], 6080)
+        self.assertTrue(preview["vnc_alive"])
+        self.assertTrue(preview["proxy_alive"])
+
+    def test_preview_config(self) -> None:
+        status, body = self.request("GET", "/api/preview/config")
+        self.assertEqual(status, 200)
+        payload = json.loads(body)
+        self.assertEqual(payload["mode"], "vnc")
+        self.assertEqual(payload["vnc_port"], 5901)
+        self.assertEqual(payload["proxy_port"], 6080)
+        self.assertEqual(payload["ws_url"], "ws://127.0.0.1:6080/")
+        self.assertTrue(payload["username"])
+        self.assertFalse(payload["available"])
+        self.assertFalse(payload["transport_alive"])
+        self.assertTrue(payload["assets_available"])
+
+    def test_novnc_asset_and_traversal(self) -> None:
+        status, body = self.request("GET", "/novnc/core/rfb.js")
+        self.assertEqual(status, 200)
+        self.assertIn(b"test noVNC", body)
+        paths = (
+            "/novnc/../../etc/passwd",
+            "/novnc/%2e%2e%2fetc%2fpasswd",
+            "/novnc/%2fetc%2fpasswd",
+            "/novnc//etc/passwd",
+        )
+        for path in paths:
+            with self.subTest(path=path):
+                status, _ = self.request("GET", path)
+                self.assertEqual(status, 404)
+        outside = self.base / "outside.txt"
+        outside.write_text("secret")
+        link = self.novnc_root / "core" / "outside.js"
+        with self.subTest(path="/novnc/core/outside.js"):
+            try:
+                os.symlink(outside, link)
+            except (OSError, NotImplementedError):
+                self.skipTest("symlinks unavailable")
+            status, _ = self.request("GET", "/novnc/core/outside.js")
+            self.assertEqual(status, 404)
+
+    def test_novnc_rejects_dotfiles(self) -> None:
+        (self.novnc_root / ".env").write_text("SECRET=1")
+        status, _ = self.request("GET", "/novnc/.env")
+        self.assertEqual(status, 404)
+
+    def test_novnc_mime_types(self) -> None:
+        status, headers, _ = self.request_with_headers("/novnc/core/rfb.js")
+        self.assertEqual(status, 200)
+        self.assertIn(
+            headers.get_content_type(),
+            ("text/javascript", "application/javascript"),
+        )
+        (self.novnc_root / "blob.bin").write_bytes(b"\x00\x01")
+        (self.novnc_root / "blob.unknownext").write_bytes(b"\x02\x03")
+        for name in ("blob.bin", "blob.unknownext"):
+            with self.subTest(name=name):
+                status, headers, _ = self.request_with_headers(f"/novnc/{name}")
+                self.assertEqual(status, 200)
+                self.assertEqual(headers.get_content_type(), "application/octet-stream")
+
+    def test_removed_frame_routes_return_404(self) -> None:
+        for path in ("/preview.png", "/api/frame.png"):
+            with self.subTest(path=path):
+                status, _ = self.request("GET", path)
+                self.assertEqual(status, 404)
+
+    def test_novnc_missing_assets(self) -> None:
+        original = self.server.config
+        try:
+            for value in ("", str(self.base / "missing")):
+                with self.subTest(novnc_web_root=value):
+                    self.server.config = replace(
+                        original,
+                        paths=replace(original.paths, novnc_web_root=value),
+                    )
+                    status, body = self.request("GET", "/novnc/core/rfb.js")
+                    self.assertEqual(status, 404)
+                    self.assertIn("error", json.loads(body))
+        finally:
+            self.server.config = original
 
     def test_static_index(self) -> None:
         status, body = self.request("GET", "/")
@@ -179,14 +282,6 @@ class DashboardTests(unittest.TestCase):
         for path in ("/style.css", "/app.js"):
             status, _ = self.request("GET", path)
             self.assertEqual(status, 200)
-
-    def test_frame_404_then_200(self) -> None:
-        status, _ = self.request("GET", "/api/frame.png")
-        self.assertEqual(status, 404)
-        self.manager.latest.write_bytes(b"PNG")
-        status, body = self.request("GET", "/api/frame.png")
-        self.assertEqual(status, 200)
-        self.assertEqual(body, b"PNG")
 
     def test_start_returns_202_then_conflict(self) -> None:
         status, _ = self.request("POST", "/api/session/start")
@@ -383,89 +478,6 @@ class DashboardTests(unittest.TestCase):
                 sock.close()
         self.assertIn(b" 400 ", response)
         self.assertIn(b"request body timeout", response)
-
-    def test_peer_closed_detects_disconnect(self) -> None:
-        server_sock, client_sock = socket.socketpair()
-        try:
-            handler = object.__new__(DashboardHandler)
-            handler.connection = server_sock
-            self.assertFalse(handler._peer_closed())
-            client_sock.close()
-            self.assertTrue(handler._peer_closed())
-        finally:
-            server_sock.close()
-            client_sock.close()
-
-    def test_frame_read_failure_returns_404(self) -> None:
-        self.manager.latest.mkdir()
-        status, _ = self.request("GET", "/api/frame.png")
-        self.assertEqual(status, 404)
-
-    def test_preview_stopped_returns_404(self) -> None:
-        self.manager.state = "stopped"
-        status, body = self.request("GET", "/preview.png")
-        self.assertEqual(status, 404)
-        self.assertIn("error", json.loads(body))
-
-    def _frame_part(self, data: bytes) -> bytes:
-        return (
-            b"--frame\r\n"
-            b"Content-Type: image/png\r\n"
-            + f"Content-Length: {len(data)}\r\n\r\n".encode()
-            + data
-            + b"\r\n"
-        )
-
-    def test_preview_stream_ends_when_session_stops(self) -> None:
-        self.manager.state = "running"
-        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=2)
-        try:
-            connection.request("GET", "/preview.png")
-            response = connection.getresponse()
-            self.assertEqual(response.status, 200)
-            self.manager.state = "stopped"
-            started = time.monotonic()
-            self.assertEqual(response.read(), b"")
-            self.assertLess(time.monotonic() - started, 2)
-        finally:
-            connection.close()
-
-    def test_preview_streams_frame_after_starting(self) -> None:
-        self.manager.state = "starting"
-        polled = threading.Event()
-        original_preview_path = self.manager.preview_path
-
-        def preview_path():
-            polled.set()
-            return original_preview_path()
-
-        with patch.object(self.manager, "preview_path", side_effect=preview_path):
-            connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=3)
-            try:
-                connection.request("GET", "/preview.png")
-                response = connection.getresponse()
-                self.assertEqual(response.status, 200)
-                self.assertTrue(polled.wait(2), "stream did not poll for frames while starting")
-                self.manager.state = "running"
-                self.manager.latest.write_bytes(b"PNGDATA")
-                expected = self._frame_part(b"PNGDATA")
-                self.assertEqual(response.read(len(expected)), expected)
-            finally:
-                connection.close()
-
-    def test_preview_stream_continues_while_stopping(self) -> None:
-        self.manager.state = "running"
-        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=3)
-        try:
-            connection.request("GET", "/preview.png")
-            response = connection.getresponse()
-            self.assertEqual(response.status, 200)
-            self.manager.state = "stopping"
-            self.manager.latest.write_bytes(b"PNGDATA")
-            expected = self._frame_part(b"PNGDATA")
-            self.assertEqual(response.read(len(expected)), expected)
-        finally:
-            connection.close()
 
     def test_unknown_route(self) -> None:
         status, _ = self.request("GET", "/nope")
