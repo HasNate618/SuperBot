@@ -23,6 +23,7 @@ def make_cfg(
         height=420,
         reel=True,
         render=render,
+        views=("three_quarter", "side"),
     )
 
 
