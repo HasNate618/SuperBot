@@ -5,5 +5,12 @@
   "venv": ".venv",
   "pythonVersion": "3.13",
   "typeCheckingMode": "basic",
-  "reportMissingImports": "error"
+  "reportMissingImports": "error",
+  "extraPaths": ["."],
+  "overrides": [
+    {
+      "include": ["spike/wbc/**"],
+      "reportAttributeAccessIssue": "none"
+    }
+  ]
 }

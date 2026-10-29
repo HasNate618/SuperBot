@@ -51,12 +51,14 @@ from PIL import Image  # pyright: ignore[reportMissingImports]  # noqa: E402
 from sonic_executor import SonicExecutor  # pyright: ignore[reportMissingImports]  # noqa: E402
 from superbot.body import AUTH_HEAD, AUTH_R_HAND, BodyCommand, hold  # noqa: E402
 from superbot.bus import CommandBus  # noqa: E402
+from superbot.camera import PRESETS, FollowCamera, yaw_from_quat  # noqa: E402
 
 
 class BodyRenderer:
     """Fixed free camera on the robot, so motion in frame is the body's."""
 
-    def __init__(self, model: mujoco.MjModel, width: int = 640, height: int = 480) -> None:
+    def __init__(self, model: mujoco.MjModel, width: int = 640, height: int = 480,
+                 follow: FollowCamera | None = None) -> None:
         self.renderer = mujoco.Renderer(model, height=height, width=width)
         self.camera = mujoco.MjvCamera()
         self.camera.type = mujoco.mjtCamera.mjCAMERA_FREE
@@ -64,8 +66,26 @@ class BodyRenderer:
         self.camera.distance = 2.6
         self.camera.azimuth = 140.0
         self.camera.elevation = -12.0
+        self.follow = follow
+        self._last_t = time.monotonic()
+
+    def _aim(self, data: mujoco.MjData) -> None:
+        """Point the camera at the body, with damping. Skips when follow is off."""
+        if self.follow is None:
+            return
+        now = time.monotonic()
+        dt = now - self._last_t
+        self._last_t = now
+        root = (float(data.qpos[0]), float(data.qpos[1]), float(data.qpos[2]))
+        yaw = yaw_from_quat(tuple(float(v) for v in data.qpos[3:7]))
+        lookat = self.follow.update(root, yaw, dt)
+        self.camera.lookat[:] = list(lookat)
+        self.camera.distance = self.follow.distance
+        self.camera.azimuth = self.follow.azimuth(yaw)
+        self.camera.elevation = self.follow.elevation
 
     def frame(self, data: mujoco.MjData):
+        self._aim(data)
         self.renderer.update_scene(data, camera=self.camera)
         # The policy's model has nlight == 0, so a free camera renders the scene
         # nearly black (measured mean RGB 18.7, 95% near-black). MuJoCo 3.17 does
@@ -248,6 +268,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--reel", action="store_true",
                     help="cycle the verb reel (hold, look, aim, punch, dodge) instead of holding")
     ap.add_argument("--look-deg", type=float, default=0.0, help="hold a fixed head yaw, for testing")
+    ap.add_argument("--view", default="three_quarter", choices=sorted(PRESETS),
+                    help="camera angle; azimuth stays world-locked so turns are visible")
+    ap.add_argument("--yaw-follow", type=float, default=0.0,
+                    help="0 = camera keeps its world angle (default); 1 = ride the body's yaw")
+    ap.add_argument("--no-follow", action="store_true",
+                    help="static camera at the origin instead of following the body")
     ap.add_argument("--width", type=int, default=640)
     ap.add_argument("--height", type=int, default=480)
     args = ap.parse_args(argv)
@@ -258,7 +284,10 @@ def main(argv: list[str] | None = None) -> int:
     executor = SonicExecutor(clip=args.clip) if args.clip else SonicExecutor()
     renderer = None
     if not args.no_render:
-        renderer = BodyRenderer(executor.runner.model, width=args.width, height=args.height)
+        follow = None if args.no_follow else FollowCamera(
+            preset=args.view, yaw_follow=args.yaw_follow)
+        renderer = BodyRenderer(executor.runner.model, width=args.width,
+                                height=args.height, follow=follow)
 
     bus = None
     server = None
