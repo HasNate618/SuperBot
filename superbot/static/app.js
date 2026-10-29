@@ -396,6 +396,7 @@ function render(state) {
     </div>
   `);
   $("health").innerHTML = cards.join("");
+  bodySync();
 }
 
 async function refresh() {

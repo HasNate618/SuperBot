@@ -158,6 +158,12 @@ button.active { border-color: var(--accent); color: var(--accent); }
 .views > .preview {
   flex: 1 1 320px;
 }
+#body-box {
+  position: relative;
+}
+#body:not([src]) {
+  display: none;
+}
 #body-wait {
   position: absolute;
   inset: 0;
