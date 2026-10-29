@@ -85,3 +85,6 @@ height = 420
 # Cycle the verb reel (hold, look, aim, punch, dodge) instead of holding one
 # pose, so the tile shows motion. Set false to sit in the standing hold.
 reel = true
+# false = physics and verb buttons only, with no third-person image. Use it when
+# the graphics stack is unavailable; the body stays drivable and observable.
+render = true

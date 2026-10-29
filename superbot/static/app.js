@@ -578,3 +578,25 @@ function bodySync() {
     bodyTimer = null;
   }
 }
+
+// Manual verbs: the human is the BodyCommand writer. The dashboard only forwards
+// a verb name; the viewer owns the mapping to a pose, so the two cannot drift.
+async function bodyVerb(verb, button) {
+  const status = $("verb-status");
+  if (button) button.disabled = true;
+  try {
+    const reply = await post("/api/body/command", { verb });
+    status.textContent = reply.ok
+      ? `${verb} → seq ${reply.seq ?? "?"}, authority ${reply.authority ?? 0}`
+      : `${verb} rejected: ${reply.error || "unknown error"}`;
+  } catch (error) {
+    status.textContent = `${verb} failed: ${error.message}`;
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+document.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-verb]");
+  if (button) bodyVerb(button.dataset.verb, button);
+});

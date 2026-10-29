@@ -11,6 +11,7 @@ def make_cfg(
     enabled: bool = True,
     python: str = "spike/e3/.venv/bin/python",
     script: str = "spike/wbc/body_view.py",
+    render: bool = True,
 ) -> BodyConfig:
     return BodyConfig(
         enabled=enabled,
@@ -21,10 +22,17 @@ def make_cfg(
         width=560,
         height=420,
         reel=True,
+        render=render,
     )
 
 
 class BodyPreviewTestCase(unittest.TestCase):
+    def test_argv_points_at_the_control_socket(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            view = BodyPreview(make_cfg(), out_dir=Path(tmp))
+            argv = view.argv()
+            self.assertIn("--control", argv)
+            self.assertEqual(argv[argv.index("--control") + 1], str(view.control_path()))
     def test_argv_carries_output_and_size(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             view = BodyPreview(make_cfg(), out_dir=Path(tmp))
@@ -43,6 +51,13 @@ class BodyPreviewTestCase(unittest.TestCase):
             view = BodyPreview(make_cfg(), out_dir=Path(tmp))
             view.cfg = BodyConfig(**{**view.cfg.__dict__, "reel": False})
             self.assertNotIn("--reel", view.argv())
+
+    def test_no_render_flag_when_rendering_is_off(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            view = BodyPreview(make_cfg(render=False), out_dir=Path(tmp))
+            self.assertIn("--no-render", view.argv())
+            self.assertNotIn("--no-render",
+                             BodyPreview(make_cfg(), out_dir=Path(tmp)).argv())
 
     def test_preflight_reports_missing_python(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

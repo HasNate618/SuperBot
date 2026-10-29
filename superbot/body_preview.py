@@ -12,13 +12,44 @@ What it owns: one child process, one output directory, and a health snapshot.
 from __future__ import annotations
 
 import contextlib
+import json
 import os
 import signal
+import socket
 import subprocess
 import time
 from pathlib import Path
 
 from .config import BodyConfig
+
+# The verbs the viewer knows how to turn into a BodyCommand. Kept here so the
+# dashboard rejects a typo before it reaches the socket; the authoritative map
+# is `verb_command()` in spike/wbc/body_view.py.
+BODY_VERBS: tuple[str, ...] = (
+    "hold",
+    "look_left",
+    "look_right",
+    "aim",
+    "punch",
+    "dodge_left",
+    "dodge_right",
+)
+
+
+def send_control(path: Path | str, payload: dict, timeout: float = 2.0) -> dict:
+    """Send one control message and return the reply. Raises OSError if unreachable."""
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+        sock.settimeout(timeout)
+        sock.connect(str(path))
+        sock.sendall((json.dumps(payload) + "\n").encode("utf-8"))
+        buf = b""
+        while b"\n" not in buf:
+            chunk = sock.recv(65536)
+            if not chunk:
+                break
+            buf += chunk
+    reply = json.loads(buf.decode("utf-8", "replace") or "{}")
+    return reply if isinstance(reply, dict) else {"ok": False, "error": "bad reply"}
 
 
 class BodyPreview:
@@ -41,7 +72,11 @@ class BodyPreview:
             "--fps", f"{self.cfg.fps:g}",
             "--width", str(self.cfg.width),
             "--height", str(self.cfg.height),
-        ] + (["--reel"] if self.cfg.reel else [])
+            "--control", str(self.control_path()),
+        ] + (["--reel"] if self.cfg.reel else []) + ([] if self.cfg.render else ["--no-render"])
+
+    def control_path(self) -> Path:
+        return self.out_dir / "control.sock"
 
     def preflight(self) -> str:
         """Empty string when the sidecar can start, else why it cannot."""

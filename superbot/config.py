@@ -58,6 +58,7 @@ class BodyConfig:
     width: int
     height: int
     reel: bool
+    render: bool
 
 
 @dataclass(frozen=True)
@@ -119,6 +120,9 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         "height": 420,
         # Cycle the verb reel instead of holding one pose, so the tile shows motion.
         "reel": True,
+        # false = physics and verbs only, no third-person image. Needs no GPU,
+        # so the body stays drivable on a machine with the graphics stack off.
+        "render": True,
     },
     "preview": {
         "width": 1280,

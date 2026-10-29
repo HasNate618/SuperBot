@@ -176,3 +176,27 @@ button.active { border-color: var(--accent); color: var(--accent); }
 #body-wait[hidden] {
   display: none;
 }
+
+/* Manual verb buttons: the human is the command writer here. */
+.verbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.verbs button {
+  flex: 1 1 auto;
+  padding: 6px 10px;
+  font-size: 0.85em;
+  cursor: pointer;
+}
+.verbs button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.verb-status {
+  min-height: 1.2em;
+  margin-top: 6px;
+  font-size: 0.8em;
+  color: #888;
+}

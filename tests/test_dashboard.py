@@ -512,5 +512,109 @@ class ShippedStaticAssetsTests(unittest.TestCase):
         self.assertIn(b'data-mode="manual"', index)
 
 
+class _FakeBody:
+    """Stands in for BodyPreview: only what the command route touches."""
+
+    def __init__(self, path: Path, running: bool = True) -> None:
+        self.path = path
+        self._running = running
+
+    def running(self) -> bool:
+        return self._running
+
+    def control_path(self) -> Path:
+        return self.path
+
+    def status(self) -> dict:
+        return {"enabled": True, "running": self._running}
+
+
+class _VerbSocket:
+    """A one-connection Unix socket that answers like the real VerbServer."""
+
+    def __init__(self, path: Path, reply: dict) -> None:
+        self.path = path
+        self.reply = reply
+        self.seen: list[dict] = []
+        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.sock.bind(str(path))
+        self.sock.listen(2)
+        self.sock.settimeout(5)
+        self._thread = threading.Thread(target=self._serve, daemon=True)
+        self._thread.start()
+
+    def _serve(self) -> None:
+        try:
+            conn, _ = self.sock.accept()
+        except (TimeoutError, OSError):
+            return
+        with conn:
+            buf = b""
+            while b"\n" not in buf:
+                chunk = conn.recv(65536)
+                if not chunk:
+                    return
+                buf += chunk
+            line, _ = buf.split(b"\n", 1)
+            self.seen.append(json.loads(line.decode()))
+            conn.sendall((json.dumps(self.reply) + "\n").encode())
+
+    def close(self) -> None:
+        self.sock.close()
+
+
+class BodyCommandRouteTestCase(unittest.TestCase):
+    """POST /api/body/command is the only path from a button to the body."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.cfg = load_config(None, base_dir=Path(self.tmp.name))
+        self.base = Path(self.tmp.name) / "static"
+        self.base.mkdir(exist_ok=True)
+        self.manager = FakeManager(self.base)
+        self.sock_path = Path(self.tmp.name) / "control.sock"
+
+    def _serve(self, body, doc=None) -> tuple[int, dict]:
+        server = DashboardServer(("127.0.0.1", 0), self.manager, self.cfg, self.base, body=body)
+        port = server.server_address[1]
+        thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.05},
+                                  daemon=True)
+        thread.start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        payload = json.dumps(doc or {}).encode()
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn.request("POST", "/api/body/command", payload,
+                     {"Content-Type": "application/json"})
+        response = conn.getresponse()
+        raw = response.read()
+        conn.close()
+        try:
+            return response.status, json.loads(raw)
+        except json.JSONDecodeError:
+            return response.status, {"raw": raw.decode(errors="replace")}
+
+    def test_verb_reaches_the_body_socket(self) -> None:
+        verbs = _VerbSocket(self.sock_path, {"ok": True, "verb": "punch", "seq": 3})
+        self.addCleanup(verbs.close)
+        status, doc = self._serve(_FakeBody(self.sock_path), {"verb": "punch"})
+        self.assertEqual(status, 200)
+        self.assertEqual(doc.get("verb"), "punch")
+        self.assertEqual(verbs.seen, [{"verb": "punch"}])
+
+    def test_unknown_verb_is_rejected_before_the_socket(self) -> None:
+        status, doc = self._serve(_FakeBody(self.sock_path), {"verb": "teleport"})
+        self.assertEqual(status, 400)
+        self.assertIn("unknown verb", doc.get("error", ""))
+
+    def test_stopped_body_returns_503(self) -> None:
+        status, _ = self._serve(_FakeBody(self.sock_path, running=False), {"verb": "punch"})
+        self.assertEqual(status, 503)
+
+    def test_missing_body_returns_400(self) -> None:
+        status, _ = self._serve(None, {"verb": "punch"})
+        self.assertEqual(status, 400)
+
 if __name__ == "__main__":
     unittest.main()
