@@ -53,4 +53,4 @@ if command -v weston >/dev/null 2>&1 \
   exec python3 -m superbot "${args[@]}"
 fi
 
-exec nix shell nixpkgs#weston -c python3 -m superbot "${args[@]}"
+exec nix develop "$SCRIPT_DIR" -c python3 -m superbot "${args[@]}"

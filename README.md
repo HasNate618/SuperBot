@@ -51,8 +51,8 @@ Tested on **NixOS** with Hyprland/Wayland. Expected to be adaptable elsewhere, b
 
 - **Steam** plus **your own copy of Superhot VR** (not included) added as a non-Steam game, running under Proton.
 - **Monado** — specifically a build carrying the [`remote` driver](https://gitlab.freedesktop.org/monado/monado) (a PSVR2 fork was used here).
-- **weston**, **weston-screenshooter**, **weston-debug** — for the nested compositor and capture. `run.sh` shells into `nix shell nixpkgs#weston` if they are missing.
-- **ImageMagick** (`magick`) — optional; used only by `--preview-smoke` for a non-black frame check.
+- **weston**, **weston-screenshooter**, **weston-debug** — for the nested compositor and capture. Supplied by this repo's `flake.nix`; `run.sh` re-enters `nix develop` when they are not on `PATH`.
+- **ImageMagick** (`magick`) — optional; used only by `--preview-smoke` for a non-black frame check. Also in the devshell.
 - **Python 3.12+** — standard library only, no third-party runtime dependencies.
 - **No headset and no controllers.**
 
@@ -62,6 +62,16 @@ Tested on **NixOS** with Hyprland/Wayland. Expected to be adaptable elsewhere, b
 git clone <this repo> && cd SuperBot
 cp config.example.toml config.toml   # then edit it
 ./run.sh                             # serves http://127.0.0.1:8765
+```
+
+`run.sh` runs the app directly if `weston` is already on `PATH`; otherwise it re-enters `nix develop`, so the Python and Weston versions come from `flake.lock` rather than whatever `nixpkgs` happens to be at launch time.
+
+## Development
+
+```bash
+nix develop                                   # python3 + weston + magick, pinned
+python3 -m unittest discover -s tests -t .    # 193 tests, no network, no GPU
+nix flake check                               # same suite, sandboxed
 ```
 
 In `config.toml`, the values you almost certainly must change:
