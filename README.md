@@ -155,6 +155,7 @@ The reliable reach is ~0.20 m, so a standing body cannot touch The Fall's 0.70 m
 git clone <this repo> && cd SuperBot
 cp config.example.toml config.toml        # edit paths, Steam shortcut id, Proton app id
 ./run.sh                                  # serves http://127.0.0.1:8765
+# run.sh reuses a dashboard already on that port; run.sh --replace stops it first.
 ```
 
 The OpenXR runtime pointer is required and SuperBot only ever reads it. Under Wine the game resolves its runtime through the Proton prefix registry → `wineopenxr.dll` → the host OpenXR loader, which looks for `~/.config/openxr/1/active_runtime.json`:

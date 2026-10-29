@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import codecs
+import contextlib
 import os
 import re
 import shutil
@@ -8,9 +9,9 @@ import sys
 import threading
 import time
 from datetime import datetime, timezone
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
-from typing import Callable
+from collections.abc import Callable
 
 from .config import Config, missing_requirements
 from .manual_input import ManualInputBridge
@@ -21,7 +22,7 @@ from .processes import Aborted, ProcessHandle, ProcessRunner
 MODES = ("hold", "yaw", "trigger", "dodge", "walk", "clock", "manual")
 
 
-class State(str, Enum):
+class State(StrEnum):
     STOPPED = "stopped"
     STARTING = "starting"
     RUNNING = "running"
@@ -329,15 +330,13 @@ class SessionManager:
             self._game_pids = []
             return
         if target == "steam":
-            try:
+            with contextlib.suppress(Exception):
                 self.runner.run(
                     [self.cfg.paths.steam_bin, "-shutdown"],
                     env=self._steam_env(),
                     cwd=Path.home(),
                     timeout=20,
                 )
-            except Exception:
-                pass
             handle = self._handles.get("steam")
             if handle is not None:
                 handle.stop(5)
@@ -670,6 +669,8 @@ class SessionManager:
         )
 
     def _start_weston(self) -> None:
+        if self._session_id is None:
+            raise StartupError("no active session")
         self._socket_name = f"superbot-{self._session_id.split('-')[-1]}"
         weston_log = self._log("weston")
         argv = [
@@ -706,6 +707,8 @@ class SessionManager:
         raise StartupError("Weston did not publish an Xwayland display")
 
     def _start_preview(self) -> None:
+        if self._socket_name is None or self._session_dir is None:
+            raise StartupError("no active session directory")
         self._preview = self.preview_factory(
             width=self.cfg.preview.width,
             height=self.cfg.preview.height,
@@ -722,6 +725,8 @@ class SessionManager:
         self._preview.start()
 
     def _start_pose(self, mode: str) -> None:
+        if self._session_dir is None:
+            raise StartupError("no active session directory")
         pose_log = self._log("pose")
         pose_log.unlink(missing_ok=True)
         self._manual_input.clear()
@@ -909,10 +914,8 @@ class SessionManager:
                 with self._lock:
                     if generation == self._start_generation:
                         self._last_error = str(exc)
-                try:
+                with contextlib.suppress(Exception):
                     self._session_log(f"startup failed: {exc}")
-                except Exception:
-                    pass
                 self._cleanup_safe()
                 with self._lock:
                     if generation == self._start_generation:
@@ -927,7 +930,7 @@ class SessionManager:
                     current = generation == self._start_generation
                     stopped = self._stop_event.is_set() or self._state != State.STARTING
                     if current and not stopped:
-                        self._started_at = datetime.now(timezone.utc)
+                        self._started_at = datetime.now(timezone.utc)  # noqa: DTZ002 - file imports the class, not the module
                         self._state = State.RUNNING
                         self._condition.notify_all()
                 if current and stopped:
@@ -995,10 +998,8 @@ class SessionManager:
         try:
             self._cleanup()
         except Exception as exc:
-            try:
+            with contextlib.suppress(Exception):
                 self._session_log(f"cleanup failed: {exc}")
-            except Exception:
-                pass
             with self._lock:
                 if self._last_error is None:
                     self._last_error = f"cleanup failed: {exc}"
@@ -1023,10 +1024,8 @@ class SessionManager:
                     action()
                 except Exception as exc:
                     failures.append(f"{name}: {exc}")
-                    try:
+                    with contextlib.suppress(Exception):
                         self._session_log(f"cleanup phase {name} failed: {exc}")
-                    except Exception:
-                        pass
 
             stopped: dict[str, ProcessHandle] = {}
 
@@ -1092,10 +1091,8 @@ class SessionManager:
                             survivors.append(name)
                     except Exception as exc:
                         failures.append(f"survivor {name}: {exc}")
-                        try:
+                        with contextlib.suppress(Exception):
                             self._session_log(f"cleanup survivor {name} probe failed: {exc}")
-                        except Exception:
-                            pass
 
             def report_survivors() -> None:
                 with self._lock:
@@ -1113,19 +1110,15 @@ class SessionManager:
                 self.runner.remove_pointer()
             except Exception as exc:
                 failures.append(f"pointer removal: {exc}")
-                try:
+                with contextlib.suppress(Exception):
                     self._session_log(f"pointer removal failed: {exc}")
-                except Exception:
-                    pass
             self._pointer = {}
             with self._lock:
                 self._handles.clear()
             self._game_pids = []
             self._display = None
-            try:
+            with contextlib.suppress(Exception):
                 if failures:
                     self._session_log(f"cleanup finished (with {len(failures)} errors)")
                 else:
                     self._session_log("cleanup complete")
-            except Exception:
-                pass

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import contextlib
 import json
+import os
 import select
 import signal
 import socket
@@ -43,7 +45,7 @@ class DashboardServer(ThreadingHTTPServer):
 class DashboardHandler(BaseHTTPRequestHandler):
     # BaseHTTPRequestHandler types .server as BaseServer, which has neither of
     # ours. This annotation narrows it for the checker and costs nothing at runtime.
-    server: "DashboardServer"
+    server: DashboardServer
 
     server_version = "superbot/0.1"
     timeout = 10
@@ -303,6 +305,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return True
 
 
+def dashboard_pidfile(cfg: Config) -> Path:
+    """Where a running dashboard records its pid. --replace reads this."""
+    return Path(cfg.paths.session_root) / "dashboard.pid"
+
+
 def run_dashboard(cfg: Config) -> None:
     manager = SessionManager(cfg)
     static_dir = Path(__file__).resolve().parent / "static"
@@ -316,6 +323,9 @@ def run_dashboard(cfg: Config) -> None:
     server = DashboardServer(
         (cfg.dashboard.host, cfg.dashboard.port), manager, cfg, static_dir, body=body
     )
+    pidfile = dashboard_pidfile(cfg)
+    pidfile.parent.mkdir(parents=True, exist_ok=True)
+    pidfile.write_text(str(os.getpid()), encoding="utf-8")
 
     def request_shutdown(signum, frame) -> None:
         threading.Thread(target=server.shutdown, daemon=True).start()
@@ -323,7 +333,7 @@ def run_dashboard(cfg: Config) -> None:
     signal.signal(signal.SIGINT, request_shutdown)
     signal.signal(signal.SIGTERM, request_shutdown)
     host, port = server.server_address[:2]
-    print(f"superbot dashboard: http://{host}:{port}")
+    print(f"superbot dashboard: http://{host}:{port}", flush=True)
     try:
         server.serve_forever(poll_interval=0.5)
     finally:
@@ -336,3 +346,10 @@ def run_dashboard(cfg: Config) -> None:
         if not manager.wait_idle(70):
             print("superbot dashboard: session did not stop within 70s", file=sys.stderr)
         server.server_close()
+        try:
+            owned = pidfile.read_text(encoding="utf-8").strip() == str(os.getpid())
+        except OSError:
+            owned = False
+        if owned:
+            with contextlib.suppress(OSError):
+                pidfile.unlink()
