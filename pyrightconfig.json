@@ -1,0 +1,9 @@
+{
+  "include": ["superbot", "tests", "spike"],
+  "exclude": ["**/vendor/**", "**/__pycache__/**", "spike/e2/frames/**"],
+  "venvPath": "spike/e3",
+  "venv": ".venv",
+  "pythonVersion": "3.13",
+  "typeCheckingMode": "basic",
+  "reportMissingImports": "error"
+}
