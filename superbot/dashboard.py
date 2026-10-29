@@ -75,8 +75,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return self._error(404, "no preview frame")
             return self._bytes(200, data, "image/png")
         if path == "/api/body.jpg":
+            from urllib.parse import parse_qs
             body = self.server.body
-            frame = body.latest() if body is not None else None
+            if body is None:
+                return self._error(404, "no body frame")
+            view = parse_qs(urlparse(self.path).query).get("view", [None])[0]
+            if view is not None and view not in BODY_VIEWS:
+                return self._error(400, f"unknown view: {view}")
+            frame = body.frame(view)
             if frame is None:
                 return self._error(404, "no body frame")
             try:

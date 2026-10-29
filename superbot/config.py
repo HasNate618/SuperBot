@@ -59,6 +59,7 @@ class BodyConfig:
     height: int
     reel: bool
     render: bool
+    views: tuple
 
 
 @dataclass(frozen=True)
@@ -123,6 +124,8 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         # false = physics and verbs only, no third-person image. Needs no GPU,
         # so the body stays drivable on a machine with the graphics stack off.
         "render": True,
+        # Camera angles rendered together, first is the primary tile.
+        "views": ("three_quarter", "side"),
     },
     "preview": {
         "width": 1280,

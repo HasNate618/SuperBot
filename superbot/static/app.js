@@ -542,29 +542,65 @@ const BODY_REFRESH_MS = 120;
 let bodyTimer = null;
 let bodyFailures = 0;
 
+function bodyTiles(info) {
+  // One tile per configured angle. Tiles are keyed by view name so a config
+  // change rebuilds them instead of stacking duplicates.
+  const box = $("body-tiles");
+  const views = (info && info.views) || [];
+  const primary = (info && info.primary) || null;
+  const follow = Boolean(info && info.follow);
+  const wanted = new Set(views);
+  for (const tile of Array.from(box.children)) {
+    if (!wanted.has(tile.dataset.view)) tile.remove();
+  }
+  for (const name of views) {
+    let tile = box.querySelector(`[data-view="${name}"]`);
+    if (!tile) {
+      tile = document.createElement("div");
+      tile.className = "preview-clip body-tile";
+      tile.dataset.view = name;
+      tile.innerHTML = `<img alt=""><div class="tile-caption"></div>`;
+      box.appendChild(tile);
+    }
+    const caption = tile.querySelector(".tile-caption");
+    const marks = [];
+    if (name === primary) marks.push("primary");
+    marks.push(follow ? "follow on" : "static");
+    caption.textContent = `${name} · ${marks.join(" · ")}`;
+  }
+  return Array.from(box.children);
+}
+
 function bodyRefresh() {
   const info = (lastState && lastState.body) || null;
-  const img = $("body");
   const wait = $("body-wait");
   if (!info || !info.running || !info.frame) {
     wait.hidden = false;
     wait.textContent = info && info.error ? info.error : "body view off";
     return;
   }
-  const probe = new Image();
-  probe.onload = () => {
-    bodyFailures = 0;
-    img.src = probe.src;
-    wait.hidden = true;
-  };
-  probe.onerror = () => {
-    bodyFailures += 1;
-    if (bodyFailures > 8) {
-      wait.hidden = false;
-      wait.textContent = "waiting for body view";
-    }
-  };
-  probe.src = `/api/body.jpg?t=${Date.now()}`;
+  wait.hidden = true;
+  for (const tile of bodyTiles(info)) {
+    const img = tile.querySelector("img");
+    if (img.dataset.busy) continue;
+    img.dataset.busy = "1";
+    const probe = new Image();
+    const name = tile.dataset.view;
+    probe.onload = () => {
+      bodyFailures = 0;
+      img.src = probe.src;
+      delete img.dataset.busy;
+    };
+    probe.onerror = () => {
+      delete img.dataset.busy;
+      bodyFailures += 1;
+      if (bodyFailures > 8) {
+        wait.hidden = false;
+        wait.textContent = "waiting for body view";
+      }
+    };
+    probe.src = `/api/body.jpg?view=${encodeURIComponent(name)}&t=${Date.now()}`;
+  }
 }
 
 function bodySync() {

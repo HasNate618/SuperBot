@@ -21,16 +21,17 @@ from __future__ import annotations
 
 import argparse
 import contextlib
-from collections.abc import Callable
 import io
 import json
-import socket
-import threading
 import math
 import os
+import socket
 import sys
+import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 os.environ.setdefault("MUJOCO_GL", "egl")
 # MUJOCO_GL is not enough on its own: PyOpenGL picks its backend separately.
@@ -57,40 +58,66 @@ from superbot.camera import PRESETS, FollowCamera, yaw_from_quat  # noqa: E402
 class BodyRenderer:
     """Fixed free camera on the robot, so motion in frame is the body's."""
 
-    def __init__(self, model: mujoco.MjModel, width: int = 640, height: int = 480,
-                 follow: FollowCamera | None = None) -> None:
+    def __init__(
+        self, model: mujoco.MjModel, width: int = 640, height: int = 480,  # pyright: ignore[reportAttributeAccessIssue]
+                 follow: FollowCamera | None = None,
+                 extra_views: tuple[str, ...] = ()) -> None:
         self.renderer = mujoco.Renderer(model, height=height, width=width)
-        self.camera = mujoco.MjvCamera()
-        self.camera.type = mujoco.mjtCamera.mjCAMERA_FREE
+        self.camera = mujoco.MjvCamera()  # pyright: ignore[reportAttributeAccessIssue]
+        self.camera.type = mujoco.mjtCamera.mjCAMERA_FREE  # pyright: ignore[reportAttributeAccessIssue]
         self.camera.lookat[:] = [0.0, 0.0, 0.85]
         self.camera.distance = 2.6
         self.camera.azimuth = 140.0
         self.camera.elevation = -12.0
         self.follow = follow
+        self.views: dict[str, FollowCamera | None] = {}
+        if follow is not None:
+            self.views[follow.preset] = follow
+        for name in extra_views:
+            if name not in PRESETS or name in self.views:
+                continue
+            self.views[name] = FollowCamera(
+                preset=name, distance=follow.distance if follow else 2.3,
+                elevation=follow.elevation if follow else -10.0,
+                yaw_follow=follow.yaw_follow if follow else 0.0)
+        self.primary = follow.preset if follow is not None else next(iter(self.views), "three_quarter")
         self._last_t = time.monotonic()
 
-    def _aim(self, data: mujoco.MjData) -> None:
-        """Point the camera at the body, with damping. Skips when follow is off."""
-        if self.follow is None:
+    def _aim(
+        self, data: mujoco.MjData, cam: FollowCamera | None, dt: float  # pyright: ignore[reportAttributeAccessIssue]
+    ) -> None:
+        """Point one camera at the body, with damping. Skips when follow is off."""
+        if cam is None:
             return
-        now = time.monotonic()
-        dt = now - self._last_t
-        self._last_t = now
         root = (float(data.qpos[0]), float(data.qpos[1]), float(data.qpos[2]))
         q = data.qpos[3:7]
         yaw = yaw_from_quat((float(q[0]), float(q[1]), float(q[2]), float(q[3])))
-        lookat = self.follow.update(root, yaw, dt)
+        lookat = cam.update(root, yaw, dt)
         self.camera.lookat[:] = list(lookat)
-        self.camera.distance = self.follow.distance
-        self.camera.azimuth = self.follow.azimuth(yaw)
-        self.camera.elevation = self.follow.elevation
+        self.camera.distance = cam.distance
+        self.camera.azimuth = cam.azimuth(yaw)
+        self.camera.elevation = cam.elevation
 
     # mujoco ships no type stubs, so attribute access on its classes is unchecked.
     # The pyrightconfig override for spike/wbc says the same thing; this comment
     # covers checkers that have not reloaded it yet.
+    def frames(self, data: mujoco.MjData) -> dict[str, Any]:  # pyright: ignore[reportAttributeAccessIssue]
+        """Render every configured angle. Each keeps its own damping state,
+        so all tiles follow smoothly instead of sharing one camera."""
+        out: dict[str, object] = {}
+        now = time.monotonic()
+        dt = now - self._last_t
+        self._last_t = now
+        for name, cam in self.views.items():
+            self._aim(data, cam, dt)
+            self.renderer.update_scene(data, camera=self.camera)
+            out[name] = self._render_frame()
+        return out
+
     def frame(self, data: mujoco.MjData):  # pyright: ignore[reportAttributeAccessIssue]
-        self._aim(data)
-        self.renderer.update_scene(data, camera=self.camera)
+        return self.frames(data)[self.primary]
+
+    def _render_frame(self):
         # The policy's model has nlight == 0, so a free camera renders the scene
         # nearly black (measured mean RGB 18.7, 95% near-black). MuJoCo 3.17 does
         # not let us write model.nlight, but the MjvScene is writable, and a
@@ -299,8 +326,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--reel", action="store_true",
                     help="cycle the verb reel (hold, look, aim, punch, dodge) instead of holding")
     ap.add_argument("--look-deg", type=float, default=0.0, help="hold a fixed head yaw, for testing")
-    ap.add_argument("--view", default="three_quarter", choices=sorted(PRESETS),
-                    help="camera angle; azimuth stays world-locked so turns are visible")
+    ap.add_argument("--views", default="three_quarter",
+                    help="comma-separated camera angles rendered together; "
+                    "the first is the primary tile (choices: three_quarter,front,side,back)")
     ap.add_argument("--yaw-follow", type=float, default=0.0,
                     help="0 = camera keeps its world angle (default); 1 = ride the body's yaw")
     ap.add_argument("--no-follow", action="store_true",
@@ -313,20 +341,41 @@ def main(argv: list[str] | None = None) -> int:
     out.mkdir(parents=True, exist_ok=True)
 
     executor = SonicExecutor(clip=args.clip) if args.clip else SonicExecutor()
+    wanted = [w.strip() for w in str(args.views).split(",") if w.strip()]
+    for w in wanted:
+        if w not in PRESETS:
+            print(f"body_view: unknown view {w!r}", file=sys.stderr, flush=True)
+            return 2
+    if not wanted:
+        wanted = ["three_quarter"]
     renderer = None
     if not args.no_render:
         follow = None if args.no_follow else FollowCamera(
-            preset=args.view, yaw_follow=args.yaw_follow)
+            preset=wanted[0], yaw_follow=args.yaw_follow)
         renderer = BodyRenderer(executor.runner.model, width=args.width,
-                                height=args.height, follow=follow)
+                                height=args.height, follow=follow,
+                                extra_views=tuple(wanted[1:4]))
+        print(f"body_view: views {sorted(renderer.views)} "
+              f"(primary {renderer.primary}, follow {follow is not None})", flush=True)
 
     bus = None
     server = None
     if args.control:
         bus = CommandBus()
         def set_view(name: str) -> None:
-            if renderer is not None and renderer.follow is not None:
-                renderer.follow.preset = name
+            if renderer is not None:
+                if name in renderer.views:
+                    renderer.primary = name
+                elif len(renderer.views) < 4 and not args.no_render:
+                    base = renderer.follow
+                    renderer.views[name] = FollowCamera(
+                        preset=name,
+                        distance=base.distance if base else 2.3,
+                        elevation=base.elevation if base else -10.0,
+                        yaw_follow=base.yaw_follow if base else 0.0)
+                    renderer.primary = name
+                else:
+                    return
             print(f"body_view: view {name}", flush=True)
 
         server = VerbServer(Path(args.control), bus, executor, set_view=set_view)
@@ -378,10 +427,25 @@ def main(argv: list[str] | None = None) -> int:
                 bus.publish_state(state)
             if now >= next_render:
                 if renderer is not None:
-                    img = renderer.frame(executor.runner.data)
-                    buf = io.BytesIO()
-                    Image.fromarray(img).save(buf, format="JPEG", quality=85)
-                    write_atomic(out / "body_latest.jpg", buf.getvalue())
+                    for name, img in renderer.frames(executor.runner.data).items():
+                        buf = io.BytesIO()
+                        Image.fromarray(img).save(buf, format="JPEG", quality=85)
+                        write_atomic(out / f"body_{name}.jpg", buf.getvalue())
+                        if name == renderer.primary:
+                            write_atomic(out / "body_latest.jpg", buf.getvalue())
+                    write_atomic(
+                        out / "body_camera.json",
+                        json.dumps({
+                            "views": sorted(renderer.views),
+                            "primary": renderer.primary,
+                            "follow": renderer.follow is not None,
+                            "lookat": {
+                                n: [round(v, 4) for v in c.lookat]
+                                for n, c in renderer.views.items()
+                                if c is not None
+                            },
+                        }).encode("utf-8"),
+                    )
                 write_atomic(
                     out / "body_state.json",
                     json.dumps(state.to_dict()).encode("utf-8"),

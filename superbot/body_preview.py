@@ -78,6 +78,7 @@ class BodyPreview:
             "--width", str(self.cfg.width),
             "--height", str(self.cfg.height),
             "--control", str(self.control_path()),
+            "--views", ",".join(self.cfg.views),
         ] + (["--reel"] if self.cfg.reel else []) + ([] if self.cfg.render else ["--no-render"])
 
     def control_path(self) -> Path:
@@ -131,8 +132,10 @@ class BodyPreview:
     def running(self) -> bool:
         return self._proc is not None and self._proc.poll() is None
 
-    def latest(self) -> Path | None:
-        path = self.out_dir / "body_latest.jpg"
+    def frame(self, view: str | None = None) -> Path | None:
+        """The newest JPEG for one angle. None means the primary tile."""
+        name = "body_latest.jpg" if not view else f"body_{view}.jpg"
+        path = self.out_dir / name
         try:
             if path.is_file():
                 return path
@@ -140,8 +143,25 @@ class BodyPreview:
             return None
         return None
 
+    def latest(self) -> Path | None:
+        return self.frame()
+
+    def camera(self) -> dict:
+        """What the viewer reports about its angles; empty when it has not yet."""
+        try:
+            raw = (self.out_dir / "body_camera.json").read_text(encoding="utf-8")
+        except OSError:
+            return {}
+        try:
+            doc = json.loads(raw)
+        except ValueError:
+            return {}
+        return doc if isinstance(doc, dict) else {}
+
     def status(self) -> dict:
         frame = self.latest()
+        cam = self.camera()
+        views = cam.get("views") or list(self.cfg.views)
         return {
             "enabled": self.cfg.enabled,
             "running": self.running(),
@@ -149,6 +169,10 @@ class BodyPreview:
             "frame_age_s": None
             if frame is None
             else round(time.time() - frame.stat().st_mtime, 2),
+            "views": views,
+            "primary": cam.get("primary") or (views[0] if views else "three_quarter"),
+            "follow": bool(cam.get("follow", True)),
+            "lookat": cam.get("lookat", {}),
             "error": self._error,
             "log": str(self.log_path),
         }

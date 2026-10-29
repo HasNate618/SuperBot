@@ -88,3 +88,6 @@ reel = true
 # false = physics and verb buttons only, with no third-person image. Use it when
 # the graphics stack is unavailable; the body stays drivable and observable.
 render = true
+# Camera angles rendered together as tiles; the first is the primary tile.
+# The angle buttons retarget the primary tile. One of: three_quarter, front, side, back.
+views = ["three_quarter", "side"]

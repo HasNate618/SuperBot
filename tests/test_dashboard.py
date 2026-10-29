@@ -525,6 +525,11 @@ class _FakeBody:
     def control_path(self) -> Path:
         return self.path
 
+    def frame(self, view=None):
+        name = "body_latest.jpg" if not view else f"body_{view}.jpg"
+        candidate = getattr(self, "out_dir", Path(".")) / name
+        return candidate if candidate.is_file() else None
+
     def status(self) -> dict:
         return {"enabled": True, "running": self._running}
 
@@ -623,6 +628,31 @@ class BodyCommandRouteTestCase(unittest.TestCase):
     def test_unknown_view_is_rejected(self) -> None:
         status, doc = self._serve(_FakeBody(self.sock_path), {"view": "drone"})
         self.assertEqual(status, 400)
+
+    def test_view_param_serves_that_angle(self) -> None:
+        import tempfile as _tf
+        from pathlib import Path as _P
+        with _tf.TemporaryDirectory() as tmp:
+            for name in ("body_three_quarter.jpg", "body_side.jpg"):
+                (_P(tmp) / name).write_bytes(b"\xff\xd8\xff\xd9")
+            body = _FakeBody(_P(tmp) / "control.sock")
+            body.out_dir = _P(tmp)
+            server = DashboardServer(("127.0.0.1", 0), self.manager, self.cfg, self.base,
+                                     body=body)
+            port = server.server_address[1]
+            thread = threading.Thread(target=server.serve_forever,
+                                      kwargs={"poll_interval": 0.05}, daemon=True)
+            thread.start()
+            self.addCleanup(server.server_close)
+            self.addCleanup(server.shutdown)
+            import http.client as _hc
+            for view, want in (("side", 200), ("back", 404), ("drone", 400)):
+                conn = _hc.HTTPConnection("127.0.0.1", port, timeout=5)
+                conn.request("GET", f"/api/body.jpg?view={view}")
+                response = conn.getresponse()
+                response.read()
+                conn.close()
+                self.assertEqual(response.status, want, view)
 
     def test_missing_body_returns_400(self) -> None:
         status, _ = self._serve(None, {"verb": "punch"})
