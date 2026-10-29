@@ -138,6 +138,9 @@ def main(argv: list[str] | None = None) -> int:
         cmd = hold()
 
     period = 1.0 / max(args.fps, 0.1)
+    # The policy was designed for 50 Hz (see the three-loop design). Without a
+    # sleep the loop free-ran at ~90 Hz and pinned a core for no benefit.
+    control_period = 1.0 / 50.0
     started = time.monotonic()
     next_render = started
     renders = 0
@@ -153,6 +156,7 @@ def main(argv: list[str] | None = None) -> int:
         phase_total = sum(p[1] for p in plan)
     try:
         while True:
+            loop_start = time.monotonic()
             if plan:
                 t = (time.monotonic() - started) % phase_total
                 acc = 0.0
@@ -182,6 +186,9 @@ def main(argv: list[str] | None = None) -> int:
                 return 3
             if args.seconds and (now - started) >= args.seconds:
                 break
+            spare = control_period - (time.monotonic() - loop_start)
+            if spare > 0:
+                time.sleep(spare)
     except KeyboardInterrupt:
         pass
 

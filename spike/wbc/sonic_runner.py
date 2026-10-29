@@ -190,9 +190,19 @@ class SonicRunner:
             wdir = os.path.join(HERE, "weights", "sonic_ll")
         else:
             wdir = WEIGHTS
+        # MEASURED: with default settings onnxruntime opened one intra-op thread
+        # per core and the body_view held ~19 of 20 logical CPUs (1876% CPU, 47
+        # threads, load average 21). These nets are tiny - 1762->64 and 994->29 -
+        # so a thread pool costs more in spin-wait than it saves in FLOPs.
+        opts = ort.SessionOptions()
+        opts.intra_op_num_threads = 1
+        opts.inter_op_num_threads = 1
+        opts.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
         self.enc = ort.InferenceSession(os.path.join(wdir, "model_encoder.onnx"),
+                                        sess_options=opts,
                                         providers=["CPUExecutionProvider"])
         self.dec = ort.InferenceSession(os.path.join(wdir, "model_decoder.onnx"),
+                                        sess_options=opts,
                                         providers=["CPUExecutionProvider"])
         self.enc_in = self.enc.get_inputs()[0].name
         self.dec_in = self.dec.get_inputs()[0].name
