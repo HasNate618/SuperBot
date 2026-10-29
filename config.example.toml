@@ -71,3 +71,14 @@ monado_startup_sec = 20
 weston_startup_sec = 20
 pose_handshake_sec = 10
 stop_sec = 60
+
+[body]
+# Third-person MuJoCo view beside the game cam. Needs the SONIC venv + weights,
+# so it is off in a bare checkout. `autostart` starts it with the dashboard.
+enabled = true
+autostart = true
+python = "spike/e3/.venv/bin/python"
+script = "spike/wbc/body_view.py"
+fps = 10
+width = 560
+height = 420
