@@ -102,6 +102,7 @@ def main(argv: list[str] | None = None) -> int:
         ticks = max(1, int(round(seconds / CONTROL_DT)))
         residuals: dict[str, list[float]] = {"head": [], "left": [], "right": []}
         start_xy = ex.runner.data.qpos[0:2].copy()
+        start_wrist: np.ndarray | None = None
         max_tilt = 0.0
 
         for tick in range(ticks):
@@ -110,6 +111,8 @@ def main(argv: list[str] | None = None) -> int:
                 residuals["head"].append(state.residual_head_m)
             if cmd.authority & AUTH_R_HAND:
                 residuals["right"].append(state.residual_right_m)
+            if start_wrist is None and ex.last_state is not None:
+                start_wrist = np.asarray(ex.last_state.right_hand.p).copy()
             max_tilt = max(max_tilt, tilt_deg(ex))
             if tick % RENDER_EVERY == 0:
                 frames.append(renderer.frame(ex.runner.data))
@@ -117,12 +120,22 @@ def main(argv: list[str] | None = None) -> int:
                 break
 
         drift = float(np.linalg.norm(ex.runner.data.qpos[0:2] - start_xy))
+        # The contract residual compares a command against an achieved pose, and
+        # the exercised clip sits ~0.16 m away from where the model actually
+        # settles, so that residual carries a standing bias. Displacement is the
+        # bias-free question: did the wrist move by what was asked?
+        moved = (
+            float(np.linalg.norm(np.asarray(ex.last_state.right_hand.p) - start_wrist))
+            if start_wrist is not None and ex.last_state is not None
+            else None
+        )
         entry = {
             "phase": name,
             "seconds": round(ticks * CONTROL_DT, 2),
             "mean_residual_m": {k: (round(float(np.mean(v)), 4) if v else None) for k, v in residuals.items()},
             "max_residual_m": {k: (round(float(np.max(v)), 4) if v else None) for k, v in residuals.items()},
             "drift_m": round(drift, 4),
+            "right_wrist_moved_m": None if moved is None else round(moved, 4),
             "max_tilt_deg": round(max_tilt, 2),
             "fall": bool(ex.fell),
         }
@@ -130,7 +143,8 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"{name:14s} {entry['seconds']:4.1f}s  "
             f"res head={entry['mean_residual_m']['head']} right={entry['mean_residual_m']['right']}  "
-            f"drift={entry['drift_m']:.3f}m tilt={entry['max_tilt_deg']:.1f}"
+            f"drift={entry['drift_m']:.3f}m moved={entry['right_wrist_moved_m']} "
+            f"tilt={entry['max_tilt_deg']:.1f}"
             + ("  FALL" if entry["fall"] else ""),
             flush=True,
         )

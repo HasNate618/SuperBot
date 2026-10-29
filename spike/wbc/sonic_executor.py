@@ -122,11 +122,18 @@ class SonicExecutor:
         up = sr.quat_rotate(r.data.qpos[3:7], np.array([0.0, 0.0, 1.0]))
         return np.array(positions), np.array(quats), base, up
 
-    def _deltas(self, cmd: BodyCommand) -> tuple[np.ndarray | None, list[np.ndarray] | None]:
-        """Translate authority bits into the controller's only steering channel."""
+    def _targets(self, cmd: BodyCommand) -> tuple[np.ndarray | None, np.ndarray | None]:
+        """Absolute VR targets, replacing the clip's own, for the commanded points.
+
+        This is the channel the *measured* aim result used. `gate_common.AimTarget`
+        overrides `build_encoder_obs` and REPLACES `vr_pos`/`vr_orn` with absolute
+        root-relative targets; it recorded 3.51 cm ahead. Steering with additive
+        `vr_delta` instead plateaued at 13.8 cm in a 10 s soak - the offset was
+        simply not tracked. So: replace, do not nudge.
+        """
         pts, orns = self._clip_targets()
-        pos_delta = np.zeros(9)
-        orn_delta = [IDENTITY_WXYZ.copy() for _ in range(3)]
+        pts = np.asarray(pts, dtype=np.float64).copy()
+        orns = np.asarray(orns, dtype=np.float64).copy()
         touched = False
 
         for bit, index, pose in (
@@ -136,36 +143,29 @@ class SonicExecutor:
         ):
             if not (cmd.authority & bit) or pose is None:
                 continue
-            target = np.asarray(pose.p, dtype=np.float64)
-            pos_delta[index * 3:index * 3 + 3] = target - pts[index * 3:index * 3 + 3]
-            # Positions are ADDITIVE but orientations are COMPOSED:
-            # build_encoder_obs does `quat_mul(vr_orn_delta[k], orns[k])`, so a
-            # delta must satisfy  delta * clip_orn == target_orn.
-            # Passing the absolute target here silently doubles the rotation
-            # instead of replacing it - measured: 20 deg commanded -> 0.01 deg.
+            pts[3 * index:3 * index + 3] = np.asarray(pose.p, dtype=np.float64)
+            # Contract is xyzw; the controller wants wxyz.
             x, y, z, w = pose.q_xyzw
-            target_wxyz = np.array([w, x, y, z], dtype=np.float64)
-            clip_wxyz = orns[4 * index:4 * index + 4]
-            orn_delta[index] = sr.quat_mul(target_wxyz, sr.quat_conj(clip_wxyz))
+            orns[4 * index:4 * index + 4] = np.array([w, x, y, z], dtype=np.float64)
             touched = True
 
         if not touched:
             return None, None
-        return pos_delta, orn_delta
+        return pts, orns
 
     # ---- one tick -------------------------------------------------------
 
     def step(self, cmd: BodyCommand, now_ns: int = 0) -> BodyState:
         r = self.runner
-        pos_delta, orn_delta = self._deltas(cmd)
+        vr_pos, vr_orn = self._targets(cmd)
 
         base_quat = r.data.qpos[3:7].copy()
         enc_obs = r.build_encoder_obs(
             self.motion,
             self.hold_frame,
             base_quat,
-            vr_delta=pos_delta,
-            vr_orn_delta=orn_delta,
+            vr_pos=vr_pos,
+            vr_orn=vr_orn,
         )
         tokens = r.enc.run(None, {r.enc_in: enc_obs[None, :]})[0][0]
         dec_obs = r.build_decoder_obs(tokens)
