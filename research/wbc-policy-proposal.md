@@ -285,3 +285,27 @@ Total encoder input 1762. Mode 0 (g1) uses jp+jv (10×29) + root z (10+1) + anch
 - `github.com/InternRobotics/OpenHomie`, `github.com/Nagi-ovo/mjlab-homierl`
 - `github.com/NVlabs/HOVER`, `github.com/LeCAR-Lab/human2humanoid`, `github.com/edpsw/exbody2`, `github.com/InternRobotics/HugWBC`
 - `research/wbc-classical-proposal.md`, `research/c3fgh-results.md`, `docs/2026-10-23-SuperBot-state-of-findings.md`
+
+## Runtime cost, revisited: the 6.8 ms above was measured with every core
+
+The 6.8 ms/tick figure in the tables above was taken with onnxruntime's default
+thread settings, which open one intra-op thread per core. On this 20-logical-CPU
+machine that means 47 threads per body-view process.
+
+Measured directly, same machine, same two networks, control loop paced to 50 Hz:
+
+| Setting | Threads | CPU | Cost per control tick |
+| --- | ---: | ---: | ---: |
+| onnxruntime default | 47 | **1876 %** (~19 of 20 cores) | ~6.8 ms |
+| `intra_op=1`, `inter_op=1`, sequential | 21 | **32 %** (0.3 of one core) | **17.66 ms** |
+
+Component split at the single-thread setting: encoder 7.54 ms, decoder 5.42 ms,
+physics 4.71 ms, total 17.66 ms against a 20 ms budget. Rendering is separate and
+cheap: 0.86 ms/frame at 560x420 on the RTX 4060, plus 1.65 ms to JPEG-encode.
+
+Both settings fit the 50 Hz budget, so the trade is CPU against latency, and the
+single-thread setting is the default because the multi-thread one starved the
+game and the desktop (load average 21). It also means only 2.3 ms of headroom is
+left in the control tick, which matters if anything else is ever added there.
+
+MEASURED 2026-10-29, `spike/wbc/sonic_runner.py`, `spike/wbc/body_view.py`.
