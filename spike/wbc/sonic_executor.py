@@ -234,10 +234,51 @@ class SonicExecutor:
         q_yaw = np.array([math.cos(half), 0.0, 0.0, math.sin(half)])
         return _pose_from(pts[3 * HEAD:3 * HEAD + 3], sr.quat_mul(q_yaw, q))
 
-    def hand_target(self, side: str, forward_m: float, up_m: float = 0.0) -> Pose:
-        """A wrist pose `forward_m` ahead of the clip's wrist, same orientation."""
+    def hand_target(
+        self,
+        side: str,
+        forward_m: float,
+        up_m: float = 0.0,
+        lateral_m: float = 0.0,
+        yaw_deg: float = 0.0,
+    ) -> Pose:
+        """A wrist pose offset from the clip's wrist, optionally re-oriented.
+
+        The offset is applied in the pelvis frame: +Y is forward, +X is the
+        robot's left, +Z is up. `yaw_deg` turns the wrist about Z so an "aim"
+        can point somewhere other than the clip's palm direction.
+        """
         index = L_WRIST if side == "left" else R_WRIST
         pts, orns = self._clip_targets()
         start = 3 * index
-        target = pts[start:start + 3] + np.array([0.0, forward_m, up_m])
-        return _pose_from(target, orns[4 * index:4 * index + 4])
+        target = pts[start:start + 3] + np.array([lateral_m, forward_m, up_m])
+        quat = orns[4 * index:4 * index + 4]
+        if yaw_deg:
+            half = math.radians(yaw_deg) / 2.0
+            quat = sr.quat_mul(np.array([math.cos(half), 0.0, 0.0, math.sin(half)]), quat)
+        return _pose_from(target, quat)
+
+    def aim_target(self, side: str, forward_m: float = 0.22, yaw_deg: float = 0.0) -> Pose:
+        """Wrist raised toward the eye line and pointed - the aiming pose.
+
+        Deliberately inside the measured ~0.20 m reliable envelope. Aiming is
+        the axis the body is weakest on off-centre (8.63 cm / 28.33 deg at
+        30 deg off-axis), which is why the body turns to face first.
+        """
+        return self.hand_target(side, forward_m=forward_m, up_m=0.12, yaw_deg=yaw_deg)
+
+    def punch_target(self, side: str, forward_m: float = 0.28) -> Pose:
+        """Maximum forward wrist reach. E3 measured 9.5 mm at +0.30 m with hard
+        IK; under the learned policy this is unmeasured, so read the residual."""
+        return self.hand_target(side, forward_m=forward_m, up_m=0.02)
+
+    def dodge_target(self, lateral_m: float) -> Pose:
+        """Lateral torso/head offset, the only channel that can lean this body.
+
+        AUTH_ROOT_VEL is not honoured in a hold session, so this is a lean, not
+        a step. Whether the base actually translates is measured, not assumed.
+        """
+        pts, orns = self._clip_targets()
+        start = 3 * HEAD
+        target = pts[start:start + 3] + np.array([lateral_m, 0.0, -0.04])
+        return _pose_from(target, orns[4 * HEAD:4 * HEAD + 4])

@@ -33,43 +33,19 @@ os.environ.setdefault("MUJOCO_GL", "egl")
 os.environ.setdefault("PYOPENGL_PLATFORM", "egl")
 
 
-def _ensure_gl_env() -> None:
-    """Re-exec once with libEGL/libGLdispatch reachable.
-
-    NixOS ships libEGL_nvidia.so / libEGL_mesa.so but no plain libEGL.so, and
-    ld.so only reads LD_LIBRARY_PATH at process start, so this cannot be fixed
-    after import. Without it PyOpenGL binds a null EGL platform and dies with
-    "'NoneType' object has no attribute 'eglQueryString'". Measured, not guessed.
-    """
-    if os.environ.get("SUPERBOT_GL_READY") == "1":
-        return
-    candidates = ["/run/opengl-driver/lib"]
-    for pattern in ("/nix/store/*libglvnd-1.7.0/lib", "/nix/store/*libglvnd-*/lib"):
-        candidates.extend(str(p) for p in sorted(Path("/").glob(pattern.lstrip("/"))))
-    candidates = [c for c in candidates if c and Path(c).is_dir()]
-    if not candidates:
-        return
-    current = os.environ.get("LD_LIBRARY_PATH", "")
-    missing = [c for c in candidates if c not in current.split(":")]
-    if not missing:
-        return
-    env = dict(os.environ)
-    env["LD_LIBRARY_PATH"] = ":".join(missing + ([current] if current else []))
-    env["SUPERBOT_GL_READY"] = "1"
-    os.execve(sys.executable, [sys.executable, *sys.argv], env)
-
-
-_ensure_gl_env()
-
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+
+# gl_boot is imported for its side effect: it re-execs with LD_LIBRARY_PATH so
+# libEGL resolves, which must happen before mujoco is imported.
+import gl_boot  # pyright: ignore[reportMissingImports]  # noqa: E402,F401
 
 # mujoco / PIL live in spike/e3/.venv only; `superbot/` stays stdlib-only.
 import mujoco  # pyright: ignore[reportMissingImports]  # noqa: E402
 from PIL import Image  # pyright: ignore[reportMissingImports]  # noqa: E402
 
+from sonic_executor import SonicExecutor  # pyright: ignore[reportMissingImports]  # noqa: E402
 from superbot.body import AUTH_HEAD, BodyCommand, hold  # noqa: E402
-from sonic_executor import SonicExecutor  # noqa: E402
 
 
 class BodyRenderer:
