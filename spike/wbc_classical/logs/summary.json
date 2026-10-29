@@ -1,5 +1,5 @@
 {
-  "model": "/home/nate/Projects/vr-bot/spike/e3/vendor/mujoco_menagerie/unitree_g1/scene.xml",
+  "model": "/home/nate/Projects/SuperBot/spike/e3/vendor/mujoco_menagerie/unitree_g1/scene.xml",
   "dt": 0.02,
   "substeps": 10,
   "hold": {

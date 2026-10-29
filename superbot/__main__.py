@@ -10,7 +10,7 @@ from .config import ConfigError, load_config, validate_config
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="vrbot")
+    parser = argparse.ArgumentParser(prog="superbot")
     parser.add_argument("--config", default="config.toml", help="TOML config path")
     parser.add_argument("--host", help="override dashboard host")
     parser.add_argument("--port", type=int, help="override dashboard port")
@@ -20,7 +20,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         cfg = load_config(Path(args.config), env=os.environ)
     except (ConfigError, OSError) as exc:
-        print(f"vrbot: {exc}", file=sys.stderr)
+        print(f"superbot: {exc}", file=sys.stderr)
         return 2
 
     if args.host is not None or args.port is not None:
@@ -36,7 +36,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         validate_config(cfg)
     except ConfigError as exc:
-        print(f"vrbot: {exc}", file=sys.stderr)
+        print(f"superbot: {exc}", file=sys.stderr)
         return 2
 
     try:
@@ -49,7 +49,7 @@ def main(argv: list[str] | None = None) -> int:
 
         run_dashboard(cfg)
     except OSError as exc:
-        print(f"vrbot: {exc}", file=sys.stderr)
+        print(f"superbot: {exc}", file=sys.stderr)
         return 2
     return 0
 

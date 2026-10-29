@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Manual keyboard/mouse control for the C0 Superhot session.
 
-Reads the real keyboard and mouse straight from /dev/input (no window, no
-X11/Wayland grab), turns them into an HMD pose plus two controller poses, and
-streams the same 376-byte Monado `remote` packets as c0_client.py.
+Receives browser input from the superbot dashboard over a Unix datagram socket,
+turns it into an HMD pose plus two controller poses, and streams the same
+376-byte Monado `remote` packets as c0_client.py.
 
 Controls
   mouse             look (yaw/pitch)
@@ -18,40 +18,42 @@ Controls
   1 / 2             active hand = right / left
   R                 reset body
   H                 reset hand offset
-  Esc               quit
+
+The browser must be pointer-locked on the preview to send input. Esc releases
+the lock; the client keeps streaming the last pose while disarmed.
 
 The default hand offset is (0.000, 0.056, -0.702) m in HMD space: that is the
 pistol's measured position in The Fall, so looking at it and gripping should
 pick it up.
-
-Run it in a terminal, then focus the game window so keystrokes do not type into
-the terminal. The controller still sees every key because it reads evdev.
 """
 
 from __future__ import annotations
 
 import argparse
-import fcntl
-import glob
+import json
 import math
 import os
 import select
 import signal
 import socket
-import struct
 import sys
 import time
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import c0_client as c0
 
-EV_SYN, EV_KEY, EV_REL, EV_ABS = 0, 1, 2, 3
-BTN_LEFT, BTN_RIGHT, BTN_MIDDLE = 0x110, 0x111, 0x112
-REL_X, REL_Y, REL_WHEEL = 0, 1, 8
-ABS_X, ABS_Y = 0x00, 0x01
-ABS_MT_SLOT, ABS_MT_POSITION_X, ABS_MT_POSITION_Y = 0x2F, 0x35, 0x36
-EVENT_FMT = "llHHi"
-EVENT_SIZE = struct.calcsize(EVENT_FMT)
+INPUT_LEASE_SECONDS = 0.5
+INPUT_KEYS = frozenset(
+    {
+        "1", "2", "3", "4", "5", "tab", "q", "w", "e", "r", "t", "u", "i",
+        "o", "p", "enter", "ctrl", "a", "s", "d", "f", "g", "h", "j", "k",
+        "l", "shift", "z", "x", "c", "v", "b", "n", "m", "space", "up",
+        "down", "left", "right",
+    }
+)
+
+BTN_LEFT, BTN_RIGHT = 0, 2
 
 KEY = {
     "esc": 1, "1": 2, "2": 3, "3": 4, "4": 5, "5": 6,
@@ -62,115 +64,115 @@ KEY = {
     "c": 46, "v": 47, "b": 48, "n": 49, "m": 50, "space": 57,
     "up": 103, "down": 108, "left": 105, "right": 106,
 }
-KEY_RIGHT_SHIFT, KEY_RIGHT_CTRL = 54, 97
-EVIOCGNAME = 0x80000000 | (256 << 16) | (ord("E") << 8) | 0x06
 
 
-def device_name(path: str) -> str:
-    try:
-        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+def _number(value) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return 0.0
+    number = float(value)
+    if not math.isfinite(number) or abs(number) > 10_000:
+        return 0.0
+    return number
+
+
+class BrowserInput:
+    def __init__(self, path: Path, clock=time.monotonic):
+        self.path = Path(path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.unlink(missing_ok=True)
+        self._sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
         try:
-            buf = bytearray(256)
-            fcntl.ioctl(fd, EVIOCGNAME, buf, True)
-            return buf.split(b"\0", 1)[0].decode(errors="replace")
-        finally:
-            os.close(fd)
-    except OSError:
-        return ""
-
-
-def discover(kind: str) -> list[str]:
-    found: list[str] = []
-    pattern = f"/dev/input/by-id/*event-{kind}"
-    for p in sorted(glob.glob(pattern)):
-        found.append(os.path.realpath(p))
-    for p in sorted(glob.glob("/dev/input/event*")):
-        name = device_name(p).lower()
-        if kind == "kbd" and ("keyboard" in name or "receiver" in name):
-            found.append(p)
-        if kind == "mouse" and (
-            "mouse" in name or "touchpad" in name or "pointer" in name
-        ):
-            found.append(p)
-    return list(dict.fromkeys(found))
-
-
-class Input:
-    def __init__(self, paths: list[str], abs_scale: float = 0.25):
-        self.fds: dict[int, bytes] = {}
-        for p in paths:
-            try:
-                fd = os.open(p, os.O_RDONLY | os.O_NONBLOCK)
-                self.fds[fd] = b""
-                print(f"[manual] {p}: {device_name(p)}")
-            except OSError as exc:
-                print(f"[manual] cannot open {p}: {exc}", file=sys.stderr)
-        self.keys: set[int] = set()
+            self._sock.bind(str(self.path))
+            os.chmod(self.path, 0o600)
+            self._sock.setblocking(False)
+        except BaseException:
+            self._sock.close()
+            raise
+        self._clock = clock
+        self.armed = False
+        self.last_batch: float | None = None
+        self.keys: set[str] = set()
         self.buttons: set[int] = set()
-        self.dx = self.dy = self.wheel = 0
-        self.abs_scale = abs_scale
-        self.abs_last: dict[tuple[int, int], int] = {}
+        self.dx = self.dy = self.wheel = 0.0
 
     def readable(self):
-        return list(self.fds)
+        return [self._sock]
 
-    def read(self):
-        for fd in list(self.fds):
+    def read(self) -> None:
+        while True:
             try:
-                chunk = os.read(fd, 8192)
+                data, _ = self._sock.recvfrom(65536)
             except BlockingIOError:
-                continue
+                break
             except OSError:
-                chunk = b""
-            if not chunk:
-                self.fds.pop(fd, None)
-                os.close(fd)
-                continue
-            buf = self.fds[fd] + chunk
-            n = len(buf) // EVENT_SIZE
-            for i in range(n):
-                _, _, typ, code, value = struct.unpack_from(EVENT_FMT, buf, i * EVENT_SIZE)
-                if typ == EV_KEY:
-                    if value:
-                        self.keys.add(code) if code < BTN_LEFT else self.buttons.add(code)
-                    else:
-                        self.keys.discard(code) if code < BTN_LEFT else self.buttons.discard(code)
-                elif typ == EV_REL:
-                    if code == REL_X:
-                        self.dx += value
-                    elif code == REL_Y:
-                        self.dy += value
-                    elif code == REL_WHEEL:
-                        self.wheel += value
-                elif typ == EV_ABS:
-                    if code == ABS_MT_SLOT:
-                        continue
-                    if code not in (ABS_X, ABS_Y, ABS_MT_POSITION_X, ABS_MT_POSITION_Y):
-                        continue
-                    key = (fd, code)
-                    previous = self.abs_last.get(key)
-                    self.abs_last[key] = value
-                    if previous is None:
-                        continue
-                    delta = int((value - previous) * self.abs_scale)
-                    if code in (ABS_X, ABS_MT_POSITION_X):
-                        self.dx += delta
-                    else:
-                        self.dy += delta
-            self.fds[fd] = buf[n * EVENT_SIZE:]
+                break
+            self._consume(data)
+        self._expire()
+
+    def _consume(self, data: bytes) -> None:
+        try:
+            payload = json.loads(data.decode())
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return
+        if not isinstance(payload, dict):
+            return
+        armed = payload.get("armed")
+        if armed is False:
+            self._clear()
+            return
+        if armed is not True:
+            return
+        keys = payload.get("keys")
+        self.keys = (
+            {item for item in keys if isinstance(item, str) and item in INPUT_KEYS}
+            if isinstance(keys, list)
+            else set()
+        )
+        buttons = payload.get("buttons")
+        self.buttons = (
+            {
+                item
+                for item in buttons
+                if isinstance(item, int) and not isinstance(item, bool) and item in (0, 1, 2)
+            }
+            if isinstance(buttons, list)
+            else set()
+        )
+        self.dx += _number(payload.get("dx", 0))
+        self.dy += _number(payload.get("dy", 0))
+        self.wheel += _number(payload.get("wheel", 0))
+        self.armed = True
+        self.last_batch = self._clock()
+
+    def _expire(self) -> None:
+        if (
+            self.armed
+            and self.last_batch is not None
+            and self._clock() - self.last_batch > INPUT_LEASE_SECONDS
+        ):
+            self._clear()
+
+    def _clear(self) -> None:
+        self.armed = False
+        self.last_batch = None
+        self.keys.clear()
+        self.buttons.clear()
+        self.dx = self.dy = self.wheel = 0.0
 
     def take_mouse(self):
+        if not self.armed:
+            self.dx = self.dy = self.wheel = 0.0
+            return 0.0, 0.0, 0.0
         dx, dy, wheel = self.dx, self.dy, self.wheel
-        self.dx = self.dy = self.wheel = 0
+        self.dx = self.dy = self.wheel = 0.0
         return dx, dy, wheel
 
     def down(self, name: str) -> bool:
-        return KEY[name] in self.keys
+        return self.armed and name in self.keys
 
     def close(self):
-        for fd in self.fds:
-            os.close(fd)
-        self.fds.clear()
+        self._sock.close()
+        self.path.unlink(missing_ok=True)
 
 
 class Manual:
@@ -213,7 +215,7 @@ class Manual:
                 vy + w * ty + (z * tx - x * tz),
                 vz + w * tz + (x * ty - y * tx))
 
-    def update(self, inp: Input, dt: float):
+    def update(self, inp: BrowserInput, dt: float):
         def pressed(name):
             return inp.down(name) and name not in self.prev_keys
 
@@ -239,9 +241,9 @@ class Manual:
             self.yaw += 2 * math.pi
 
         speed = self.args.speed
-        if inp.down("shift") or KEY_RIGHT_SHIFT in inp.keys:
+        if inp.down("shift"):
             speed *= 2.5
-        if inp.down("ctrl") or KEY_RIGHT_CTRL in inp.keys:
+        if inp.down("ctrl"):
             speed *= 0.3
         fwd = (-math.sin(self.yaw), 0.0, -math.cos(self.yaw))
         right = (math.cos(self.yaw), 0.0, -math.sin(self.yaw))
@@ -341,37 +343,20 @@ def main():
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=4242)
     ap.add_argument("--hz", type=float, default=90.0)
-    ap.add_argument("--sens", type=float, default=0.04, help="mouse degrees per count")
-    ap.add_argument("--abs-scale", type=float, default=0.25, help="touchpad ABS counts to mouse counts")
+    ap.add_argument("--sens", type=float, default=0.072, help="mouse degrees per count")
     ap.add_argument("--speed", type=float, default=0.8, help="move speed, m/s")
     ap.add_argument("--hand-speed", type=float, default=0.5, help="hand speed, m/s")
     ap.add_argument("--hand", type=float, nargs=3, default=(0.0, 0.056, -0.702),
                     metavar=("X", "Y", "Z"), help="hand offset in HMD space")
     ap.add_argument("--invert-y", action="store_true")
-    ap.add_argument("--kbd", action="append", help="keyboard event device (default: all by-id keyboards)")
-    ap.add_argument("--mouse", action="append", help="mouse event device (default: all by-id mice)")
-    ap.add_argument("--list-devices", action="store_true")
+    ap.add_argument("--input-socket", required=True, help="Unix datagram socket for browser input")
     ap.add_argument("--duration", type=float, default=0.0, help="exit after N seconds (0 = forever)")
     args = ap.parse_args()
 
-    if args.list_devices:
-        for kind in ("kbd", "mouse"):
-            for p in discover(kind):
-                print(f"{kind:5s} {p}  {device_name(p)}")
-        return
-
-    kbd = args.kbd or discover("kbd")
-    mouse = args.mouse or discover("mouse")
-    if not kbd:
-        sys.exit("no keyboard event device found; pass --kbd /dev/input/eventN")
-    if not mouse:
-        sys.exit("no mouse event device found; pass --mouse /dev/input/eventN")
-
-    inp = Input(kbd + mouse, abs_scale=args.abs_scale)
-    if not inp.fds:
-        sys.exit("could not open any input device")
+    inp = BrowserInput(Path(args.input_socket))
+    print(f"[manual] input socket: {args.input_socket}", flush=True)
     print("[manual] controls: mouse look | WASD move | Space/Z up/down | arrows hand | wheel reach")
-    print("[manual]           LMB/T fire | RMB/G grip | Tab/1/2 hand | R reset | H hand | Esc quit")
+    print("[manual]           LMB/T fire | RMB/G grip | Tab/1/2 hand | R reset | H hand | Esc release")
 
     c0.assert_layout()
     sock = socket.create_connection((args.host, args.port), timeout=5)

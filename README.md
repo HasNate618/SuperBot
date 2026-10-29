@@ -1,4 +1,4 @@
-# vr-bot
+# SuperBot
 
 A simulated Unitree G1 humanoid plays **Superhot VR** with no headset and no controllers.
 
@@ -10,7 +10,7 @@ The game renders from a fabricated HMD pose. Captured frames are the robot's onl
 >
 > Everything below is labelled with what was measured, where, and what is still missing. See [Status](#status) for the honest scoreboard.
 
-<!-- ![vrbot dashboard](docs/dashboard.png) -->
+<!-- ![superbot dashboard](docs/dashboard.png) -->
 
 ---
 
@@ -19,8 +19,8 @@ The game renders from a fabricated HMD pose. Captured frames are the robot's onl
 - **A hidden C0 session you can start from a web page.** One click brings up a nested Weston compositor, Monado with a NULL compositor and its `remote` driver, Steam, Superhot and the pose client — isolated from your desktop, in their own process groups, with cleanup verified afterwards.
 - **The game accepts a headset that does not exist.** Superhot VR reaches `XR_SESSION_STATE_FOCUSED` on `Monado: Remote HMD` and enumerates 58 runtime extensions. Measured, `research/c0-results.md`.
 - **The view is driven by our poses.** A ±35° scripted sweep changes **59.3 %** of pixels versus **4.0 %** with a static pose — a **9×** signal over scene animation.
-- **Real game pixels are captured**, live-previewed in the dashboard at 8 fps and written to disk.
-- **172 unit tests** covering config validation, process-group handling, the orchestrator's concurrency guards, the dashboard HTTP API and preview lifecycle.
+- **Real game pixels are captured**, live-previewed in the dashboard and written to disk.
+- **193 unit tests** covering config validation, process-group handling, the orchestrator's concurrency guards, the dashboard HTTP API and preview lifecycle.
 
 ## What's missing
 
@@ -52,14 +52,14 @@ Tested on **NixOS** with Hyprland/Wayland. Expected to be adaptable elsewhere, b
 - **Steam** plus **your own copy of Superhot VR** (not included) added as a non-Steam game, running under Proton.
 - **Monado** — specifically a build carrying the [`remote` driver](https://gitlab.freedesktop.org/monado/monado) (a PSVR2 fork was used here).
 - **weston**, **weston-screenshooter**, **weston-debug** — for the nested compositor and capture. `run.sh` shells into `nix shell nixpkgs#weston` if they are missing.
-- **ImageMagick** (`magick`) — preview compositing.
+- **ImageMagick** (`magick`) — optional; used only by `--preview-smoke` for a non-black frame check.
 - **Python 3.12+** — standard library only, no third-party runtime dependencies.
 - **No headset and no controllers.**
 
 ## Setup
 
 ```bash
-git clone <this repo> && cd vr-bot
+git clone <this repo> && cd SuperBot
 cp config.example.toml config.toml   # then edit it
 ./run.sh                             # serves http://127.0.0.1:8765
 ```
@@ -74,7 +74,7 @@ In `config.toml`, the values you almost certainly must change:
 | `paths.session_root` | where session logs go |
 | `launch.shortcut_id`, `launch.proton_app_id` | your Steam shortcut's AppId |
 
-**The OpenXR runtime pointer is required, and vrbot only reads it.** Under Wine the game resolves its runtime through the Proton prefix registry → `wineopenxr.dll` → the host OpenXR loader, which looks for `~/.config/openxr/1/active_runtime.json`. Note that `/etc/xdg` is invisible inside the Proton container and `~/.local/share/openxr/1/` is *not* a searched path. Create it from your Monado install:
+**The OpenXR runtime pointer is required, and superbot only reads it.** Under Wine the game resolves its runtime through the Proton prefix registry → `wineopenxr.dll` → the host OpenXR loader, which looks for `~/.config/openxr/1/active_runtime.json`. Note that `/etc/xdg` is invisible inside the Proton container and `~/.local/share/openxr/1/` is *not* a searched path. Create it from your Monado install:
 
 ```bash
 mkdir -p ~/.config/openxr/1
@@ -93,13 +93,15 @@ The dashboard is a single page with a state badge, session id, uptime and log vi
 | **Stop** | Tears the session down; idempotent. |
 | **mode** | Switches the pose client: `hold`, `yaw`, `trigger`, `dodge`, `walk`, `clock`, `manual`. |
 | **kill** | Force-stops the game or Steam specifically. |
-| **preview** | Live `/preview.mjpg`, plus `/api/frame.jpg` for the current frame. |
+| **preview** | Live `/preview.png`, plus `/api/frame.png` for the current frame. Frames are the raw Weston output: vertically flipped and including the 32 px status panel. The browser flips and crops them in CSS; API consumers must do the same. |
+
+In `manual` mode, click the preview to pointer-lock the browser and drive the hidden game: mouse look, WASD move, arrows move the active hand, wheel reaches, LMB/T fires, RMB/G grips, Tab switches hands. Esc releases the mouse; input stops immediately, while the last pose keeps streaming. The browser sends batches to `POST /api/manual/input`, which forwards them to the manual pose client over a per-session Unix datagram socket.
 
 `./run.sh --preview-smoke` checks the Weston capture path without launching Steam.
 
 ## Safety notes
 
-- **This launches Steam and Superhot on your machine**, in a nested Weston session with a NULL-compositor Monado, so it does not draw on your desktop. Your mouse and keyboard focus stay yours.
+- **This launches Steam and Superhot on your machine**, in a nested Weston session with a NULL-compositor Monado, so it does not draw on your desktop. Your mouse and keyboard focus stay yours until you click the preview in `manual` mode to capture the pointer; Esc returns them.
 - **The kill buttons are force kills.** They terminate *your* Steam and the game process. Anything you had unsaved in other Steam games does not survive a `kill steam`.
 - **One session at a time** by design; concurrent starts are guarded and rejected.
 - **It does not modify your OpenXR configuration.** It validates that the runtime pointer exists and is readable, and fails preflight with a message if it does not.
@@ -110,8 +112,8 @@ The dashboard is a single page with a state badge, session id, uptime and log vi
 
 | Path | What it is |
 | --- | --- |
-| `vrbot/` | **The app.** Config, process-group management, session orchestrator, preview capture, dashboard HTTP API and UI. |
-| `tests/` | 172 unittest cases, standard library only: `python3 -m unittest discover -s tests` |
+| `superbot/` | **The app.** Config, process-group management, session orchestrator, preview capture, dashboard HTTP API and UI. |
+| `tests/` | 193 unittest cases, standard library only: `python3 -m unittest discover -s tests` |
 | `spike/` | **Evidence.** `c0/` pose client and launchers, `e1/`–`e3/` OpenXR/capture/latency spikes, `c3/` and `wbc/` controller harnesses. |
 | `research/` | **Findings.** Per-spike results with measured numbers, plus controller and game-side surveys. |
 | `docs/` | **Design.** The design doc, its builder-check, the state-of-findings summary, and the dashboard spec. |

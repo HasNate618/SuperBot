@@ -1,4 +1,4 @@
-# vr-bot — state of findings
+# SuperBot — state of findings
 
 **Date:** 2026-10-23, revised **2026-10-24** after C3m and C0.
 **Purpose:** one shared ground-truth file so no researcher, builder or reader re-derives E1–E3, C3, C3m or C0. It states the goal *with no caveats*, what is proven, what is falsified, what is still open, and the pass criteria any proposal must meet.

@@ -21,7 +21,7 @@ from measure_c3 import (  # noqa: E402
 POLICY = ROOT / "policy/g1_policy.onnx"
 PG_DIR = ROOT / "playground_g1"
 PG_XML = PG_DIR / "xmls/scene_mjx_feetonly_flat_terrain.xml"
-MEN_DIR = Path("/home/nate/Projects/vr-bot/spike/e3/vendor/mujoco_menagerie/unitree_g1")
+MEN_DIR = Path("/home/nate/Projects/SuperBot/spike/e3/vendor/mujoco_menagerie/unitree_g1")
 MEN_SCENE = MEN_DIR / "scene.xml"
 MEN_SCENE_MJX = MEN_DIR / "scene_mjx.xml"
 OUT = ROOT / "c3de_measurements.json"

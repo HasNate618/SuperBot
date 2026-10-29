@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-23  
 **Scope:** research only. No code, spikes, Monado, or training were run for this note. Measurements are from the MuJoCo models named below.  
-**Question:** the project currently simulates a Unitree G1 as the player's body. Is there a better humanoid body — specifically RoboParty's RP1 — for an honest VR player body, and should vr-bot switch?
+**Question:** the project currently simulates a Unitree G1 as the player's body. Is there a better humanoid body — specifically RoboParty's RP1 — for an honest VR player body, and should SuperBot switch?
 
 **Answer up front.** Keep the G1 29-DoF for v1. Do **not** switch to RP1. If a neck later becomes a measured blocker, the evidence-backed second body is Apptronik Apollo, not RP1, and it should sit behind a body-profile abstraction rather than fork the executor.
 
@@ -89,7 +89,7 @@ Licensing is not fully nailed down. The repository root at `c2956c58` contains n
 | Is it a drop-in? | No: different joint names/count, torque-only, no stand keyframe, no head frame. | `[M2]` |
 | Worth switching for v1? | No. | Judgment, §7 |
 
-The one configuration that fits vr-bot's wrist contract (28-axis) is the configuration with **no released policy**; the configuration with a policy (24-axis) has only a roll wrist and cannot realize controller orientation. That inversion is the core reason RP1 is not the right switch. `[C4, M2]`
+The one configuration that fits SuperBot's wrist contract (28-axis) is the configuration with **no released policy**; the configuration with a policy (24-axis) has only a roll wrist and cannot realize controller orientation. That inversion is the core reason RP1 is not the right switch. `[C4, M2]`
 
 ---
 
@@ -139,7 +139,7 @@ Sources for §4: `[M1]`, `[M2]`, `[C1–C16]`, `[C23]`.
 
 ---
 
-## 6. What would change in vr-bot if we switched
+## 6. What would change in SuperBot if we switched
 
 This is the part that makes the decision concrete. The current design is not body-agnostic at the joint-vector level, even though the task-space command is.
 
@@ -225,7 +225,7 @@ A G1 with an added 2-DoF neck is also technically possible (TWIST2-style), and w
 
 ## 8. What the literature uses (and why it matters for the portfolio)
 
-The recent whole-body teleoperation work that vr-bot's research file leans on is overwhelmingly on the G1: HOVER, HOMIE, ExBody2, and TeleGate all use G1 variants, and OmniH2O's neckless-H1 result is the standard evidence that 3-point head+hands tracking can absorb head pose through the waist and base. `[C24–C27, C31, P3]`
+The recent whole-body teleoperation work that SuperBot's research file leans on is overwhelmingly on the G1: HOVER, HOMIE, ExBody2, and TeleGate all use G1 variants, and OmniH2O's neckless-H1 result is the standard evidence that 3-point head+hands tracking can absorb head pose through the waist and base. `[C24–C27, C31, P3]`
 
 That matters for the hiring signal. A reviewer can map G1 work onto known papers and known failure modes (arm-control-vs-balance conflict, action-scale mismatches, waist ownership). RP1's public history is days old (October 2026), and I found no VR/teleoperation paper using it; its published research is locomotion and foundation-model work. Switching would make the demo more novel but less legible: the story becomes "integrate a new body" rather than "solve whole-body VR control on a known humanoid." `[C5; A4]`
 
@@ -256,7 +256,7 @@ This is a judgment, not a measurement. If the goal is specifically to be early o
 
 ### Project documents
 
-- `[P1]` `docs/2026-10-23-vr-bot-design.md` — body constraints, `BodyCommand`, authority bits, executor, C0–C5, HMD height.
+- `[P1]` `docs/2026-10-23-SuperBot-design.md` — body constraints, `BodyCommand`, authority bits, executor, C0–C5, HMD height.
 - `[P2]` `research/e3-spike-results.md` — G1 stand, 500 Hz, packet match, head/wrist measurements.
 - `[P3]` `research/g1-integration-control.md` — WBC architecture, neckless head-look, IK, policy caveats.
 - `[P4]` `RESEARCH.md` §5 — body mapping, G1 29/43 DoF, no neck.

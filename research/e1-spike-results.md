@@ -91,7 +91,7 @@ systemd-run --user --unit=e1-monado --collect \
 
 ## 5. Throwaway client
 
-- **[MEASURED]** `/home/nate/Projects/vr-bot/spike/e1/remote_pose_client.py` (Python 3.14).
+- **[MEASURED]** `/home/nate/Projects/SuperBot/spike/e1/remote_pose_client.py` (Python 3.14).
 - **[MEASURED]** It connects to `127.0.0.1:4242`, reads the two `r_remote_data` handshake packets, then sends 376-byte packets at 50 Hz with `TCP_NODELAY`.
 - **[MEASURED]** It streams `head.center` quaternion for yaw `35° · sin(2π · 0.5 Hz · t)`, position `y=1.6`, and static active controllers at `x=∓0.2, y=1.3, z=-0.5`.
 - **[MEASURED]** Client log excerpt:
@@ -106,7 +106,7 @@ systemd-run --user --unit=e1-monado --collect \
 
 ## 6. OpenXR app evidence — the view moves
 
-- **[MEASURED]** `/home/nate/Projects/vr-bot/spike/e1/xr_view_probe.c` creates an `XR_MND_headless` session (no graphics binding), enables `XR_KHR_convert_timespec_time`, and calls `xrLocateViews(LOCAL, PRIMARY_STEREO)` at ~30 Hz.
+- **[MEASURED]** `/home/nate/Projects/SuperBot/spike/e1/xr_view_probe.c` creates an `XR_MND_headless` session (no graphics binding), enables `XR_KHR_convert_timespec_time`, and calls `xrLocateViews(LOCAL, PRIMARY_STEREO)` at ~30 Hz.
 - **[MEASURED]** Build:
   ```bash
   gcc -O2 -I include -o xr_view_probe xr_view_probe.c \
@@ -169,11 +169,11 @@ Timeline (`probe-with-stream.log`; pose stream active from probe `t≈2.0s` to `
 
 ## 10. Artifacts
 
-- Client: `/home/nate/Projects/vr-bot/spike/e1/remote_pose_client.py`
-- OpenXR probe source/binary: `/home/nate/Projects/vr-bot/spike/e1/xr_view_probe.c`, `.../xr_view_probe`
+- Client: `/home/nate/Projects/SuperBot/spike/e1/remote_pose_client.py`
+- OpenXR probe source/binary: `/home/nate/Projects/SuperBot/spike/e1/xr_view_probe.c`, `.../xr_view_probe`
 - OpenXR headers used: Khronos OpenXR-SDK `release-1.1.54` (not committed; re-fetch from the SDK)
-- Server journal: `/home/nate/Projects/vr-bot/spike/e1/monado-e1-journal.log`
-- Binary facts/hashes: `/home/nate/Projects/vr-bot/spike/e1/evidence-binary.txt`
+- Server journal: `/home/nate/Projects/SuperBot/spike/e1/monado-e1-journal.log`
+- Binary facts/hashes: `/home/nate/Projects/SuperBot/spike/e1/evidence-binary.txt`
 - Key logs:
   - `probe-with-stream.log` — view yaw follows stream
   - `probe-baseline.log` — idle pose
@@ -184,7 +184,7 @@ Timeline (`probe-with-stream.log`; pose stream active from probe `t≈2.0s` to `
 ## 11. Repro commands (short form)
 
 ```bash
-cd /home/nate/Projects/vr-bot/spike/e1
+cd /home/nate/Projects/SuperBot/spike/e1
 
 # 1. server (transient; does not touch ~/.config/monado or the installed unit)
 systemctl --user stop monado.service monado.socket

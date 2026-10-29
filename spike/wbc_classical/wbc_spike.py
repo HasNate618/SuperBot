@@ -2,7 +2,7 @@
 """Classical floating-base task-space WBC spike for the Unitree G1.
 
 Usage:
-  /home/nate/Projects/vr-bot/spike/e3/.venv/bin/python wbc_spike.py --scenario all
+  /home/nate/Projects/SuperBot/spike/e3/.venv/bin/python wbc_spike.py --scenario all
 
 The controller is a weighted task-space IK over the full floating-base model.
 Task weights approximate the priority stack:

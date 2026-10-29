@@ -139,7 +139,7 @@ A 20 s think therefore costs roughly **0.7 s of game time**, dominated by the se
 ## 6. Reproduce
 
 ```bash
-cd /home/nate/Projects/vr-bot
+cd /home/nate/Projects/SuperBot
 time spike/e3/.venv/bin/python spike/wbc/hold_c3m.py
 # -> spike/wbc/logs/c3m_summary.json plus per-run jsonl (4 m 04 s)
 ```

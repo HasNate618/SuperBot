@@ -1,4 +1,4 @@
-# vr-bot design
+# SuperBot design
 
 **Date:** 2026-10-23
 **Status:** written from locked conversation + E1–E3 measurements; builder-check settlements and the C3 outcomes in §18. Not an implementation plan. Nothing below authorizes product code until this document is approved. **C3 ran 2026-10-23 (twice) and failed on the Playground policy; the same day's WBC research found the answer and §7 was rewritten from it.** The walking policy reproduces the archived numbers exactly, the heading curve was our collision model, and the two-mode body died. But the Playground ONNX is superseded as the executor: **GEAR-SONIC walks, holds and transitions**, and a **classical mink QP owns precision** to 0.22 mm. The game's clock floor is measured at **0.005**. **C0 ran 2026-10-24 and passed its gate: Superhot VR runs a focused session on a headset that does not exist, and its view tracks our poses** (`research/c0-results.md`). See §18.3–§18.7.
@@ -109,7 +109,7 @@ The VLM never blocks the 50 Hz loop. Invalid or stale commands become `hold`. Ba
 
 ## 6. Native command contract
 
-This is the robotics interface. Schema name: `vrbot.body/1`. JSON on a Unix socket or a thread-safe latest-wins queue (builder chooses the transport; the fields are fixed).
+This is the robotics interface. Schema name: `superbot.body/1`. JSON on a Unix socket or a thread-safe latest-wins queue (builder chooses the transport; the fields are fixed).
 
 Authority is a bitmask. Unset fields are **ignored, not zeroed**. That is how “mode” is expressed. There is no verb enum below the adapter.
 
@@ -306,7 +306,7 @@ C0 may run in parallel with C1 and with C3i/C3j/C3k. Do not start C5 before C0 a
 7. **The simulation/collision model is Playground's `scene_mjx_feetonly_flat_terrain.xml`**, not Menagerie's `scene_mjx.xml`. Menagerie stays for visualisation/URDF parity. `move` is a velocity pass-through into a policy that is always running, not a mode switch. `dodge` and gait bits stay `UNSUPPORTED`.
 8. Superhot is the only required game; grim is the eye; transient Monado unit as above.
 9. No ROS2, no policy retrain, no force loop, no game API.
-10. Spike code is a seed, not a package name. Production modules can live under `vrbot/` (or similar); builder picks names.
+10. Spike code is a seed, not a package name. Production modules can live under `superbot/` (or similar); builder picks names.
 11. Public GitHub is the ship *target*; do not `git init` until asked.
 12. C0 is the game-side go/no-go (synthetic HMD + trigger + grim on the game window), not E4.
 13. HMD height: **≈1.170 m** in the policy pose (`knees_bent`), 1.221 m in the straight-legged `stand` — both measured. The policy pose is the one that matters, since the body never stands. STAGE, floor = sim ground. Named `hmd_z_offset` default 0; if C0 shows child height is unplayable, change it explicitly, never silently.
@@ -340,7 +340,7 @@ The phrase “balance-constrained locomotion” requires **both** legs in the lo
 
 ## 18. Builder-check settlements (2026-10-23)
 
-From `docs/2026-10-23-vr-bot-design-builder-check.md`.
+From `docs/2026-10-23-SuperBot-design-builder-check.md`.
 
 Builder-check items 1, 3, 4, 5 (item 2 became §18.2):
 
@@ -397,7 +397,7 @@ Differences that matter: 6 foot/leg colliders vs 25 box colliders; actuator damp
 
 ### 18.5 WBC routes (2026-10-23) — three parallel research routes, and §7 was rewritten from them
 
-Three agents ran against `docs/2026-10-23-vr-bot-state-of-findings.md` with deliberately non-overlapping mandates: acquire a learned controller, build a classical one, and pin down the game-side contract. Deliverables: `research/wbc-policy-proposal.md`, `research/wbc-classical-proposal.md`, `research/wbc-game-proposal.md`.
+Three agents ran against `docs/2026-10-23-SuperBot-state-of-findings.md` with deliberately non-overlapping mandates: acquire a learned controller, build a classical one, and pin down the game-side contract. Deliverables: `research/wbc-policy-proposal.md`, `research/wbc-classical-proposal.md`, `research/wbc-game-proposal.md`.
 
 **Route A — a released whole-body controller exists and it works.** GEAR-SONIC default, headless in MuJoCo on this laptop: **6.36 m in 10 s** at 0.64 m/s, **hold 3.6 cm / 20 s**, **walk → hold → walk at 4 s and 10 s without falling**, dodge **0.15–0.18 m < 0.5 s**, **6.8 ms/tick CPU**. Its native teleop interface is head + two hands, and head yaw drives torso yaw at **~0.83 gain**. This is the first controller in the whole project that walks, holds and transitions at the same time. C3 was not wrong about the Playground ONNX; it was wrong to generalise from it. Limits: wrist **4–6 cm / 17–23°** in hold and **5–10 cm / 8–19°** walking; head **y**, only; no head z/x, no pitch/roll. Weights are the **NVIDIA Open Model License**, not Apache — attribute it.
 
@@ -457,7 +457,7 @@ Detail in `research/c3m-results.md`; script `spike/wbc/hold_c3m.py`; data `spike
 
 `MiniCPM5-2B` sat in this document as the default brain with no measurement behind it. The reasoning trail does not support it, and three separate pieces of our own work point elsewhere.
 
-**The disqualification was borrowed from the wrong layer.** `stubborn-gamer/research/model-test-findings.md` concludes: *"Best compact fast candidate: LFM2.5-VL-3B, particularly for routine decisions."* Routine decision — pick one of a small closed set from a compact typed state — **is exactly this layer**. LFM was struck out in vr-bot's docs for emitting `navigate_to` on 73% of **hard home-assistant planning cases**, which is the layer above us. The bench's own caveat for LFM was *"not a proven general planner"*: true, and irrelevant to a five-way skill choice. What survived into these docs was "LFM disqualified", without the qualifier that mattered.
+**The disqualification was borrowed from the wrong layer.** `stubborn-gamer/research/model-test-findings.md` concludes: *"Best compact fast candidate: LFM2.5-VL-3B, particularly for routine decisions."* Routine decision — pick one of a small closed set from a compact typed state — **is exactly this layer**. LFM was struck out in SuperBot's docs for emitting `navigate_to` on 73% of **hard home-assistant planning cases**, which is the layer above us. The bench's own caveat for LFM was *"not a proven general planner"*: true, and irrelevant to a five-way skill choice. What survived into these docs was "LFM disqualified", without the qualifier that mattered.
 
 **The bench also says vision is the wrong axis:** *"Vision was not the main reasoner... a text/JSON belief state produced by perception and tracking is likely more valuable than spending most of the VRAM budget on a large vision model."* A **VL** model is therefore the wrong shape for the brain, and `LFM3-1.7B` (text, 256K context, native tool calling, ~1 GB at 4-bit) fits the contract better than either VL candidate.
 

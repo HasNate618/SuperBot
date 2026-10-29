@@ -50,7 +50,7 @@ cd "$SCRIPT_DIR"
 if command -v weston >/dev/null 2>&1 \
   && command -v weston-screenshooter >/dev/null 2>&1 \
   && command -v weston-debug >/dev/null 2>&1; then
-  exec python3 -m vrbot "${args[@]}"
+  exec python3 -m superbot "${args[@]}"
 fi
 
-exec nix shell nixpkgs#weston -c python3 -m vrbot "${args[@]}"
+exec nix shell nixpkgs#weston -c python3 -m superbot "${args[@]}"

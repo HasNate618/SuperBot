@@ -14,8 +14,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
-from vrbot.config import load_config
-from vrbot.orchestrator import (
+from superbot.config import load_config
+from superbot.orchestrator import (
     ConflictError,
     PreflightError,
     SessionManager,
@@ -218,7 +218,7 @@ class OrchestratorTests(unittest.TestCase):
         self.temp.cleanup()
 
     def start(self) -> None:
-        with patch("vrbot.orchestrator.missing_requirements", return_value=[]):
+        with patch("superbot.orchestrator.missing_requirements", return_value=[]):
             self.manager.start()
         self.assertTrue(self.manager.wait_idle(2))
         self.assertEqual(self.manager.state_value(), "running")
@@ -438,7 +438,7 @@ class OrchestratorTests(unittest.TestCase):
 
         with (
             patch.object(self.manager, "_preflight", side_effect=blocking_preflight),
-            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+            patch("superbot.orchestrator.missing_requirements", return_value=[]),
         ):
             thread = threading.Thread(target=self.manager.start, daemon=True)
             thread.start()
@@ -470,7 +470,7 @@ class OrchestratorTests(unittest.TestCase):
         self.assertTrue(self.manager.wait_idle(2))
 
         self.runner.host_steam = True
-        with patch("vrbot.orchestrator.missing_requirements", return_value=[]):
+        with patch("superbot.orchestrator.missing_requirements", return_value=[]):
             with self.assertRaises(PreflightError):
                 self.manager.start()
         snapshot = self.manager.snapshot()
@@ -510,7 +510,7 @@ class OrchestratorTests(unittest.TestCase):
 
     def test_host_steam_blocks_start(self) -> None:
         self.runner.host_steam = True
-        with patch("vrbot.orchestrator.missing_requirements", return_value=[]):
+        with patch("superbot.orchestrator.missing_requirements", return_value=[]):
             with self.assertRaises(PreflightError):
                 self.manager.start()
         self.assertEqual(self.manager.state_value(), "failed")
@@ -524,7 +524,7 @@ class OrchestratorTests(unittest.TestCase):
                 "process_name_running",
                 side_effect=OSError("pgrep missing"),
             ),
-            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+            patch("superbot.orchestrator.missing_requirements", return_value=[]),
         ):
             with self.assertRaises(PreflightError) as raised:
                 self.manager.start()
@@ -540,7 +540,7 @@ class OrchestratorTests(unittest.TestCase):
                 "systemd_unit_active",
                 side_effect=OSError("systemctl missing"),
             ),
-            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+            patch("superbot.orchestrator.missing_requirements", return_value=[]),
         ):
             with self.assertRaises(PreflightError) as raised:
                 self.manager.start()
@@ -555,7 +555,7 @@ class OrchestratorTests(unittest.TestCase):
             "session": "/old",
             "processes": {"monado": {"pid": 999, "command": "monado-service"}},
         }
-        with patch("vrbot.orchestrator.missing_requirements", return_value=[]):
+        with patch("superbot.orchestrator.missing_requirements", return_value=[]):
             with self.assertRaises(PreflightError) as raised:
                 self.manager.start()
         self.assertIn("stale", str(raised.exception))
@@ -563,7 +563,7 @@ class OrchestratorTests(unittest.TestCase):
 
     def test_startup_failure_cleans_up(self) -> None:
         self.runner.fail_at = "wait_port"
-        with patch("vrbot.orchestrator.missing_requirements", return_value=[]):
+        with patch("superbot.orchestrator.missing_requirements", return_value=[]):
             self.manager.start()
         self.assertTrue(self.manager.wait_idle(2))
         self.assertEqual(self.manager.state_value(), "failed")
@@ -582,7 +582,7 @@ class OrchestratorTests(unittest.TestCase):
 
         with (
             patch.object(self.runner, "wait_log", side_effect=failing_wait_log),
-            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+            patch("superbot.orchestrator.missing_requirements", return_value=[]),
         ):
             self.manager.start()
             self.assertTrue(self.manager.wait_idle(2))
@@ -599,7 +599,7 @@ class OrchestratorTests(unittest.TestCase):
 
         with (
             patch.object(self.manager, "_start_weston", side_effect=failing_start_weston),
-            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+            patch("superbot.orchestrator.missing_requirements", return_value=[]),
         ):
             self.manager.start()
             self.assertTrue(self.manager.wait_idle(2))
@@ -621,7 +621,7 @@ class OrchestratorTests(unittest.TestCase):
 
         with (
             patch.object(self.runner, "wait_port", side_effect=slow_wait_port),
-            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+            patch("superbot.orchestrator.missing_requirements", return_value=[]),
         ):
             self.manager.start()
             self.assertTrue(self.manager.wait_idle(2))
@@ -635,7 +635,7 @@ class OrchestratorTests(unittest.TestCase):
         self.runner.fail_at = "wait_port"
         with (
             patch.object(self.runner, "tail", side_effect=RuntimeError("tail boom")),
-            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+            patch("superbot.orchestrator.missing_requirements", return_value=[]),
         ):
             self.manager.start()
             self.assertTrue(self.manager.wait_idle(2))
@@ -661,7 +661,7 @@ class OrchestratorTests(unittest.TestCase):
         started = time.monotonic()
         with (
             patch.object(self.runner, "wait_port", side_effect=slow_wait_port),
-            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+            patch("superbot.orchestrator.missing_requirements", return_value=[]),
         ):
             self.manager.start()
             self.assertTrue(self.manager.wait_idle(5))
@@ -673,7 +673,7 @@ class OrchestratorTests(unittest.TestCase):
 
     def test_concurrent_start_is_rejected(self) -> None:
         self.runner.block_wait = threading.Event()
-        with patch("vrbot.orchestrator.missing_requirements", return_value=[]):
+        with patch("superbot.orchestrator.missing_requirements", return_value=[]):
             self.manager.start()
             with self.assertRaises(ConflictError):
                 self.manager.start()
@@ -738,7 +738,7 @@ class OrchestratorTests(unittest.TestCase):
 
         with (
             patch.object(self.runner, "remove_stale_socket", side_effect=flaky_remove),
-            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+            patch("superbot.orchestrator.missing_requirements", return_value=[]),
         ):
             self.manager.start()
             self.assertTrue(self.manager.wait_idle(2))
@@ -816,7 +816,7 @@ class OrchestratorTests(unittest.TestCase):
         with (
             patch.object(self.runner, "wait_log", side_effect=failing_wait_log),
             patch.object(self.runner, "remove_stale_socket", side_effect=flaky_remove),
-            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+            patch("superbot.orchestrator.missing_requirements", return_value=[]),
         ):
             self.manager.start()
             self.assertTrue(self.manager.wait_idle(2))
@@ -865,7 +865,7 @@ class OrchestratorTests(unittest.TestCase):
         with (
             patch.object(self.runner, "wait_port", side_effect=blocking_wait_port),
             patch.object(self.runner, "remove_stale_socket", side_effect=flaky_remove),
-            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+            patch("superbot.orchestrator.missing_requirements", return_value=[]),
         ):
             self.manager.start()
             self.assertTrue(entered.wait(2))
@@ -891,7 +891,7 @@ class OrchestratorTests(unittest.TestCase):
 
         with (
             patch.object(self.manager, "_preflight", side_effect=blocking_preflight),
-            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+            patch("superbot.orchestrator.missing_requirements", return_value=[]),
         ):
             thread = threading.Thread(target=self.manager.start, daemon=True)
             thread.start()
@@ -937,7 +937,7 @@ class OrchestratorTests(unittest.TestCase):
         with (
             patch.object(self.manager, "_startup", side_effect=paused_startup),
             patch.object(self.manager, "_cleanup", side_effect=counting_cleanup),
-            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+            patch("superbot.orchestrator.missing_requirements", return_value=[]),
         ):
             self.manager.start()
             self.assertTrue(reached.wait(2))
@@ -966,7 +966,7 @@ class OrchestratorTests(unittest.TestCase):
         with (
             patch.object(self.runner, "wait_port", side_effect=blocking_wait_port),
             patch.object(self.manager, "_cleanup", side_effect=counting_cleanup),
-            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+            patch("superbot.orchestrator.missing_requirements", return_value=[]),
         ):
             self.manager.start()
             self.assertTrue(entered.wait(2))
@@ -988,7 +988,7 @@ class OrchestratorTests(unittest.TestCase):
 
         with (
             patch.object(self.runner, "wait_port", side_effect=blocking_wait_port),
-            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+            patch("superbot.orchestrator.missing_requirements", return_value=[]),
         ):
             self.manager.start()
             self.assertTrue(entered.wait(2))
@@ -1018,7 +1018,7 @@ class OrchestratorTests(unittest.TestCase):
         with (
             patch.object(self.manager, "_start_worker", side_effect=delayed_start_worker),
             patch.object(self.manager, "_cleanup", side_effect=counting_cleanup),
-            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+            patch("superbot.orchestrator.missing_requirements", return_value=[]),
         ):
             self.manager.start()
             captured = self.manager._session_dir
@@ -1055,7 +1055,7 @@ class OrchestratorTests(unittest.TestCase):
             patch.object(
                 self.manager, "_preflight", side_effect=blocking_first_preflight
             ),
-            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+            patch("superbot.orchestrator.missing_requirements", return_value=[]),
         ):
             thread_a = threading.Thread(target=self.manager.start, daemon=True)
             thread_a.start()
@@ -1117,7 +1117,7 @@ class OrchestratorTests(unittest.TestCase):
             patch.object(
                 self.manager, "_discard_attempt", side_effect=delayed_discard
             ),
-            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+            patch("superbot.orchestrator.missing_requirements", return_value=[]),
         ):
             thread_a = threading.Thread(target=run_a, daemon=True)
             thread_a.start()
@@ -1196,7 +1196,7 @@ class OrchestratorTests(unittest.TestCase):
             patch.object(self.runner, "port_in_use", side_effect=blocking_port),
             patch.object(self.runner, "remove_stale_socket", side_effect=removing_socket),
             patch.object(self.runner, "start", side_effect=creating_start),
-            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+            patch("superbot.orchestrator.missing_requirements", return_value=[]),
         ):
             thread_a = threading.Thread(target=run_a, daemon=True)
             thread_a.start()
@@ -1291,7 +1291,7 @@ class OrchestratorTests(unittest.TestCase):
             patch.object(
                 self.manager, "_start_worker", side_effect=delayed_first_worker
             ),
-            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+            patch("superbot.orchestrator.missing_requirements", return_value=[]),
         ):
             self.manager.start()
             self.assertTrue(entered.wait(2))
@@ -1343,7 +1343,7 @@ class OrchestratorTests(unittest.TestCase):
                 self.manager, "_preflight", side_effect=blocking_second_preflight
             ),
             patch.object(self.manager._idle, "set", side_effect=guarded_idle_set),
-            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+            patch("superbot.orchestrator.missing_requirements", return_value=[]),
         ):
             self.manager.stop()
             self.assertTrue(self.manager.wait_for_state("stopped", 2))
@@ -1376,10 +1376,10 @@ class OrchestratorTests(unittest.TestCase):
         with (
             patch.object(self.manager, "_start_worker", side_effect=delayed_start_worker),
             patch(
-                "vrbot.orchestrator.shutil.rmtree",
+                "superbot.orchestrator.shutil.rmtree",
                 side_effect=OSError("rmtree boom"),
             ),
-            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+            patch("superbot.orchestrator.missing_requirements", return_value=[]),
         ):
             self.manager.start()
             captured = self.manager._session_dir
@@ -1445,7 +1445,7 @@ class OrchestratorTests(unittest.TestCase):
                 self.manager, "_start_worker", side_effect=delayed_first_worker
             ),
             patch.object(self.runner, "start", side_effect=recording_start),
-            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+            patch("superbot.orchestrator.missing_requirements", return_value=[]),
         ):
             thread_a = threading.Thread(target=self.manager.start, daemon=True)
             thread_a.start()
@@ -1484,7 +1484,7 @@ class OrchestratorTests(unittest.TestCase):
         self.runner.fail_at = "wait_port"
         with (
             patch.object(self.manager, "_session_log", side_effect=failing_log),
-            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+            patch("superbot.orchestrator.missing_requirements", return_value=[]),
         ):
             self.manager.start()
             self.assertTrue(self.manager.wait_idle(2))
@@ -1505,7 +1505,7 @@ class OrchestratorTests(unittest.TestCase):
 
         with (
             patch.object(self.manager, "_preflight", side_effect=failing_preflight),
-            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+            patch("superbot.orchestrator.missing_requirements", return_value=[]),
         ):
             thread = threading.Thread(target=self.manager.start, daemon=True)
             thread.start()
@@ -1523,7 +1523,7 @@ class OrchestratorTests(unittest.TestCase):
 
     def test_stop_from_failed_clears_last_error(self) -> None:
         self.runner.host_steam = True
-        with patch("vrbot.orchestrator.missing_requirements", return_value=[]):
+        with patch("superbot.orchestrator.missing_requirements", return_value=[]):
             with self.assertRaises(PreflightError):
                 self.manager.start()
         self.assertEqual(self.manager.snapshot()["state"], "failed")
@@ -1537,7 +1537,7 @@ class OrchestratorTests(unittest.TestCase):
 
     def test_stop_from_failed_logs_pointer_removal_failure(self) -> None:
         self.runner.fail_at = "wait_port"
-        with patch("vrbot.orchestrator.missing_requirements", return_value=[]):
+        with patch("superbot.orchestrator.missing_requirements", return_value=[]):
             self.manager.start()
             self.assertTrue(self.manager.wait_idle(2))
         snapshot = self.manager.snapshot()
@@ -1579,7 +1579,7 @@ class OrchestratorTests(unittest.TestCase):
 
         with (
             patch.object(self.manager, "_preflight", side_effect=pausing_preflight),
-            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+            patch("superbot.orchestrator.missing_requirements", return_value=[]),
         ):
             thread_a = threading.Thread(target=self.manager.start, daemon=True)
             thread_a.start()
@@ -1621,10 +1621,10 @@ class OrchestratorTests(unittest.TestCase):
         self.manager._start_generation = 1
         self.manager._state = State.STARTING
         self.manager._started_at = object()
-        self.manager._socket_name = "vrbot-old"
+        self.manager._socket_name = "superbot-old"
         with (
             patch.object(self.runner, "write_pointer", side_effect=failing_write),
-            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+            patch("superbot.orchestrator.missing_requirements", return_value=[]),
         ):
             with self.assertRaises(RuntimeError):
                 self.manager._preflight(1)
@@ -1654,7 +1654,7 @@ class OrchestratorTests(unittest.TestCase):
                 self.manager._session_id = "session-b"
                 self.manager._session_dir = b_dir
                 self.manager._started_at = b_started
-                self.manager._socket_name = "vrbot-b"
+                self.manager._socket_name = "superbot-b"
             self.runner.pointer = b_pointer
             raise RuntimeError("pointer write boom")
 
@@ -1662,7 +1662,7 @@ class OrchestratorTests(unittest.TestCase):
         self.manager._state = State.STARTING
         with (
             patch.object(self.runner, "write_pointer", side_effect=superseding_write),
-            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+            patch("superbot.orchestrator.missing_requirements", return_value=[]),
         ):
             with self.assertRaises(RuntimeError):
                 self.manager._preflight(1)
@@ -1675,7 +1675,7 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(self.manager._session_id, "session-b")
         self.assertEqual(self.manager._session_dir, b_dir)
         self.assertIs(self.manager._started_at, b_started)
-        self.assertEqual(self.manager._socket_name, "vrbot-b")
+        self.assertEqual(self.manager._socket_name, "superbot-b")
         self.manager._state = State.STOPPED
 
     def test_preflight_mkdir_collision_preserves_existing_directory(self) -> None:
@@ -1686,9 +1686,9 @@ class OrchestratorTests(unittest.TestCase):
         marker.write_text("historical session\n")
 
         with (
-            patch("vrbot.orchestrator.os.urandom", return_value=b"\x00\x00\x00"),
-            patch("vrbot.orchestrator.datetime") as fake_datetime,
-            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+            patch("superbot.orchestrator.os.urandom", return_value=b"\x00\x00\x00"),
+            patch("superbot.orchestrator.datetime") as fake_datetime,
+            patch("superbot.orchestrator.missing_requirements", return_value=[]),
         ):
             fake_datetime.now.return_value = fixed_now
             with self.assertRaises(PreflightError):
@@ -1706,7 +1706,7 @@ class OrchestratorTests(unittest.TestCase):
                 "write_pointer",
                 side_effect=RuntimeError("pointer write boom"),
             ),
-            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+            patch("superbot.orchestrator.missing_requirements", return_value=[]),
         ):
             with self.assertRaises(PreflightError) as caught:
                 self.manager.start()
@@ -1734,7 +1734,7 @@ class OrchestratorTests(unittest.TestCase):
 
         with (
             patch.object(self.manager, "_preflight", side_effect=blocking_preflight),
-            patch("vrbot.orchestrator.missing_requirements", return_value=[]),
+            patch("superbot.orchestrator.missing_requirements", return_value=[]),
         ):
             thread = threading.Thread(target=self.manager.start, daemon=True)
             thread.start()
@@ -1766,10 +1766,49 @@ class OrchestratorTests(unittest.TestCase):
     def test_manual_mode_starts_manual_client(self) -> None:
         self.start()
         self.manager.set_mode("manual")
-        self.assertEqual(self.manager.snapshot()["mode"], "manual")
+        snapshot = self.manager.snapshot()
+        self.assertEqual(snapshot["mode"], "manual")
+        self.assertIn("manual", snapshot)
         argv = self.runner.starts[-1][1]
         self.assertTrue(argv[1].endswith("c0_manual.py"), argv)
         self.assertNotIn("--mode", argv)
+        self.assertIn("--input-socket", argv)
+        socket_path = Path(argv[argv.index("--input-socket") + 1])
+        self.assertEqual(socket_path.name, f"{self.manager._socket_name}-manual.sock")
+
+    def test_manual_input_requires_manual_mode(self) -> None:
+        self.start()
+        with self.assertRaisesRegex(ConflictError, "manual"):
+            self.manager.manual_input({"client": "browser-1234", "armed": False})
+
+    def test_manual_input_forwards_to_manual_socket(self) -> None:
+        self.start()
+        self.manager.set_mode("manual")
+        argv = self.runner.starts[-1][1]
+        socket_path = Path(argv[argv.index("--input-socket") + 1])
+        receiver = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+        receiver.bind(str(socket_path))
+        receiver.settimeout(1)
+        try:
+            self.assertTrue(
+                self.manager.manual_input(
+                    {
+                        "client": "browser-1234",
+                        "armed": True,
+                        "keys": ["w"],
+                        "buttons": [],
+                        "dx": 2,
+                        "dy": -1,
+                        "wheel": 0,
+                    }
+                )
+            )
+            payload = json.loads(receiver.recv(65536))
+            self.assertEqual(payload["keys"], ["w"])
+            self.assertTrue(self.manager.snapshot()["manual"]["armed"])
+        finally:
+            receiver.close()
+            socket_path.unlink(missing_ok=True)
 
     def test_manual_mode_switches_back_to_scripted_client(self) -> None:
         self.start()

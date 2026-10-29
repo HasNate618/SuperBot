@@ -9,8 +9,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from vrbot.config import load_config
-from vrbot.preview import PreviewCapture, _smoke_http, atomic_replace, crop_filter, newest_png
+from superbot.config import load_config
+from superbot.preview import PreviewCapture, _smoke_http, atomic_replace, newest_png
 
 
 class FakeRun:
@@ -21,23 +21,16 @@ class FakeRun:
     def __call__(self, argv, **kwargs):
         argv = list(argv)
         self.calls.append((argv, kwargs))
-        if argv[0] == "weston-screenshooter":
-            if self.fail == "screen":
-                return subprocess.CompletedProcess(argv, 1, "", "screen failed")
-            cwd = Path(kwargs["cwd"])
-            shot = cwd / "wayland-screenshot.png"
-            shot.write_bytes(b"PNG")
-            now = time.time_ns()
-            os.utime(shot, ns=(now, now))
-            return subprocess.CompletedProcess(argv, 0, "", "")
-        if argv[0] == "magick":
-            out = Path(argv[-1][4:])
-            if self.fail == "magick":
-                out.write_bytes(b"PARTIAL")
-                return subprocess.CompletedProcess(argv, 1, "", "magick failed")
-            out.write_bytes(b"JPEG")
-            return subprocess.CompletedProcess(argv, 0, "", "")
-        raise AssertionError(f"unexpected command: {argv}")
+        if argv[0] != "weston-screenshooter":
+            raise AssertionError(f"unexpected command: {argv}")
+        if self.fail == "screen":
+            return subprocess.CompletedProcess(argv, 1, "", "screen failed")
+        cwd = Path(kwargs["cwd"])
+        shot = cwd / "wayland-screenshot.png"
+        shot.write_bytes(b"PNG")
+        now = time.time_ns()
+        os.utime(shot, ns=(now, now))
+        return subprocess.CompletedProcess(argv, 0, "", "")
 
 
 class ExplodingCapture(PreviewCapture):
@@ -55,17 +48,6 @@ class BlockingCapture(PreviewCapture):
         self.stop_event.wait(2)
 
 
-class DirectoryOutputRun(FakeRun):
-    def __call__(self, argv, **kwargs):
-        argv = list(argv)
-        if argv[0] == "magick":
-            self.calls.append((argv, kwargs))
-            out = Path(argv[-1][4:])
-            out.mkdir()
-            return subprocess.CompletedProcess(argv, 1, "", "magick failed")
-        return super().__call__(argv, **kwargs)
-
-
 class PreviewTests(unittest.TestCase):
     def make_capture(
         self,
@@ -78,20 +60,15 @@ class PreviewTests(unittest.TestCase):
             width=1280,
             height=720,
             panel_height=32,
-            fps=8,
-            jpeg_quality=80,
+            fps=12,
             screenshooter="weston-screenshooter",
-            magick="magick",
             runtime_dir=base,
             wayland_display="wayland-test",
             work_dir=base,
-            publish_path=base / "latest.jpg",
+            publish_path=base / "latest.png",
             run=run,
             log=log or (lambda message: None),
         )
-
-    def test_crop_filter(self) -> None:
-        self.assertEqual(crop_filter(1280, 720, 32), "1280x688+0+32")
 
     def test_newest_png_rejects_stale_files(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
@@ -105,11 +82,11 @@ class PreviewTests(unittest.TestCase):
     def test_atomic_replace(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             base = Path(raw)
-            tmp = base / "latest.jpg.tmp"
-            dest = base / "latest.jpg"
-            tmp.write_bytes(b"JPEG")
+            tmp = base / "latest.png.tmp"
+            dest = base / "latest.png"
+            tmp.write_bytes(b"PNG")
             atomic_replace(tmp, dest)
-            self.assertEqual(dest.read_bytes(), b"JPEG")
+            self.assertEqual(dest.read_bytes(), b"PNG")
             self.assertFalse(tmp.exists())
 
     def test_frame_directory_failure_is_counted(self) -> None:
@@ -218,19 +195,6 @@ class PreviewTests(unittest.TestCase):
             self.assertTrue(any("screenshooter exited 1" in entry for entry in logs))
             self.assertTrue(any("screen failed" in entry for entry in logs))
 
-    def test_magick_failure_logs_stderr(self) -> None:
-        with tempfile.TemporaryDirectory() as raw:
-            base = Path(raw)
-            run = FakeRun()
-            logs: list[str] = []
-            capture = self.make_capture(base, run, log=logs.append)
-            self.assertTrue(capture.capture_once())
-            logs.clear()
-            run.fail = "magick"
-            self.assertFalse(capture.capture_once())
-            self.assertTrue(any("magick exited 1" in entry for entry in logs))
-            self.assertTrue(any("magick failed" in entry for entry in logs))
-
     def test_run_timeout_is_counted(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             base = Path(raw)
@@ -238,19 +202,17 @@ class PreviewTests(unittest.TestCase):
             self.assertFalse(capture.capture_once())
             self.assertEqual(capture.status()["errors"], 1)
 
-    def test_capture_once_publishes_frame(self) -> None:
+    def test_capture_once_publishes_raw_png(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             base = Path(raw)
             run = FakeRun()
             capture = self.make_capture(base, run)
             self.assertTrue(capture.capture_once())
-            self.assertEqual((base / "latest.jpg").read_bytes(), b"JPEG")
+            self.assertEqual((base / "latest.png").read_bytes(), b"PNG")
             self.assertEqual(capture.status()["errors"], 0)
             self.assertEqual(capture.status()["frames"], 1)
-            magick_call = next(call for call in run.calls if call[0][0] == "magick")
-            self.assertIn("1280x688+0+32", magick_call[0])
-            self.assertTrue(magick_call[0][-1].startswith("jpg:"))
-            self.assertEqual(list(base.glob("latest.jpg*.tmp")), [])
+            self.assertEqual([call[0] for call in run.calls], [["weston-screenshooter"]])
+            self.assertEqual(list(base.glob("latest.png*.tmp")), [])
 
     def test_failed_frame_keeps_previous_frame(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
@@ -258,43 +220,23 @@ class PreviewTests(unittest.TestCase):
             run = FakeRun()
             capture = self.make_capture(base, run)
             self.assertTrue(capture.capture_once())
-            before = (base / "latest.jpg").read_bytes()
+            before = (base / "latest.png").read_bytes()
             run.fail = "screen"
             self.assertFalse(capture.capture_once())
-            self.assertEqual((base / "latest.jpg").read_bytes(), before)
-            self.assertEqual(capture.status()["errors"], 1)
-
-    def test_failed_encode_keeps_previous_frame(self) -> None:
-        with tempfile.TemporaryDirectory() as raw:
-            base = Path(raw)
-            run = FakeRun()
-            capture = self.make_capture(base, run)
-            self.assertTrue(capture.capture_once())
-            before = (base / "latest.jpg").read_bytes()
-            run.fail = "magick"
-            self.assertFalse(capture.capture_once())
-            self.assertEqual((base / "latest.jpg").read_bytes(), before)
-            self.assertEqual(capture.status()["errors"], 1)
-            self.assertEqual(list(base.glob("latest.jpg*.tmp")), [])
-
-    def test_tmp_cleanup_oserror_does_not_escape(self) -> None:
-        with tempfile.TemporaryDirectory() as raw:
-            base = Path(raw)
-            capture = self.make_capture(base, DirectoryOutputRun())
-            self.assertFalse(capture.capture_once())
+            self.assertEqual((base / "latest.png").read_bytes(), before)
             self.assertEqual(capture.status()["errors"], 1)
 
 
 class SmokeHttpTests(unittest.TestCase):
     def test_smoke_http_serves_state_and_frame(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
-            latest = Path(raw) / "latest.jpg"
-            latest.write_bytes(b"JPEGDATA")
+            latest = Path(raw) / "latest.png"
+            latest.write_bytes(b"PNGDATA")
             cfg = load_config(None, env={})
             self.assertTrue(_smoke_http(cfg, latest))
             self.assertFalse(
                 any(
-                    thread.name == "vrbot-smoke-http" and thread.is_alive()
+                    thread.name == "superbot-smoke-http" and thread.is_alive()
                     for thread in threading.enumerate()
                 )
             )
@@ -302,21 +244,21 @@ class SmokeHttpTests(unittest.TestCase):
     def test_smoke_http_missing_frame_fails(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             cfg = load_config(None, env={})
-            self.assertFalse(_smoke_http(cfg, Path(raw) / "latest.jpg"))
+            self.assertFalse(_smoke_http(cfg, Path(raw) / "latest.png"))
 
     def test_smoke_http_bind_failure_returns_false(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
-            latest = Path(raw) / "latest.jpg"
-            latest.write_bytes(b"JPEGDATA")
+            latest = Path(raw) / "latest.png"
+            latest.write_bytes(b"PNGDATA")
             cfg = load_config(None, env={})
             with mock.patch(
-                "vrbot.dashboard.DashboardServer",
+                "superbot.dashboard.DashboardServer",
                 side_effect=OSError("bind failed"),
             ):
                 self.assertFalse(_smoke_http(cfg, latest))
             self.assertFalse(
                 any(
-                    thread.name == "vrbot-smoke-http" and thread.is_alive()
+                    thread.name == "superbot-smoke-http" and thread.is_alive()
                     for thread in threading.enumerate()
                 )
             )

@@ -9,7 +9,7 @@
 > pointing 7.22° → 5.08°.
 **Date:** 2026-10-23
 **Agent:** OpenCode `wbc-classical`
-**Question:** can a classical whole-body controller (QP/HQP over the floating-base G1, plus a gait generator) satisfy the vr-bot requirements R1–R8?
+**Question:** can a classical whole-body controller (QP/HQP over the floating-base G1, plus a gait generator) satisfy the SuperBot requirements R1–R8?
 
 **Script:** `spike/wbc_classical/wbc_spike.py`
 **Data:** `spike/wbc_classical/logs/summary.json`, `logs/run_all.txt`, per-scenario CSVs
@@ -304,7 +304,7 @@ The reason for this order: the standing half is already measured and useful to t
 3. **Upper-body vs balance authority.** The mixed standing sequence already shows wrist residuals up to **7.7 cm** during fast transitions and a **22°** yaw lag when look targets jump. Walking adds a much larger disturbance. The walking QP will sacrifice arm/head tracking to stay upright, and the game may see the hands lag or the HMD yaw lag. The measured steady-state residuals do not guarantee walking residuals.
 4. **Dodge timing.** R5 asks for <500 ms; the measured dodge takes **0.62–0.86 s** to peak. If the game's bullets require a 500 ms dodge, this body cannot do it with a lean/weight shift. A faster dodge needs a ballistic step or a different controller, which is walking-adjacent work.
 5. **No neck.** The HMD yaw is the torso yaw; a fast look turns the chest and perturbs balance. Standing look is measured and fine; walking + look is not. A game that needs independent head aim while walking will expose this body limitation.
-6. **The game pipe.** R6/R7 are only meaningful if Superhot under Proton accepts the synthetic HMD at all. C0 is still unrun `[CITED: docs/2026-10-23-vr-bot-state-of-findings.md]`. If the game rejects the pipe, no body controller matters.
+6. **The game pipe.** R6/R7 are only meaningful if Superhot under Proton accepts the synthetic HMD at all. C0 is still unrun `[CITED: docs/2026-10-23-SuperBot-state-of-findings.md]`. If the game rejects the pipe, no body controller matters.
 7. **The day estimates.** They are `[ASSUMPTION]`s. Contact-QP and gait tuning routinely take 2–3× the first estimate, especially on a body whose single-support behavior is already marginal. The measured 0.10 m weight-shift limit is a warning, not a guarantee that 5–10 days is enough.
 
 ---
@@ -327,8 +327,8 @@ The reason for this order: the standing half is already measured and useful to t
 ## 7. Reproduce
 
 ```bash
-cd /home/nate/Projects/vr-bot/spike/wbc_classical
-/home/nate/Projects/vr-bot/spike/e3/.venv/bin/python wbc_spike.py --scenario all
+cd /home/nate/Projects/SuperBot/spike/wbc_classical
+/home/nate/Projects/SuperBot/spike/e3/.venv/bin/python wbc_spike.py --scenario all
 # or: --scenario hold|look|reach|aim|punch|dodge|shift|lift|mixed
 ```
 

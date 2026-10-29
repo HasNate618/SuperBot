@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Callable
 
 from .config import Config, missing_requirements
+from .manual_input import ManualInputBridge
 from .preview import PreviewCapture
 from .processes import Aborted, ProcessHandle, ProcessRunner
 
@@ -157,6 +158,7 @@ class SessionManager:
         self._openxr_path: Path | None = None
         self._openxr_head = b""
         self._openxr_mark = b""
+        self._manual_input = ManualInputBridge()
 
     def state_value(self) -> str:
         with self._lock:
@@ -184,7 +186,7 @@ class SessionManager:
     def preview_path(self) -> Path | None:
         if self._session_dir is None:
             return None
-        return self._session_dir / "latest.jpg"
+        return self._session_dir / "latest.png"
 
     def start(self) -> None:
         with self._lock:
@@ -206,6 +208,7 @@ class SessionManager:
             self._game_pids = []
             self._stop_event.clear()
             self._idle.clear()
+            self._manual_input.clear()
         try:
             session_dir = self._preflight(generation)
         except Exception as exc:
@@ -260,7 +263,7 @@ class SessionManager:
         self._thread = threading.Thread(
             target=self._start_worker,
             args=(generation, session_dir),
-            name="vrbot-start",
+            name="superbot-start",
             daemon=True,
         )
         self._thread.start()
@@ -269,6 +272,7 @@ class SessionManager:
         with self._lock:
             if self._state == State.STOPPED:
                 return
+            self._manual_input.clear()
             if self._state == State.FAILED:
                 session_dir = self._session_dir
                 try:
@@ -285,7 +289,7 @@ class SessionManager:
             self._idle.clear()
             self._state = State.STOPPING
             self._condition.notify_all()
-            self._thread = threading.Thread(target=self._stop_worker, name="vrbot-stop", daemon=True)
+            self._thread = threading.Thread(target=self._stop_worker, name="superbot-stop", daemon=True)
         self._thread.start()
 
     def set_mode(self, mode: str) -> None:
@@ -295,6 +299,7 @@ class SessionManager:
             with self._lock:
                 if self._state != State.RUNNING:
                     raise ConflictError("session is not running")
+            self._manual_input.clear()
             self._stop_handle("pose", 2)
             try:
                 self._start_pose(mode)
@@ -305,6 +310,14 @@ class SessionManager:
                 raise
             with self._lock:
                 self._mode = mode
+
+    def manual_input(self, payload: dict) -> bool:
+        with self._lock:
+            if self._state != State.RUNNING:
+                raise ConflictError("session is not running")
+            if self._mode != "manual":
+                raise ConflictError("manual mode is not active")
+        return self._manual_input.update(payload)
 
     def kill(self, target: str) -> None:
         with self._lock:
@@ -401,6 +414,7 @@ class SessionManager:
             "logs": logs,
             "session_dir": str(session_dir) if session_dir is not None else None,
             "player_log": str(player_log),
+            "manual": self._manual_input.snapshot(),
         }
 
     def _reset_openxr(self) -> None:
@@ -656,7 +670,7 @@ class SessionManager:
         )
 
     def _start_weston(self) -> None:
-        self._socket_name = f"vrbot-{self._session_id.split('-')[-1]}"
+        self._socket_name = f"superbot-{self._session_id.split('-')[-1]}"
         weston_log = self._log("weston")
         argv = [
             self.cfg.paths.weston_bin,
@@ -697,13 +711,11 @@ class SessionManager:
             height=self.cfg.preview.height,
             panel_height=self.cfg.preview.panel_height,
             fps=self.cfg.preview.fps,
-            jpeg_quality=self.cfg.preview.jpeg_quality,
             screenshooter=self.cfg.paths.weston_screenshooter_bin,
-            magick=self.cfg.paths.magick_bin,
             runtime_dir=self.runtime_dir,
             wayland_display=self._socket_name,
             work_dir=self._session_dir,
-            publish_path=self._session_dir / "latest.jpg",
+            publish_path=self._session_dir / "latest.png",
             stop_event=self._stop_event,
             log=self._session_log,
         )
@@ -712,11 +724,19 @@ class SessionManager:
     def _start_pose(self, mode: str) -> None:
         pose_log = self._log("pose")
         pose_log.unlink(missing_ok=True)
+        self._manual_input.clear()
         if mode == "manual":
             manual = Path(self.cfg.paths.pose_client).with_name("c0_manual.py")
             if not manual.exists():
                 raise StartupError(f"manual pose client not found: {manual}")
-            argv = [sys.executable, str(manual)]
+            input_socket = self.runtime_dir / f"{self._socket_name}-manual.sock"
+            self._manual_input.configure(input_socket)
+            argv = [
+                sys.executable,
+                str(manual),
+                "--input-socket",
+                str(input_socket),
+            ]
             needle = "connected 127.0.0.1"
         else:
             argv = [
@@ -920,7 +940,7 @@ class SessionManager:
                     self._monitor_thread = threading.Thread(
                         target=self._monitor_worker,
                         args=(generation,),
-                        name="vrbot-monitor",
+                        name="superbot-monitor",
                         daemon=True,
                     )
                     self._monitor_thread.start()
@@ -990,6 +1010,7 @@ class SessionManager:
         return handle
 
     def _cleanup(self) -> None:
+        self._manual_input.clear()
         failures: list[str] = []
         try:
             deadline = time.monotonic() + self.cfg.timeouts.stop_sec

@@ -1,4 +1,4 @@
-# vrbot configuration — copy to config.toml and edit.
+# superbot configuration — copy to config.toml and edit.
 #
 # Every value below is read at startup and validated; a bad path fails loudly
 # before anything is launched. `config.toml` is git-ignored because it holds
@@ -15,7 +15,6 @@ monado_bin = "/run/wrappers/bin/monado-service"
 weston_bin = "weston"
 weston_screenshooter_bin = "weston-screenshooter"
 weston_debug_bin = "weston-debug"
-magick_bin = "magick"
 
 # Steam launcher and the game executable.
 # steam_bin: the steam *client* launcher, not the runtime's steam binary.
@@ -27,12 +26,12 @@ game_exe = "/home/YOUR_USER/Games/SUPERHOT VR/SUPERHOT_VR.exe"
 pose_client = "spike/c0/c0_client.py"
 
 # OpenXR runtime pointer the game will resolve to.
-# READ-ONLY: vrbot validates that this file exists and is readable; it never
+# READ-ONLY: superbot validates that this file exists and is readable; it never
 # writes or replaces it. Create it yourself, see README "Prerequisites".
 openxr_active_runtime = "/home/YOUR_USER/.config/openxr/1/active_runtime.json"
 
 # Where session logs and frames are written.
-session_root = "/home/YOUR_USER/.local/state/vr-bot/sessions"
+session_root = "/home/YOUR_USER/.local/state/SuperBot/sessions"
 
 [launch]
 # Steam shortcut ID of the non-Steam game entry. Find it in
@@ -61,8 +60,7 @@ startup_timeout_sec = 300
 width = 1280
 height = 720
 panel_height = 32
-fps = 8
-jpeg_quality = 80
+fps = 12
 
 [dashboard]
 host = "127.0.0.1"

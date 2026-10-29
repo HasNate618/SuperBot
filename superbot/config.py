@@ -10,7 +10,7 @@ from typing import Any, Mapping
 
 
 class ConfigError(ValueError):
-    """Raised when config.toml or a VRBOT_ override is invalid."""
+    """Raised when config.toml or a SUPERBOT_ override is invalid."""
 
 
 @dataclass(frozen=True)
@@ -19,7 +19,6 @@ class PathsConfig:
     weston_bin: str
     weston_screenshooter_bin: str
     weston_debug_bin: str
-    magick_bin: str
     steam_bin: str
     game_exe: str
     pose_client: str
@@ -45,7 +44,6 @@ class PreviewConfig:
     height: int
     panel_height: int
     fps: float
-    jpeg_quality: int
 
 
 @dataclass(frozen=True)
@@ -77,12 +75,11 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         "weston_bin": "weston",
         "weston_screenshooter_bin": "weston-screenshooter",
         "weston_debug_bin": "weston-debug",
-        "magick_bin": "magick",
         "steam_bin": os.path.expanduser("~/.local/bin/steam"),
         "game_exe": "SUPERHOT_VR.exe",
         "pose_client": "spike/c0/c0_client.py",
         "openxr_active_runtime": os.path.expanduser("~/.config/openxr/1/active_runtime.json"),
-        "session_root": os.path.expanduser("~/.local/state/vr-bot/sessions"),
+        "session_root": os.path.expanduser("~/.local/state/SuperBot/sessions"),
     },
     "launch": {
         "shortcut_id": "18251483899710406656",
@@ -98,8 +95,7 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         "width": 1280,
         "height": 720,
         "panel_height": 32,
-        "fps": 8.0,
-        "jpeg_quality": 80,
+        "fps": 12.0,
     },
     "dashboard": {
         "host": "127.0.0.1",
@@ -166,8 +162,6 @@ def _validate(cfg: Config) -> None:
         raise ConfigError("preview.panel_height must be >= 0 and less than preview.height")
     if cfg.preview.fps <= 0 or not math.isfinite(cfg.preview.fps):
         raise ConfigError("preview.fps must be positive")
-    if not 1 <= cfg.preview.jpeg_quality <= 100:
-        raise ConfigError("preview.jpeg_quality must be between 1 and 100")
     host = cfg.dashboard.host.strip()
     if not host:
         raise ConfigError("dashboard.host must not be empty")
@@ -238,9 +232,9 @@ def load_config(
             merged[section][key] = _coerce(value, DEFAULTS[section][key], f"{section}.{key}")
 
     for env_key, raw in (env or {}).items():
-        if not env_key.startswith("VRBOT_"):
+        if not env_key.startswith("SUPERBOT_"):
             continue
-        rest = env_key[len("VRBOT_") :]
+        rest = env_key[len("SUPERBOT_") :]
         if "_" not in rest:
             raise ConfigError(f"invalid environment override {env_key}")
         raw_section, raw_key = rest.split("_", 1)
@@ -292,7 +286,6 @@ def missing_requirements(cfg: Config) -> list[str]:
         ("weston", cfg.paths.weston_bin, os.X_OK),
         ("weston-screenshooter", cfg.paths.weston_screenshooter_bin, os.X_OK),
         ("weston-debug", cfg.paths.weston_debug_bin, os.X_OK),
-        ("magick", cfg.paths.magick_bin, os.X_OK),
         ("steam", cfg.paths.steam_bin, os.X_OK),
         ("game", cfg.paths.game_exe, os.R_OK),
         ("openxr runtime", cfg.paths.openxr_active_runtime, os.R_OK),

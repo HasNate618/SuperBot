@@ -1,6 +1,6 @@
 # d1 decision models — capabilities, runtime parity, and whether d1 is Laya again
 
-**Date:** 2026-10-28. **Scope:** Liquid AI open d1 (`d1-2B`, `d1-Omni-2B`, and the runtime support around them), measured against the job in `docs/2026-10-23-vr-bot-design.md` §9: name a skill and a side from one frame plus a ≤10-line digest, on CPU, in place of MiniCPM5-2B (20 s p50 / 31 s p95) and LFM2.5-3B (0.21 s, degenerate).
+**Date:** 2026-10-28. **Scope:** Liquid AI open d1 (`d1-2B`, `d1-Omni-2B`, and the runtime support around them), measured against the job in `docs/2026-10-23-SuperBot-design.md` §9: name a skill and a side from one frame plus a ≤10-line digest, on CPU, in place of MiniCPM5-2B (20 s p50 / 31 s p95) and LFM2.5-3B (0.21 s, degenerate).
 
 **Claim tags.** `[MEASURED]` = a local spike on this machine, file named. `[CITED: url]` = a source I read today. `[VENDOR]` after a citation means the number was produced by Liquid AI or by a model's own authors. `[ASSUMPTION]` = my reasoning, untested. **The desk study below is `[CITED]`/`[VENDOR]` only — it was written without touching the model.** Local CPU latency was then measured on this machine and is recorded in **§6b**, which supersedes the three places below that say no CPU image number exists (§0, §6, §9.1).
 
@@ -10,7 +10,7 @@
 
 **d1 is not Laya, and the difference is structural rather than incremental.** Laya 421M was a 395M ModernBERT encoder with a 26M head, 512-token context, no vision, no first-party runtime, no paper, and a vendor card that admitted near-chance zero-shot accuracy. d1-2B is a 1.92B LFM3 multimodal backbone (1.73B LM + 164M vision encoder + 25M projector) with a 128K context, an in-tree llama.cpp implementation merged upstream into `ggml-org/llama.cpp`, official GGUF/ONNX/MLX exports, and vendor numbers reported against six independently-maintained public decision boards. `[CITED: https://huggingface.co/LiquidAI/d1-2B]` `[CITED: https://huggingface.co/LiquidAI/LFM3-VL-2B]` `[CITED: https://github.com/ggml-org/llama.cpp/pull/31275]`
 
-**But it is not yet a brain, and the reason is the vision path, not the model.** The only independent d1 number anywhere is **text-only**: a third party measured `d1-2B` Q4_K_M at **1.7 s p50 at 4 CPU threads, 1.85 GB RSS**, on 231 text cases. That is ~12× faster than MiniCPM5-2B's 20 s p50 and it fits beside Superhot + Monado + MuJoCo with room to spare. `[CITED: https://github.com/prometheion/nerve-protocol/issues/178]` **No *third-party* CPU number existed for a call including a picture** when this was written; it has since been measured here — **7.0 s at 116 image tokens, 36–39 s at 591** (§6b). The picture is the part vr-bot needs, and the image budget is 4096 tokens per picture, which on CPU is a multi-second prefill on its own. `[CITED: https://huggingface.co/LiquidAI/d1-2B-GGUF]` `[ASSUMPTION]` So d1's headline "millisecond" advantage is a GPU claim that may not survive the CPU translation, exactly like every other Liquid number we have looked at.
+**But it is not yet a brain, and the reason is the vision path, not the model.** The only independent d1 number anywhere is **text-only**: a third party measured `d1-2B` Q4_K_M at **1.7 s p50 at 4 CPU threads, 1.85 GB RSS**, on 231 text cases. That is ~12× faster than MiniCPM5-2B's 20 s p50 and it fits beside Superhot + Monado + MuJoCo with room to spare. `[CITED: https://github.com/prometheion/nerve-protocol/issues/178]` **No *third-party* CPU number existed for a call including a picture** when this was written; it has since been measured here — **7.0 s at 116 image tokens, 36–39 s at 591** (§6b). The picture is the part SuperBot needs, and the image budget is 4096 tokens per picture, which on CPU is a multi-second prefill on its own. `[CITED: https://huggingface.co/LiquidAI/d1-2B-GGUF]` `[ASSUMPTION]` So d1's headline "millisecond" advantage is a GPU claim that may not survive the CPU translation, exactly like every other Liquid number we have looked at.
 
 **Recommended posture: worth one cheap test, and the cheap test is text-first, not pixels.** Ask d1-2B `choice` over the ≤10-line digest *without* an image (1.7 s, measured by a third party, no vision encoder at all) and compare to a majority-class baseline on held-out Superhot frames. Liquid's own game demo does exactly this — "The AI does not receive the entire game screen", it gets a text summary of lane occupancy — and it runs the *hosted* `d1.1`, not local `d1-2B`. `[CITED: https://docs.liquid.ai/examples/laptop-examples/build-a-game-with-decision-models]` If d1 cannot beat a frequency table on the digest, pixels will not rescue it and we stop. If it can, the image path is worth 1.9 GB and one ONNX download.
 
@@ -69,7 +69,7 @@ Every question is `{type, instructions, ...}`; every answer repeats its `type`. 
 
 ## 3. Runtime parity — the table that decides this
 
-| Runtime | Minimum version | `noul` | `choice` | `choice multiple` | `score` | `text`/`number`/`date` | `number`+range (estimate) | `box`/`boxes` | Image | Video | Verdict for vr-bot |
+| Runtime | Minimum version | `noul` | `choice` | `choice multiple` | `score` | `text`/`number`/`date` | `number`+range (estimate) | `box`/`boxes` | Image | Video | Verdict for SuperBot |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | **llama.cpp** | **b11960 / v0.8.0+** | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | ✅ (≤4096 tok) | ✅ (needs `ffmpeg` in PATH) | **Usable today for our exact contract.** |
 | **ONNX Runtime** | — | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ (per temporal patch) | Full typed answers **via the repo's Python checkpoint code**; q4/q8 CPU builds. |
@@ -105,7 +105,7 @@ Every question is `{type, instructions, ...}`; every answer repeats its `type`. 
 
 `[CITED: https://huggingface.co/LiquidAI/d1-2B-ONNX]` `[CITED: https://huggingface.co/LiquidAI/LFM3-VL-2B]` `[CITED: https://huggingface.co/LiquidAI/LFM3-1.7B]` `[CITED: https://docs.liquid.ai/lfm/models/complete-library]` `[CITED: https://github.com/prometheion/nerve-protocol/issues/178]`
 
-RAM figure for MiniCPM5-2B (3,932 MiB) and MiMo (7,346 MiB) are from `docs/2026-10-23-vr-bot-state-of-findings.md` §6 — `[MEASURED]`, ours.
+RAM figure for MiniCPM5-2B (3,932 MiB) and MiMo (7,346 MiB) are from `docs/2026-10-23-SuperBot-state-of-findings.md` §6 — `[MEASURED]`, ours.
 
 ---
 
@@ -206,7 +206,7 @@ Taken after the desk study, on the same box (`/v1/systemone`, `POST`). This clos
 
 ---
 
-## 8. What this means for vr-bot
+## 8. What this means for SuperBot
 
 **Does d1 plausibly beat a majority-class baseline on Superhot frames?** `[ASSUMPTION]` **Plausibly, on the digest; unknowably, on pixels.** The digest is exactly d1's designed input: a short text or JSON state with named questions and 3–16 declared options. `hold` will be the majority class and the model will likely over-predict it, which is the same degeneracy as LFM2.5-3B's 73 % `navigate_to` — but visible: we get `probabilities` over all skills, so "collapsed" is a *measurement* (`p(hold) ≈ 1.0` on frames where it should not be) rather than an inference from token counts. The pixel path has no evidence for or against, because no benchmark in existence covers flat-shaded game frames, and the closest abstract-reasoning row (VisualPuzzles 29.9) is bad.
 
@@ -242,4 +242,4 @@ Practical notes for whoever runs it: do **not** reuse port 11434 (the user is re
 
 ## 10. Sources read
 
-Primary: `huggingface.co/LiquidAI/d1-2B`, `/d1-2B-GGUF`, `/d1-2B-ONNX`, `/d1-Omni-2B`, `/LFM3-VL-2B`, `/LFM3-1.7B` (raw READMEs + `LICENSE`), `docs.liquid.ai/lfm/models/decision-models`, `/lfm/models/complete-library`, `/guides/decision-model-guide`, `/examples/laptop-examples/build-a-game-with-decision-models`, `/lfm/key-concepts/vision-capabilities`, `/deployment/on-device/onnx`, `liquid.ai/blog/open-d1`, `liquid.ai/blog`. GitHub: `ggml-org/llama.cpp` PRs #31275, #31283, #31309, #29818, #29321; issues #31150, #30482, #30064, #30161. Third-party: `prometheion/nerve-protocol` issues #178 and #141, `kevinmichaelchen/effect-coffee-shop` #123/#126, `pennel-app/pennel` #53. Hugging Face discussion and model-search APIs. Prior art: `../stubborn-gamer/research/squads/wave78-laya-capabilities.md`. Local context: `docs/2026-10-23-vr-bot-state-of-findings.md` §6–§7, `docs/2026-10-23-vr-bot-design.md` §9, `research/system1-game-agents.md` §4.2/§7.
+Primary: `huggingface.co/LiquidAI/d1-2B`, `/d1-2B-GGUF`, `/d1-2B-ONNX`, `/d1-Omni-2B`, `/LFM3-VL-2B`, `/LFM3-1.7B` (raw READMEs + `LICENSE`), `docs.liquid.ai/lfm/models/decision-models`, `/lfm/models/complete-library`, `/guides/decision-model-guide`, `/examples/laptop-examples/build-a-game-with-decision-models`, `/lfm/key-concepts/vision-capabilities`, `/deployment/on-device/onnx`, `liquid.ai/blog/open-d1`, `liquid.ai/blog`. GitHub: `ggml-org/llama.cpp` PRs #31275, #31283, #31309, #29818, #29321; issues #31150, #30482, #30064, #30161. Third-party: `prometheion/nerve-protocol` issues #178 and #141, `kevinmichaelchen/effect-coffee-shop` #123/#126, `pennel-app/pennel` #53. Hugging Face discussion and model-search APIs. Prior art: `../stubborn-gamer/research/squads/wave78-laya-capabilities.md`. Local context: `docs/2026-10-23-SuperBot-state-of-findings.md` §6–§7, `docs/2026-10-23-SuperBot-design.md` §9, `research/system1-game-agents.md` §4.2/§7.

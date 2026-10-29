@@ -9,10 +9,10 @@
 > not contain walking**, and the best measured hold is a standing clip with an anchor-index freeze at
 > **RMS 1.3×10⁻⁴ m/s**. (b) The **arm-override fantasy** is dead: C3j measured the QP-on-SONIC hybrid
 > at 16 variants and it loses (12.84 cm / 22.40° vs 3.51 cm / 7.22°). See
-> `docs/2026-10-23-vr-bot-state-of-findings.md` for current status.
+> `docs/2026-10-23-SuperBot-state-of-findings.md` for current status.
 **Date:** 2026-10-23
 **Agent:** OpenCode `wbc-policy`
-**Question:** can a released learned whole-body controller for the Unitree G1 (running headless in MuJoCo on this laptop, fed VR-style head/hand targets) satisfy requirements R1–R8, and which one should we adopt as the `BodyCommand` executor for vr-bot?
+**Question:** can a released learned whole-body controller for the Unitree G1 (running headless in MuJoCo on this laptop, fed VR-style head/hand targets) satisfy requirements R1–R8, and which one should we adopt as the `BodyCommand` executor for SuperBot?
 **Script:** `spike/wbc/sonic_runner.py` (headless runner) + `spike/wbc/measure_matrix.py` (full 3-model matrix) + `spike/wbc/make_motion_csv.py` (motion conversion)
 **Data:** `spike/wbc/logs/summary.json`, `spike/wbc/logs/measure_matrix.txt`, per-run JSONLs in `spike/wbc/logs/`
 **Models:** GEAR-SONIC default (`weights/sonic`, enc 1762→64, dec 994→29), v1.1 (`weights/sonic_v11`, 1751→64), low-latency (`weights/sonic_ll`, 1247→64); TWIST2 ckpt downloaded (`weights/twist2/twist2_1017_20k.onnx`, 1432→29, untested)
@@ -24,7 +24,7 @@
 
 ## 0. Verdict
 
-**Yes, with a caveat on one axis.** The released NVIDIA GEAR-SONIC controller, running headless in MuJoCo at 50 Hz on this laptop, (a) walks ~6 m in 10 s under its own balance, (b) holds to 2.9–3.6 cm over 20 s while taking VR head/hand overrides, (c) accepts independent head and wrist targets (head y ~0.15–0.18 m reach, wrist orientation partial), and (d) transitions walk→hold→walk without falling. It does not need retraining, it is not a velocity tracker, and its upper-body authority is decoupled (RL lower body + IK upper body inside the encoder). Of the three SONIC variants tested, **default is the recommended executor for vr-bot**; v1.1 trades walk-tracking for stillness and loses the head-yaw→torso coupling that we want for aiming; low-latency's VR tracking is worse and its obs layout is only partly understood.
+**Yes, with a caveat on one axis.** The released NVIDIA GEAR-SONIC controller, running headless in MuJoCo at 50 Hz on this laptop, (a) walks ~6 m in 10 s under its own balance, (b) holds to 2.9–3.6 cm over 20 s while taking VR head/hand overrides, (c) accepts independent head and wrist targets (head y ~0.15–0.18 m reach, wrist orientation partial), and (d) transitions walk→hold→walk without falling. It does not need retraining, it is not a velocity tracker, and its upper-body authority is decoupled (RL lower body + IK upper body inside the encoder). Of the three SONIC variants tested, **default is the recommended executor for SuperBot**; v1.1 trades walk-tracking for stillness and loses the head-yaw→torso coupling that we want for aiming; low-latency's VR tracking is worse and its obs layout is only partly understood.
 
 **Recommended route (route A):** adopt SONIC default in teleop (mode 1) as the single always-running executor. The VLM names goals; a thin `BodyCommand`→VR-target adapter (root velocity + yaw rate + height, head pose, two hand poses, closure, authority bitmask, TTL) feeds `vr_pos/vr_orn/vr_delta/vr_orn_delta` into the runner; the policy owns all 29 joints and the base. This is the cheapest path that already passes R1–R7 in simulation. R8 (clear a stage) is a integration task, not a controls task, once R1–R7 hold.
 
@@ -41,7 +41,7 @@
 Reconstructs the observation assembly from `gear_sonic_deploy/src/g1/g1_deploy_onnx_ref/src/g1_deploy_onnx_ref.cpp` (`GetObservationRegistry` + gatherers) and drives the released `model_encoder.onnx` / `model_decoder.onnx` at 50 Hz with 500 Hz PD torque (`Kp/Kd` from `policy_parameters.hpp`, `ACTION_SCALE`, `DEFAULT`).
 
 - CLI: `--motion --mode {0,1} --seconds --ramp --log --verbose --freeze N --start N --model {default,v11,lowlat}`.
-- Mode 0 = pure motion tracking (SMPL/G1). Mode 1 = teleop: lower-body joints + VR 3-point targets (the mode vr-bot needs).
+- Mode 0 = pure motion tracking (SMPL/G1). Mode 1 = teleop: lower-body joints + VR 3-point targets (the mode SuperBot needs).
 - Added VR override hooks: `vr_pos`, `vr_orn`, `vr_delta` (additive to the motion's VR points), `vr_orn_delta` (left-multiply per point), plus `freeze_schedule`, `step_at/step_delta/step_orn_delta` for transition tests. Fixed an ndarray-reshape bug in the orientation delta path.
 - Metrics per tick: `lw/rw/hw` (wrist/head positions, root-relative), `torso_q/lw_q/rw_q`, `vr_t/vr_o` (last commanded VR targets from `self.last_vr`), `x/y/z`, `up_z`, `q_err`, `act_norm`, `ref_x/ref_y`. Fall inferred from `len(rows)<N` (no `fell` key).
 - `last_vr` is captured **inside the teleop branch before obs assembly** (an earlier placement after obs assignment read stale zeros).
@@ -228,7 +228,7 @@ If (1) or (2) fails, route A is dead and we go to route 2/3. If (3) fails but (1
 
 ```bash
 # environment
-cd /home/nate/Projects/vr-bot
+cd /home/nate/Projects/SuperBot
 # runner + matrix need mujoco (in spike/e3 venv)
 spike/e3/.venv/bin/python spike/wbc/sonic_runner.py --motion squat_001__A359 --mode 1 --seconds 20 --freeze 0 --log /tmp/hold.jsonl --verbose
 spike/e3/.venv/bin/python spike/wbc/sonic_runner.py --motion walk_forward_amateur_001__A001 --mode 1 --seconds 10 --start 600 --log /tmp/walk.jsonl --verbose
@@ -284,4 +284,4 @@ Total encoder input 1762. Mode 0 (g1) uses jp+jv (10×29) + root z (10+1) + anch
 - `github.com/amazon-far/TWIST2` (MIT; ckpt `assets/ckpts/twist2_1017_20k.onnx`)
 - `github.com/InternRobotics/OpenHomie`, `github.com/Nagi-ovo/mjlab-homierl`
 - `github.com/NVlabs/HOVER`, `github.com/LeCAR-Lab/human2humanoid`, `github.com/edpsw/exbody2`, `github.com/InternRobotics/HugWBC`
-- `research/wbc-classical-proposal.md`, `research/c3fgh-results.md`, `docs/2026-10-23-vr-bot-state-of-findings.md`
+- `research/wbc-classical-proposal.md`, `research/c3fgh-results.md`, `docs/2026-10-23-SuperBot-state-of-findings.md`

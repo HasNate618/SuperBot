@@ -12,7 +12,7 @@ import numpy as np
 import onnxruntime as rt
 
 ROOT = Path(__file__).resolve().parent
-MODEL_XML = Path("/home/nate/Projects/vr-bot/spike/e3/vendor/mujoco_menagerie/unitree_g1/scene_mjx.xml")
+MODEL_XML = Path("/home/nate/Projects/SuperBot/spike/e3/vendor/mujoco_menagerie/unitree_g1/scene_mjx.xml")
 POLICY = ROOT / "policy/g1_policy.onnx"
 LOGS = ROOT / "logs"
 

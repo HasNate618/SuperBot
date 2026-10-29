@@ -3,7 +3,7 @@
 **Date:** 2026-10-23
 **Agent:** `s1-research`
 **Status:** source-verified brief. No code was written and no experiments were run for this document.
-**Question:** how do published game and robotics agents turn slow knowledge (LLM/VLM, seconds) into real actions (10–50+ Hz), and which of those patterns should vr-bot copy, adapt, or reject?
+**Question:** how do published game and robotics agents turn slow knowledge (LLM/VLM, seconds) into real actions (10–50+ Hz), and which of those patterns should SuperBot copy, adapt, or reject?
 
 **Claim tags.** Every factual statement is one of:
 
@@ -18,14 +18,14 @@ Table rows in §2 are **CITED** via their Source column. The tags in prose apply
 ## 0. Bottom line
 
 - **No system reviewed here runs an LLM synchronously inside a 50 Hz motor loop.** Systems either put the slow model above a fast loop that owns timing (Voyager, Odyssey, Cradle, SayCan, Helix, GR00T N1, Hi Robot), or make the slow model itself the control loop at 1–5 Hz (RT-2). The fast loop is one of: a scripted game/robot API (Voyager, Odyssey, Cradle), a learned skill or reactive policy (SayCan, VPT, STEVE-1, SIMA, ACT, π0), or a latent-conditioned controller (Helix, GR00T N1). **[CITED]** (sources below)
-- **The closest precedent for vr-bot's shape is not a humanoid VLA.** It is an asynchronous, validated command suggester over a deterministic 50 Hz loop: DistilGPT-2 on a Jetson proposes `(v, ω)` every ~186 ms, an FSM accepts ~80% of suggestions, and the loop never blocks. **[CITED]** [doi:10.3390/make8020049](https://doi.org/10.3390/make8020049)
+- **The closest precedent for SuperBot's shape is not a humanoid VLA.** It is an asynchronous, validated command suggester over a deterministic 50 Hz loop: DistilGPT-2 on a Jetson proposes `(v, ω)` every ~186 ms, an FSM accepts ~80% of suggestions, and the loop never blocks. **[CITED]** [doi:10.3390/make8020049](https://doi.org/10.3390/make8020049)
 - **Dual-system systems pass a narrow interface, not text at 200 Hz.** Helix passes a single latent vector at 7–9 Hz into a 200 Hz controller; Hi Robot passes an atomic language command once per second into π0. **[CITED]** [Figure Helix](https://www.figure.ai/news/helix), [Hi Robot](https://arxiv.org/abs/2502.19417)
 - **For Superhot, `hold` is the enabling skill.** The game advances time only when the player moves. **[CITED]** [superhotgame.com/superhot-vr](https://www.superhotgame.com/superhot-vr), [Steam app 617830](https://store.steampowered.com/app/617830/). Our body's zero command is not a hold: the G1 policy drifts **0.475 m in 5 s** at zero command. **[MEASURED]** `stubborn-gamer/SEED.md` §3. The brain's 5–20 s latency is safe only if `hold` actually holds; otherwise the world advances while the brain thinks. **[ASSUMPTION]**
 - **Build the skill loop, not a policy.** VPT/STEVE-1/SIMA/RT-2/π0 all need large demonstration corpora or teleoperation. We have neither. Our E3 commander is already a skill library; the work is to give it an async command envelope, an active hold, pixel-only target tracking, and achieved-state termination.
 
 ---
 
-## 1. vr-bot's loops, for comparison
+## 1. SuperBot's loops, for comparison
 
 | Loop | Rate | Period | What it owns | Evidence |
 | --- | ---: | ---: | --- | --- |
@@ -49,7 +49,7 @@ The body is also limited, and those limits shape which published patterns transf
 
 ### 2.1 Slow planner + skill/code API
 
-These systems keep the slow model above a scripted interface. They are the closest architectural match to vr-bot today.
+These systems keep the slow model above a scripted interface. They are the closest architectural match to SuperBot today.
 
 Where a paper does not publish a control frequency, the cell gives the cadence it does publish (seconds per call, 0.5 s screenshots, 8-action chunks) rather than inventing Hz.
 
@@ -95,7 +95,7 @@ These systems explicitly split slow reasoning from fast control and define the i
 
 ## 3. Patterns: copy, adapt, reject
 
-| Pattern | Best exemplars | Verdict for vr-bot | Why |
+| Pattern | Best exemplars | Verdict for SuperBot | Why |
 | --- | --- | --- | --- |
 | **Skill library / code-as-policy** | Voyager, Odyssey, Cradle, SayCan | **Adapt** | Our commander already is a skill library, and a fixed one is safer than arbitrary generated code. Use LLM codegen offline to author skills, never in the 50 Hz path. SayCan's "LLM selects, learned skill executes" is the right division of labor; we can keep the LLM selection and replace the learned skill with scripted IK. |
 | **Instruction-conditioned reactive policy** | VPT, STEVE-1, SIMA, RT-1, RT-2 | **Reject for v1; revisit after demos** | No Superhot demonstration corpus, no policy in the loop, 8 GB card, and no honest way to bootstrap a pixel policy without teleoperation. A learned policy is the only route to sub-100 ms reactions, but Superhot's time dilation means we do not need that yet. |

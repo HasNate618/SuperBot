@@ -49,7 +49,16 @@ section {
 }
 
 .preview { position: relative; padding: 0; overflow: hidden; }
-.preview img { display: block; width: 100%; aspect-ratio: 1280 / 688; object-fit: contain; background: #000; }
+.preview-clip { position: relative; aspect-ratio: 1280 / 688; overflow: hidden; background: #000; }
+.preview-clip img {
+  display: block;
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: auto;
+  transform: scaleY(-1);
+}
 #preview-wait {
   position: absolute;
   inset: 0;
@@ -57,7 +66,33 @@ section {
   place-items: center;
   color: var(--muted);
   background: #000c;
+  pointer-events: none;
 }
+
+.manual-overlay {
+  position: absolute;
+  inset: auto 0 0;
+  display: none;
+  justify-content: center;
+  padding: 12px;
+  pointer-events: none;
+}
+.manual-overlay.visible { display: flex; }
+.manual-panel {
+  display: grid;
+  gap: 3px;
+  max-width: 90%;
+  padding: 9px 14px;
+  border: 1px solid #3a4653;
+  border-radius: 9px;
+  background: #000b;
+  text-align: center;
+}
+.manual-panel strong { color: var(--text); font-size: 14px; }
+.manual-panel span { color: var(--muted); font-size: 12px; }
+.manual-mode .preview { cursor: pointer; }
+.manual-active .preview { cursor: none; }
+.manual-active .manual-panel { border-color: var(--accent); }
 
 button, select {
   background: #26303a;

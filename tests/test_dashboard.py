@@ -12,9 +12,10 @@ import urllib.request
 from pathlib import Path
 from unittest.mock import patch
 
-from vrbot.config import load_config
-from vrbot.dashboard import DashboardHandler, DashboardServer
-from vrbot.orchestrator import ConflictError, MODES, PreflightError, SessionManager
+from superbot.config import load_config
+from superbot.dashboard import DashboardHandler, DashboardServer
+from superbot.manual_input import ManualInputError, ManualInputUnavailable
+from superbot.orchestrator import ConflictError, MODES, PreflightError, SessionManager
 
 
 class FakeManager:
@@ -31,10 +32,11 @@ class FakeManager:
         self.start_calls = 0
         self.stop_calls = 0
         self.kill_calls: list[str] = []
+        self.manual_calls: list[dict] = []
         self.logs = {name: base / f"{name}.log" for name in ("session", "monado", "weston", "steam", "pose")}
         for path in self.logs.values():
             path.write_text("")
-        self.latest = base / "latest.jpg"
+        self.latest = base / "latest.png"
 
     def start(self) -> None:
         self.start_calls += 1
@@ -54,6 +56,14 @@ class FakeManager:
         if self.state != "running":
             raise ConflictError("session is not running")
         self.mode = mode
+
+    def manual_input(self, payload: dict) -> bool:
+        if self.state != "running":
+            raise ConflictError("session is not running")
+        if self.mode != "manual":
+            raise ConflictError("manual mode is not active")
+        self.manual_calls.append(payload)
+        return bool(payload.get("armed"))
 
     def kill(self, target: str) -> None:
         if target not in ("game", "steam"):
@@ -122,13 +132,15 @@ class DashboardTests(unittest.TestCase):
         self.thread.join(2)
         self.temp.cleanup()
 
-    def request(self, method: str, path: str, body=None, raw: bytes | None = None):
+    def request(self, method: str, path: str, body=None, raw: bytes | None = None, headers=None):
         data = raw if raw is not None else (json.dumps(body).encode() if body is not None else None)
+        request_headers = {"Content-Type": "application/json"}
+        request_headers.update(headers or {})
         request = urllib.request.Request(
             f"http://127.0.0.1:{self.port}{path}",
             data=data,
             method=method,
-            headers={"Content-Type": "application/json"},
+            headers=request_headers,
         )
         try:
             with urllib.request.urlopen(request, timeout=5) as response:
@@ -169,12 +181,12 @@ class DashboardTests(unittest.TestCase):
             self.assertEqual(status, 200)
 
     def test_frame_404_then_200(self) -> None:
-        status, _ = self.request("GET", "/api/frame.jpg")
+        status, _ = self.request("GET", "/api/frame.png")
         self.assertEqual(status, 404)
-        self.manager.latest.write_bytes(b"JPEG")
-        status, body = self.request("GET", "/api/frame.jpg")
+        self.manager.latest.write_bytes(b"PNG")
+        status, body = self.request("GET", "/api/frame.png")
         self.assertEqual(status, 200)
-        self.assertEqual(body, b"JPEG")
+        self.assertEqual(body, b"PNG")
 
     def test_start_returns_202_then_conflict(self) -> None:
         status, _ = self.request("POST", "/api/session/start")
@@ -208,6 +220,66 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(self.manager.kill_calls, ["game"])
         status, _ = self.request("POST", "/api/session/kill", {"target": "nope"})
         self.assertEqual(status, 400)
+
+    def test_manual_input_requires_running_manual_mode(self) -> None:
+        body = {"client": "browser-1234", "armed": True, "keys": [], "buttons": []}
+        status, _ = self.request("POST", "/api/manual/input", body)
+        self.assertEqual(status, 409)
+        self.manager.state = "running"
+        self.manager.mode = "hold"
+        status, _ = self.request("POST", "/api/manual/input", body)
+        self.assertEqual(status, 409)
+
+    def test_manual_input_forwards_when_armed(self) -> None:
+        self.manager.state = "running"
+        self.manager.mode = "manual"
+        body = {
+            "client": "browser-1234",
+            "armed": True,
+            "keys": ["w"],
+            "buttons": [],
+            "dx": 1,
+            "dy": 2,
+            "wheel": 0,
+        }
+        status, response = self.request("POST", "/api/manual/input", body)
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(response)["armed"], True)
+        self.assertEqual(self.manager.manual_calls, [body])
+
+    def test_manual_input_validation_errors_are_400(self) -> None:
+        self.manager.state = "running"
+        self.manager.mode = "manual"
+        with patch.object(self.manager, "manual_input", side_effect=ManualInputError("bad key")):
+            status, body = self.request("POST", "/api/manual/input", {"client": "browser-1234", "armed": True})
+        self.assertEqual(status, 400)
+        self.assertEqual(json.loads(body)["error"], "bad key")
+
+    def test_manual_input_unavailable_is_503(self) -> None:
+        self.manager.state = "running"
+        self.manager.mode = "manual"
+        with patch.object(self.manager, "manual_input", side_effect=ManualInputUnavailable("missing")):
+            status, body = self.request("POST", "/api/manual/input", {"client": "browser-1234", "armed": True})
+        self.assertEqual(status, 503)
+        self.assertIn("missing", json.loads(body)["error"])
+
+    def test_manual_input_oversized_body_is_413(self) -> None:
+        self.manager.state = "running"
+        self.manager.mode = "manual"
+        status, body = self.request("POST", "/api/manual/input", raw=b"x" * 1_000_001)
+        self.assertEqual(status, 413)
+        self.assertEqual(json.loads(body)["error"], "request body too large")
+
+    def test_manual_input_rejects_cross_origin(self) -> None:
+        self.manager.state = "running"
+        self.manager.mode = "manual"
+        status, _ = self.request(
+            "POST",
+            "/api/manual/input",
+            {"client": "browser-1234", "armed": False},
+            headers={"Origin": "http://evil.example"},
+        )
+        self.assertEqual(status, 403)
 
     def test_logs_allowlist(self) -> None:
         self.manager.logs["monado"].write_text("hello monado")
@@ -326,19 +398,19 @@ class DashboardTests(unittest.TestCase):
 
     def test_frame_read_failure_returns_404(self) -> None:
         self.manager.latest.mkdir()
-        status, _ = self.request("GET", "/api/frame.jpg")
+        status, _ = self.request("GET", "/api/frame.png")
         self.assertEqual(status, 404)
 
     def test_preview_stopped_returns_404(self) -> None:
         self.manager.state = "stopped"
-        status, body = self.request("GET", "/preview.mjpg")
+        status, body = self.request("GET", "/preview.png")
         self.assertEqual(status, 404)
         self.assertIn("error", json.loads(body))
 
     def _frame_part(self, data: bytes) -> bytes:
         return (
             b"--frame\r\n"
-            b"Content-Type: image/jpeg\r\n"
+            b"Content-Type: image/png\r\n"
             + f"Content-Length: {len(data)}\r\n\r\n".encode()
             + data
             + b"\r\n"
@@ -348,7 +420,7 @@ class DashboardTests(unittest.TestCase):
         self.manager.state = "running"
         connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=2)
         try:
-            connection.request("GET", "/preview.mjpg")
+            connection.request("GET", "/preview.png")
             response = connection.getresponse()
             self.assertEqual(response.status, 200)
             self.manager.state = "stopped"
@@ -370,13 +442,13 @@ class DashboardTests(unittest.TestCase):
         with patch.object(self.manager, "preview_path", side_effect=preview_path):
             connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=3)
             try:
-                connection.request("GET", "/preview.mjpg")
+                connection.request("GET", "/preview.png")
                 response = connection.getresponse()
                 self.assertEqual(response.status, 200)
                 self.assertTrue(polled.wait(2), "stream did not poll for frames while starting")
                 self.manager.state = "running"
-                self.manager.latest.write_bytes(b"JPEGDATA")
-                expected = self._frame_part(b"JPEGDATA")
+                self.manager.latest.write_bytes(b"PNGDATA")
+                expected = self._frame_part(b"PNGDATA")
                 self.assertEqual(response.read(len(expected)), expected)
             finally:
                 connection.close()
@@ -385,12 +457,12 @@ class DashboardTests(unittest.TestCase):
         self.manager.state = "running"
         connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=3)
         try:
-            connection.request("GET", "/preview.mjpg")
+            connection.request("GET", "/preview.png")
             response = connection.getresponse()
             self.assertEqual(response.status, 200)
             self.manager.state = "stopping"
-            self.manager.latest.write_bytes(b"JPEGDATA")
-            expected = self._frame_part(b"JPEGDATA")
+            self.manager.latest.write_bytes(b"PNGDATA")
+            expected = self._frame_part(b"PNGDATA")
             self.assertEqual(response.read(len(expected)), expected)
         finally:
             connection.close()
@@ -405,7 +477,7 @@ class ShippedStaticAssetsTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.manager = FakeManager(Path(self.temp.name))
         self.cfg = load_config(None, env={})
-        static_dir = Path(__file__).resolve().parents[1] / "vrbot" / "static"
+        static_dir = Path(__file__).resolve().parents[1] / "superbot" / "static"
         self.server = DashboardServer(("127.0.0.1", 0), self.manager, self.cfg, static_dir)
         self.port = self.server.server_address[1]
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)

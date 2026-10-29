@@ -14,14 +14,14 @@
 
 - `config.toml` — machine-local defaults from the approved spec.
 - `run.sh` — puts Weston on `PATH` when needed, then starts the dashboard.
-- `vrbot/__init__.py` — package version.
-- `vrbot/__main__.py` — CLI entry point and `--preview-smoke`.
-- `vrbot/config.py` — TOML/env loading, type and bounds validation, required-path checks.
-- `vrbot/processes.py` — process groups, logs, `/proc` probes, pointer file, sockets.
-- `vrbot/preview.py` — screenshot loop, crop math, atomic JPEG publication, smoke helper.
-- `vrbot/orchestrator.py` — state machine, startup/shutdown, mode switching, health snapshot.
-- `vrbot/dashboard.py` — HTTP routes, JSON, MJPEG, static files.
-- `vrbot/static/index.html`, `style.css`, `app.js` — dashboard UI.
+- `superbot/__init__.py` — package version.
+- `superbot/__main__.py` — CLI entry point and `--preview-smoke`.
+- `superbot/config.py` — TOML/env loading, type and bounds validation, required-path checks.
+- `superbot/processes.py` — process groups, logs, `/proc` probes, pointer file, sockets.
+- `superbot/preview.py` — screenshot loop, crop math, atomic JPEG publication, smoke helper.
+- `superbot/orchestrator.py` — state machine, startup/shutdown, mode switching, health snapshot.
+- `superbot/dashboard.py` — HTTP routes, JSON, MJPEG, static files.
+- `superbot/static/index.html`, `style.css`, `app.js` — dashboard UI.
 - `tests/__init__.py`, `tests/test_config.py`, `tests/test_processes.py`, `tests/test_preview.py`, `tests/test_orchestrator.py`, `tests/test_dashboard.py`.
 
 The approved design is `docs/superpowers/specs/2026-10-25-c0-hidden-session-dashboard-design.md`.
@@ -32,8 +32,8 @@ The approved design is `docs/superpowers/specs/2026-10-25-c0-hidden-session-dash
 
 **Files:**
 - Create: `config.toml`
-- Create: `vrbot/__init__.py`
-- Create: `vrbot/config.py`
+- Create: `superbot/__init__.py`
+- Create: `superbot/config.py`
 - Create: `tests/__init__.py`
 - Test: `tests/test_config.py`
 
@@ -50,7 +50,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from vrbot.config import ConfigError, load_config, missing_requirements
+from superbot.config import ConfigError, load_config, missing_requirements
 
 
 class ConfigTests(unittest.TestCase):
@@ -68,7 +68,7 @@ class ConfigTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as raw:
             path = Path(raw) / "config.toml"
             path.write_text("[preview]\nfps = 6\n\n[dashboard]\nport = 9000\n")
-            cfg = load_config(path, env={"VRBOT_PREVIEW_FPS": "12"})
+            cfg = load_config(path, env={"SUPERBOT_PREVIEW_FPS": "12"})
             self.assertEqual(cfg.preview.fps, 12.0)
             self.assertEqual(cfg.dashboard.port, 9000)
 
@@ -81,7 +81,7 @@ class ConfigTests(unittest.TestCase):
 
     def test_unknown_env_key_is_rejected(self) -> None:
         with self.assertRaises(ConfigError):
-            load_config(None, env={"VRBOT_NOPE_X": "1"})
+            load_config(None, env={"SUPERBOT_NOPE_X": "1"})
 
     def test_wrong_type_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
@@ -100,7 +100,7 @@ class ConfigTests(unittest.TestCase):
     def test_weston_siblings_are_derived(self) -> None:
         cfg = load_config(
             None,
-            env={"VRBOT_PATHS_WESTON_BIN": "/opt/weston/bin/weston"},
+            env={"SUPERBOT_PATHS_WESTON_BIN": "/opt/weston/bin/weston"},
         )
         self.assertEqual(cfg.paths.weston_screenshooter_bin, "/opt/weston/bin/weston-screenshooter")
         self.assertEqual(cfg.paths.weston_debug_bin, "/opt/weston/bin/weston-debug")
@@ -124,14 +124,14 @@ class ConfigTests(unittest.TestCase):
                 path.write_text("")
                 path.chmod(0o755)
             env = {
-                "VRBOT_PATHS_MONADO_BIN": str(base / "monado-service"),
-                "VRBOT_PATHS_WESTON_BIN": str(base / "weston"),
-                "VRBOT_PATHS_MAGICK_BIN": str(base / "magick"),
-                "VRBOT_PATHS_STEAM_BIN": str(base / "steam"),
-                "VRBOT_PATHS_GAME_EXE": str(base / "game.exe"),
-                "VRBOT_PATHS_POSE_CLIENT": str(base / "pose.py"),
-                "VRBOT_PATHS_OPENXR_ACTIVE_RUNTIME": str(base / "runtime.json"),
-                "VRBOT_PATHS_SESSION_ROOT": str(base / "sessions"),
+                "SUPERBOT_PATHS_MONADO_BIN": str(base / "monado-service"),
+                "SUPERBOT_PATHS_WESTON_BIN": str(base / "weston"),
+                "SUPERBOT_PATHS_MAGICK_BIN": str(base / "magick"),
+                "SUPERBOT_PATHS_STEAM_BIN": str(base / "steam"),
+                "SUPERBOT_PATHS_GAME_EXE": str(base / "game.exe"),
+                "SUPERBOT_PATHS_POSE_CLIENT": str(base / "pose.py"),
+                "SUPERBOT_PATHS_OPENXR_ACTIVE_RUNTIME": str(base / "runtime.json"),
+                "SUPERBOT_PATHS_SESSION_ROOT": str(base / "sessions"),
             }
             cfg = load_config(None, env=env)
             self.assertEqual(missing_requirements(cfg), [])
@@ -147,19 +147,19 @@ if __name__ == "__main__":
 
 Run: `python3 -m unittest tests.test_config -v`
 
-Expected: `ModuleNotFoundError: No module named 'vrbot'` or an import error for `ConfigError`.
+Expected: `ModuleNotFoundError: No module named 'superbot'` or an import error for `ConfigError`.
 
 - [ ] **Step 3: Create the package and config module**
 
-Create `vrbot/__init__.py`:
+Create `superbot/__init__.py`:
 
 ```python
-"""vr-bot hidden C0 session orchestrator."""
+"""SuperBot hidden C0 session orchestrator."""
 
 __version__ = "0.1.0"
 ```
 
-Create `vrbot/config.py`:
+Create `superbot/config.py`:
 
 ```python
 from __future__ import annotations
@@ -173,7 +173,7 @@ from typing import Any, Mapping
 
 
 class ConfigError(ValueError):
-    """Raised when config.toml or a VRBOT_ override is invalid."""
+    """Raised when config.toml or a SUPERBOT_ override is invalid."""
 
 
 @dataclass(frozen=True)
@@ -245,7 +245,7 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         "game_exe": "/home/nate/Games/SUPERHOT VR/SUPERHOT_VR.exe",
         "pose_client": "spike/c0/c0_client.py",
         "openxr_active_runtime": "/home/nate/.config/openxr/1/active_runtime.json",
-        "session_root": "/home/nate/.local/state/vr-bot/sessions",
+        "session_root": "/home/nate/.local/state/SuperBot/sessions",
     },
     "launch": {
         "shortcut_id": "18251483899710406656",
@@ -380,9 +380,9 @@ def load_config(
             merged[section][key] = _coerce(value, DEFAULTS[section][key], f"{section}.{key}")
 
     for env_key, raw in (env or {}).items():
-        if not env_key.startswith("VRBOT_"):
+        if not env_key.startswith("SUPERBOT_"):
             continue
-        rest = env_key[len("VRBOT_") :]
+        rest = env_key[len("SUPERBOT_") :]
         if "_" not in rest:
             raise ConfigError(f"invalid environment override {env_key}")
         raw_section, raw_key = rest.split("_", 1)
@@ -461,7 +461,7 @@ steam_bin = "/home/nate/.local/bin/steam"
 game_exe = "/home/nate/Games/SUPERHOT VR/SUPERHOT_VR.exe"
 pose_client = "spike/c0/c0_client.py"
 openxr_active_runtime = "/home/nate/.config/openxr/1/active_runtime.json"
-session_root = "/home/nate/.local/state/vr-bot/sessions"
+session_root = "/home/nate/.local/state/SuperBot/sessions"
 
 [launch]
 shortcut_id = "18251483899710406656"
@@ -500,8 +500,8 @@ Expected: 8 tests, `OK`.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add config.toml vrbot/__init__.py vrbot/config.py tests/__init__.py tests/test_config.py
-git commit -m "feat: add vrbot configuration"
+git add config.toml superbot/__init__.py superbot/config.py tests/__init__.py tests/test_config.py
+git commit -m "feat: add superbot configuration"
 ```
 
 ---
@@ -509,7 +509,7 @@ git commit -m "feat: add vrbot configuration"
 ### Task 2: Process primitives and pointer file
 
 **Files:**
-- Create: `vrbot/processes.py`
+- Create: `superbot/processes.py`
 - Test: `tests/test_processes.py`
 
 - [ ] **Step 1: Write the failing process tests**
@@ -526,7 +526,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from vrbot.processes import ProcessRunner
+from superbot.processes import ProcessRunner
 
 
 class ProcessTests(unittest.TestCase):
@@ -604,11 +604,11 @@ if __name__ == "__main__":
 
 Run: `python3 -m unittest tests.test_processes -v`
 
-Expected: `ModuleNotFoundError` for `vrbot.processes`.
+Expected: `ModuleNotFoundError` for `superbot.processes`.
 
 - [ ] **Step 3: Implement process primitives**
 
-Create `vrbot/processes.py`:
+Create `superbot/processes.py`:
 
 ```python
 from __future__ import annotations
@@ -911,7 +911,7 @@ Expected: 6 tests, `OK`.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add vrbot/processes.py tests/test_processes.py
+git add superbot/processes.py tests/test_processes.py
 git commit -m "feat: add process group helpers"
 ```
 
@@ -920,7 +920,7 @@ git commit -m "feat: add process group helpers"
 ### Task 3: Preview capture
 
 **Files:**
-- Create: `vrbot/preview.py`
+- Create: `superbot/preview.py`
 - Test: `tests/test_preview.py`
 
 - [ ] **Step 1: Write the failing preview tests**
@@ -937,7 +937,7 @@ import time
 import unittest
 from pathlib import Path
 
-from vrbot.preview import PreviewCapture, atomic_replace, crop_filter, newest_png
+from superbot.preview import PreviewCapture, atomic_replace, crop_filter, newest_png
 
 
 class FakeRun:
@@ -1052,11 +1052,11 @@ if __name__ == "__main__":
 
 Run: `python3 -m unittest tests.test_preview -v`
 
-Expected: `ModuleNotFoundError` for `vrbot.preview`.
+Expected: `ModuleNotFoundError` for `superbot.preview`.
 
 - [ ] **Step 3: Implement preview capture**
 
-Create `vrbot/preview.py`:
+Create `superbot/preview.py`:
 
 ```python
 from __future__ import annotations
@@ -1147,7 +1147,7 @@ class PreviewCapture:
 
     def start(self) -> None:
         self.publish_path.parent.mkdir(parents=True, exist_ok=True)
-        self._thread = threading.Thread(target=self._run, name="vrbot-preview", daemon=True)
+        self._thread = threading.Thread(target=self._run, name="superbot-preview", daemon=True)
         self._thread.start()
 
     def stop(self, timeout: float = 5.0) -> None:
@@ -1261,11 +1261,11 @@ def preview_smoke(cfg: Config) -> int:
         return 0
 
     runtime = Path(os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}")
-    socket_name = f"vrbot-smoke-{os.getpid()}"
+    socket_name = f"superbot-smoke-{os.getpid()}"
     weston_proc: subprocess.Popen | None = None
     mpv_proc: subprocess.Popen | None = None
     try:
-        with tempfile.TemporaryDirectory(prefix="vrbot-smoke-") as raw:
+        with tempfile.TemporaryDirectory(prefix="superbot-smoke-") as raw:
             work = Path(raw)
             weston_log = work / "weston.log"
             env = os.environ.copy()
@@ -1388,7 +1388,7 @@ Expected: 6 tests, `OK`.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add vrbot/preview.py tests/test_preview.py
+git add superbot/preview.py tests/test_preview.py
 git commit -m "feat: add headless preview capture"
 ```
 
@@ -1397,7 +1397,7 @@ git commit -m "feat: add headless preview capture"
 ### Task 4: Session manager startup
 
 **Files:**
-- Create: `vrbot/orchestrator.py`
+- Create: `superbot/orchestrator.py`
 - Test: `tests/test_orchestrator.py`
 
 - [ ] **Step 1: Write the failing startup tests**
@@ -1417,8 +1417,8 @@ from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
-from vrbot.config import load_config
-from vrbot.orchestrator import (
+from superbot.config import load_config
+from superbot.orchestrator import (
     ConflictError,
     PreflightError,
     SessionManager,
@@ -1598,7 +1598,7 @@ class OrchestratorTests(unittest.TestCase):
         self.temp.cleanup()
 
     def start(self) -> None:
-        with patch("vrbot.orchestrator.missing_requirements", return_value=[]):
+        with patch("superbot.orchestrator.missing_requirements", return_value=[]):
             self.manager.start()
         self.assertTrue(self.manager.wait_idle(2))
         self.assertEqual(self.manager.state_value(), "running")
@@ -1626,7 +1626,7 @@ class OrchestratorTests(unittest.TestCase):
 
     def test_host_steam_blocks_start(self) -> None:
         self.runner.host_steam = True
-        with patch("vrbot.orchestrator.missing_requirements", return_value=[]):
+        with patch("superbot.orchestrator.missing_requirements", return_value=[]):
             with self.assertRaises(PreflightError):
                 self.manager.start()
         self.assertEqual(self.manager.state_value(), "failed")
@@ -1639,7 +1639,7 @@ class OrchestratorTests(unittest.TestCase):
             "session": "/old",
             "processes": {"monado": {"pid": 999, "command": "monado-service"}},
         }
-        with patch("vrbot.orchestrator.missing_requirements", return_value=[]):
+        with patch("superbot.orchestrator.missing_requirements", return_value=[]):
             with self.assertRaises(PreflightError) as raised:
                 self.manager.start()
         self.assertIn("stale", str(raised.exception))
@@ -1647,7 +1647,7 @@ class OrchestratorTests(unittest.TestCase):
 
     def test_startup_failure_cleans_up(self) -> None:
         self.runner.fail_at = "wait_port"
-        with patch("vrbot.orchestrator.missing_requirements", return_value=[]):
+        with patch("superbot.orchestrator.missing_requirements", return_value=[]):
             self.manager.start()
         self.assertTrue(self.manager.wait_idle(2))
         self.assertEqual(self.manager.state_value(), "failed")
@@ -1657,7 +1657,7 @@ class OrchestratorTests(unittest.TestCase):
 
     def test_concurrent_start_is_rejected(self) -> None:
         self.runner.block_wait = threading.Event()
-        with patch("vrbot.orchestrator.missing_requirements", return_value=[]):
+        with patch("superbot.orchestrator.missing_requirements", return_value=[]):
             self.manager.start()
             with self.assertRaises(ConflictError):
                 self.manager.start()
@@ -1717,11 +1717,11 @@ if __name__ == "__main__":
 
 Run: `python3 -m unittest tests.test_orchestrator -v`
 
-Expected: `ModuleNotFoundError` for `vrbot.orchestrator`.
+Expected: `ModuleNotFoundError` for `superbot.orchestrator`.
 
 - [ ] **Step 3: Implement the session manager**
 
-Create `vrbot/orchestrator.py`:
+Create `superbot/orchestrator.py`:
 
 ```python
 from __future__ import annotations
@@ -1876,7 +1876,7 @@ class SessionManager:
             if isinstance(exc, PreflightError):
                 raise
             raise PreflightError(str(exc)) from exc
-        self._thread = threading.Thread(target=self._start_worker, name="vrbot-start", daemon=True)
+        self._thread = threading.Thread(target=self._start_worker, name="superbot-start", daemon=True)
         self._thread.start()
 
     def stop(self) -> None:
@@ -1896,7 +1896,7 @@ class SessionManager:
                 return
             self._idle.clear()
             self._set_state(State.STOPPING)
-            self._thread = threading.Thread(target=self._stop_worker, name="vrbot-stop", daemon=True)
+            self._thread = threading.Thread(target=self._stop_worker, name="superbot-stop", daemon=True)
         self._thread.start()
 
     def set_mode(self, mode: str) -> None:
@@ -2141,7 +2141,7 @@ class SessionManager:
         )
 
     def _start_weston(self) -> None:
-        self._socket_name = f"vrbot-{self._session_id.split('-')[-1]}"
+        self._socket_name = f"superbot-{self._session_id.split('-')[-1]}"
         weston_log = self._log("weston")
         argv = [
             self.cfg.paths.weston_bin,
@@ -2301,7 +2301,7 @@ class SessionManager:
                     self._started_at = datetime.now(timezone.utc)
                 self._set_state(State.RUNNING)
                 self._monitor_thread = threading.Thread(
-                    target=self._monitor_worker, name="vrbot-monitor", daemon=True
+                    target=self._monitor_worker, name="superbot-monitor", daemon=True
                 )
                 self._monitor_thread.start()
             finally:
@@ -2403,7 +2403,7 @@ Expected: 11 tests, `OK`.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add vrbot/orchestrator.py tests/test_orchestrator.py
+git add superbot/orchestrator.py tests/test_orchestrator.py
 git commit -m "feat: add C0 session manager"
 ```
 
@@ -2412,7 +2412,7 @@ git commit -m "feat: add C0 session manager"
 ### Task 5: Dashboard HTTP API
 
 **Files:**
-- Create: `vrbot/dashboard.py`
+- Create: `superbot/dashboard.py`
 - Test: `tests/test_dashboard.py`
 
 - [ ] **Step 1: Write the failing dashboard tests**
@@ -2430,9 +2430,9 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from vrbot.config import load_config
-from vrbot.dashboard import DashboardServer
-from vrbot.orchestrator import ConflictError, MODES, PreflightError
+from superbot.config import load_config
+from superbot.dashboard import DashboardServer
+from superbot.orchestrator import ConflictError, MODES, PreflightError
 
 
 class FakeManager:
@@ -2626,11 +2626,11 @@ if __name__ == "__main__":
 
 Run: `python3 -m unittest tests.test_dashboard -v`
 
-Expected: `ModuleNotFoundError` for `vrbot.dashboard`.
+Expected: `ModuleNotFoundError` for `superbot.dashboard`.
 
 - [ ] **Step 3: Implement the dashboard**
 
-Create `vrbot/dashboard.py`:
+Create `superbot/dashboard.py`:
 
 ```python
 from __future__ import annotations
@@ -2659,7 +2659,7 @@ class DashboardServer(ThreadingHTTPServer):
 
 
 class DashboardHandler(BaseHTTPRequestHandler):
-    server_version = "vrbot/0.1"
+    server_version = "superbot/0.1"
 
     def log_message(self, format, *args) -> None:
         return
@@ -2814,7 +2814,7 @@ def run_dashboard(cfg: Config) -> None:
     signal.signal(signal.SIGINT, request_shutdown)
     signal.signal(signal.SIGTERM, request_shutdown)
     host, port = server.server_address[:2]
-    print(f"vrbot dashboard: http://{host}:{port}")
+    print(f"superbot dashboard: http://{host}:{port}")
     try:
         server.serve_forever(poll_interval=0.5)
     finally:
@@ -2832,7 +2832,7 @@ Expected: 10 tests, `OK`.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add vrbot/dashboard.py tests/test_dashboard.py
+git add superbot/dashboard.py tests/test_dashboard.py
 git commit -m "feat: add dashboard HTTP API"
 ```
 
@@ -2841,9 +2841,9 @@ git commit -m "feat: add dashboard HTTP API"
 ### Task 6: Dashboard UI
 
 **Files:**
-- Create: `vrbot/static/index.html`
-- Create: `vrbot/static/style.css`
-- Create: `vrbot/static/app.js`
+- Create: `superbot/static/index.html`
+- Create: `superbot/static/style.css`
+- Create: `superbot/static/app.js`
 
 - [ ] **Step 1: Add a static-content assertion to the dashboard test**
 
@@ -2858,7 +2858,7 @@ Append this test to `tests/test_dashboard.py` inside `DashboardTests`:
 
 - [ ] **Step 2: Create the UI files**
 
-Create `vrbot/static/index.html`:
+Create `superbot/static/index.html`:
 
 ```html
 <!doctype html>
@@ -2866,7 +2866,7 @@ Create `vrbot/static/index.html`:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>vr-bot C0</title>
+  <title>SuperBot C0</title>
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -2927,7 +2927,7 @@ Create `vrbot/static/index.html`:
 </html>
 ```
 
-Create `vrbot/static/style.css`:
+Create `superbot/static/style.css`:
 
 ```css
 :root {
@@ -3046,7 +3046,7 @@ button.active { border-color: var(--accent); color: var(--accent); }
 .error { display: none; color: var(--bad); border: 1px solid #5a2a2a; background: #2a1515; padding: 10px; border-radius: 8px; }
 ```
 
-Create `vrbot/static/app.js`:
+Create `superbot/static/app.js`:
 
 ```js
 const $ = (id) => document.getElementById(id);
@@ -3212,7 +3212,7 @@ Expected: 11 tests, `OK`.
 - [ ] **Step 4: Commit**
 
 ```bash
-git add vrbot/static tests/test_dashboard.py
+git add superbot/static tests/test_dashboard.py
 git commit -m "feat: add dashboard UI"
 ```
 
@@ -3221,7 +3221,7 @@ git commit -m "feat: add dashboard UI"
 ### Task 7: CLI and launcher
 
 **Files:**
-- Create: `vrbot/__main__.py`
+- Create: `superbot/__main__.py`
 - Create: `run.sh`
 - Test: `tests/test_cli.py`
 
@@ -3241,7 +3241,7 @@ from pathlib import Path
 class CliTests(unittest.TestCase):
     def test_help(self) -> None:
         result = subprocess.run(
-            [sys.executable, "-m", "vrbot", "--help"],
+            [sys.executable, "-m", "superbot", "--help"],
             cwd=Path(__file__).resolve().parent.parent,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -3260,11 +3260,11 @@ if __name__ == "__main__":
 
 Run: `python3 -m unittest tests.test_cli -v`
 
-Expected: failure because `vrbot.__main__` does not exist.
+Expected: failure because `superbot.__main__` does not exist.
 
 - [ ] **Step 3: Implement the CLI and launcher**
 
-Create `vrbot/__main__.py`:
+Create `superbot/__main__.py`:
 
 ```python
 from __future__ import annotations
@@ -3279,7 +3279,7 @@ from .config import ConfigError, load_config
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="vrbot")
+    parser = argparse.ArgumentParser(prog="superbot")
     parser.add_argument("--config", default="config.toml", help="TOML config path")
     parser.add_argument("--host", help="override dashboard host")
     parser.add_argument("--port", type=int, help="override dashboard port")
@@ -3289,7 +3289,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         cfg = load_config(Path(args.config), env=os.environ)
     except (ConfigError, OSError) as exc:
-        print(f"vrbot: {exc}", file=sys.stderr)
+        print(f"superbot: {exc}", file=sys.stderr)
         return 2
 
     if args.host is not None or args.port is not None:
@@ -3327,10 +3327,10 @@ cd "$(dirname "$0")"
 if command -v weston >/dev/null 2>&1 \
   && command -v weston-screenshooter >/dev/null 2>&1 \
   && command -v weston-debug >/dev/null 2>&1; then
-  exec python3 -m vrbot "$@"
+  exec python3 -m superbot "$@"
 fi
 
-exec nix shell nixpkgs#weston -c python3 -m vrbot "$@"
+exec nix shell nixpkgs#weston -c python3 -m superbot "$@"
 ```
 
 Make it executable:
@@ -3348,8 +3348,8 @@ Expected: `OK`.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add run.sh vrbot/__main__.py tests/test_cli.py
-git commit -m "feat: add vrbot CLI and launcher"
+git add run.sh superbot/__main__.py tests/test_cli.py
+git commit -m "feat: add superbot CLI and launcher"
 ```
 
 ---
@@ -3384,7 +3384,7 @@ Fix any mismatch before proceeding.
 
 - [ ] **Step 3: Run the preview smoke test**
 
-Run: `python3 -m vrbot --preview-smoke`
+Run: `python3 -m superbot --preview-smoke`
 
 Expected: `preview smoke ok`, or a `skipped` message if Weston/mpv/magick is unavailable. This must not launch Monado, Steam, or the game.
 
@@ -3404,7 +3404,7 @@ Expected: `preview smoke ok`, or a `skipped` message if Weston/mpv/magick is una
 
 ```bash
 git status --short
-git add config.toml run.sh vrbot tests
+git add config.toml run.sh superbot tests
 git commit -m "fix: address verification findings"
 ```
 

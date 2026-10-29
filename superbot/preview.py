@@ -17,10 +17,6 @@ from typing import Callable
 from .config import Config
 
 
-def crop_filter(width: int, height: int, panel_height: int) -> str:
-    return f"{width}x{height - panel_height}+0+{panel_height}"
-
-
 def newest_png(directory: Path, started_ns: int) -> Path | None:
     candidates: list[tuple[int, Path]] = []
     try:
@@ -63,9 +59,7 @@ class PreviewCapture:
         height: int,
         panel_height: int,
         fps: float,
-        jpeg_quality: int,
         screenshooter: str,
-        magick: str,
         runtime_dir: Path,
         wayland_display: str,
         work_dir: Path,
@@ -78,9 +72,7 @@ class PreviewCapture:
         self.height = height
         self.panel_height = panel_height
         self.fps = fps
-        self.jpeg_quality = jpeg_quality
         self.screenshooter = screenshooter
-        self.magick = magick
         self.runtime_dir = Path(runtime_dir)
         self.wayland_display = wayland_display
         self.work_dir = Path(work_dir)
@@ -106,7 +98,7 @@ class PreviewCapture:
                 raise RuntimeError("preview capture already started")
             self.publish_path.parent.mkdir(parents=True, exist_ok=True)
             self._started_monotonic = time.monotonic()
-            thread = threading.Thread(target=self._run, name="vrbot-preview", daemon=True)
+            thread = threading.Thread(target=self._run, name="superbot-preview", daemon=True)
             try:
                 thread.start()
             except BaseException:
@@ -177,29 +169,7 @@ class PreviewCapture:
             png = newest_png(frame_dir, started_ns)
             if png is None:
                 raise RuntimeError("screenshooter produced no new PNG")
-            tmp = self.publish_path.with_name(
-                f"{self.publish_path.name}.{time.monotonic_ns()}.tmp"
-            )
-            result = self.run(
-                [
-                    self.magick,
-                    str(png),
-                    "-crop",
-                    crop_filter(self.width, self.height, self.panel_height),
-                    "+repage",
-                    "-quality",
-                    str(self.jpeg_quality),
-                    f"jpg:{tmp}",
-                ],
-                cwd=str(frame_dir),
-                timeout=10,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            )
-            if result.returncode != 0:
-                raise RuntimeError(_command_error("magick", result))
-            atomic_replace(tmp, self.publish_path)
-            tmp = None
+            atomic_replace(png, self.publish_path)
             with self._lock:
                 self._frames += 1
                 self._last_frame_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -278,7 +248,7 @@ def _smoke_http(cfg: Config, latest: Path) -> bool:
     started = False
     try:
         server = DashboardServer(("127.0.0.1", 0), manager, cfg, static_dir)
-        thread = threading.Thread(target=server.serve_forever, name="vrbot-smoke-http", daemon=True)
+        thread = threading.Thread(target=server.serve_forever, name="superbot-smoke-http", daemon=True)
         thread.start()
         started = True
         port = server.server_address[1]
@@ -291,7 +261,7 @@ def _smoke_http(cfg: Config, latest: Path) -> bool:
             payload = json.loads(response.read())
             if not isinstance(payload, dict) or payload.get("state") != "running":
                 return False
-            connection.request("GET", "/api/frame.jpg")
+            connection.request("GET", "/api/frame.png")
             response = connection.getresponse()
             if response.status != 200:
                 return False
@@ -327,18 +297,18 @@ def _kill_group(pid: int) -> None:
 def preview_smoke(cfg: Config) -> int:
     weston = shutil.which(cfg.paths.weston_bin)
     screenshooter = shutil.which(cfg.paths.weston_screenshooter_bin)
-    magick = shutil.which(cfg.paths.magick_bin)
+    magick = shutil.which("magick")
     mpv = shutil.which("mpv")
-    if not (weston and screenshooter and magick and mpv):
-        print("preview smoke skipped: weston, weston-screenshooter, mpv, or magick unavailable")
+    if not (weston and screenshooter and mpv):
+        print("preview smoke skipped: weston, weston-screenshooter, or mpv unavailable")
         return 0
 
     runtime = Path(os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}")
-    socket_name = f"vrbot-smoke-{os.getpid()}"
+    socket_name = f"superbot-smoke-{os.getpid()}"
     weston_proc: subprocess.Popen | None = None
     mpv_proc: subprocess.Popen | None = None
     try:
-        with tempfile.TemporaryDirectory(prefix="vrbot-smoke-") as raw:
+        with tempfile.TemporaryDirectory(prefix="superbot-smoke-") as raw:
             work = Path(raw)
             weston_log = work / "weston.log"
             env = os.environ.copy()
@@ -401,37 +371,38 @@ def preview_smoke(cfg: Config) -> int:
                 width=1280,
                 height=720,
                 panel_height=32,
-                fps=8,
-                jpeg_quality=80,
+                fps=12,
                 screenshooter=screenshooter,
-                magick=magick,
                 runtime_dir=runtime,
                 wayland_display=socket_name,
                 work_dir=work,
-                publish_path=work / "latest.jpg",
+                publish_path=work / "latest.png",
                 stop_event=loop_stop,
                 log=print,
             )
             capture.start()
             time.sleep(2)
             capture.stop()
-            latest = work / "latest.jpg"
+            latest = work / "latest.png"
             ok = False
-            if latest.exists():
-                result = subprocess.run(
-                    [magick, str(latest), "-colorspace", "gray", "-format", "%[fx:mean]", "info:"],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                    timeout=10,
-                )
-                if result.returncode == 0:
-                    try:
-                        ok = float(result.stdout.strip()) > 0.01
-                    except ValueError:
-                        ok = False
+            if latest.exists() and latest.stat().st_size > 1000:
+                if magick is None:
+                    ok = True
+                else:
+                    result = subprocess.run(
+                        [magick, str(latest), "-colorspace", "gray", "-format", "%[fx:mean]", "info:"],
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                        timeout=10,
+                    )
+                    if result.returncode == 0:
+                        try:
+                            ok = float(result.stdout.strip()) > 0.01
+                        except ValueError:
+                            ok = False
             if ok and not _smoke_http(cfg, latest):
-                print("preview smoke failed: /api/state or /api/frame.jpg check failed")
+                print("preview smoke failed: /api/state or /api/frame.png check failed")
                 return 1
             print("preview smoke ok" if ok else "preview smoke failed")
             return 0 if ok else 1

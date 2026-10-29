@@ -12,8 +12,13 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 from .config import Config
+from .manual_input import ManualInputError, ManualInputUnavailable
 from .orchestrator import ConflictError, PreflightError, SessionManager
 from .processes import tail_stream
+
+
+class PayloadTooLarge(ValueError):
+    pass
 
 
 class DashboardServer(ThreadingHTTPServer):
@@ -33,7 +38,7 @@ class DashboardServer(ThreadingHTTPServer):
 
 
 class DashboardHandler(BaseHTTPRequestHandler):
-    server_version = "vrbot/0.1"
+    server_version = "superbot/0.1"
     timeout = 10
 
     def log_message(self, format, *args) -> None:
@@ -49,7 +54,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return self._static("app.js", "application/javascript; charset=utf-8")
         if path == "/api/state":
             return self._json(self.server.manager.snapshot())
-        if path == "/api/frame.jpg":
+        if path == "/api/frame.png":
             latest = self.server.manager.preview_path()
             if latest is None:
                 return self._error(404, "no preview frame")
@@ -57,9 +62,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 data = latest.read_bytes()
             except OSError:
                 return self._error(404, "no preview frame")
-            return self._bytes(200, data, "image/jpeg")
-        if path == "/preview.mjpg":
-            return self._mjpeg()
+            return self._bytes(200, data, "image/png")
+        if path == "/preview.png":
+            return self._preview_stream()
         if path.startswith("/api/logs/"):
             name = path[len("/api/logs/"):]
             decoded = unquote(name)
@@ -88,8 +93,24 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return self._json({"accepted": True}, status=202)
         try:
             body = self._read_body()
+        except PayloadTooLarge as exc:
+            return self._error(413, str(exc))
         except ValueError as exc:
             return self._error(400, str(exc))
+        if path == "/api/manual/input":
+            if not self._origin_allowed():
+                return self._error(403, "cross-origin input rejected")
+            try:
+                armed = self.server.manager.manual_input(body)
+            except ManualInputError as exc:
+                return self._error(400, str(exc))
+            except ConflictError as exc:
+                return self._error(409, str(exc))
+            except ManualInputUnavailable as exc:
+                return self._error(503, str(exc))
+            except Exception:
+                return self._error(500, "internal server error")
+            return self._json({"accepted": True, "armed": bool(armed)})
         if path == "/api/session/mode":
             try:
                 self.server.manager.set_mode(body.get("mode"))
@@ -112,6 +133,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return self._json({"killed": body.get("target")})
         return self._error(404, "not found")
 
+    def _origin_allowed(self) -> bool:
+        origin = self.headers.get("Origin")
+        if origin is None:
+            return True
+        parsed = urlparse(origin)
+        return parsed.scheme in ("http", "https") and parsed.netloc == self.headers.get("Host", "")
+
     def _read_body(self) -> dict:
         try:
             length = int(self.headers.get("Content-Length", "0") or 0)
@@ -120,7 +148,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if length < 0:
             raise ValueError("invalid Content-Length")
         if length > 1_000_000:
-            raise ValueError("request body too large")
+            raise PayloadTooLarge("request body too large")
         try:
             raw = self.rfile.read(length) if length else b""
         except (TimeoutError, OSError) as exc:
@@ -168,7 +196,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return self._error(404, "log not found")
         self._bytes(200, data, "text/plain; charset=utf-8")
 
-    def _mjpeg(self) -> None:
+    def _preview_stream(self) -> None:
         if self.server.manager.state_value() in ("stopped", "failed"):
             return self._error(404, "session is not running")
         self.send_response(200)
@@ -193,7 +221,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             if data:
                 try:
                     self.wfile.write(boundary)
-                    self.wfile.write(b"Content-Type: image/jpeg\r\n")
+                    self.wfile.write(b"Content-Type: image/png\r\n")
                     self.wfile.write(f"Content-Length: {len(data)}\r\n\r\n".encode())
                     self.wfile.write(data)
                     self.wfile.write(b"\r\n")
@@ -223,11 +251,11 @@ def run_dashboard(cfg: Config) -> None:
     signal.signal(signal.SIGINT, request_shutdown)
     signal.signal(signal.SIGTERM, request_shutdown)
     host, port = server.server_address[:2]
-    print(f"vrbot dashboard: http://{host}:{port}")
+    print(f"superbot dashboard: http://{host}:{port}")
     try:
         server.serve_forever(poll_interval=0.5)
     finally:
         manager.stop()
         if not manager.wait_idle(70):
-            print("vrbot dashboard: session did not stop within 70s", file=sys.stderr)
+            print("superbot dashboard: session did not stop within 70s", file=sys.stderr)
         server.server_close()
