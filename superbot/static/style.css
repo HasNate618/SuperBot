@@ -1,5 +1,36 @@
 /* SUPERBOT C0 — brutalist cockpit. Flat black, white, one red. No glow,
-   no gradients, no rounded corners. The frame is the interface. */
+   no gradients, no rounded corners. The frame is the interface.
+   Fonts are vendored and served by the dashboard, so they cannot be
+   overridden by whatever the desktop defaults to. */
+
+@font-face {
+  font-family: "Superbot Display";
+  src: url("/fonts/oswald-var.woff2") format("woff2");
+  font-weight: 200 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Superbot UI";
+  src: url("/fonts/archivo-var.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Superbot Mono";
+  src: url("/fonts/plex-mono-400.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Superbot Mono";
+  src: url("/fonts/plex-mono-600.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
 
 :root {
   color-scheme: dark;
@@ -10,10 +41,15 @@
   --muted: #6f6f6f;
   --red: #ff1e2d;
   --red-dark: #8f0f18;
-  --display: "Bahnschrift", "DIN Alternate", "Franklin Gothic Medium",
-    "Arial Narrow", "Helvetica Neue", system-ui, sans-serif;
-  --mono: "JetBrains Mono", "Fira Code", "Noto Sans Mono",
-    "Liberation Mono", "DejaVu Sans Mono", monospace;
+  --display: "Superbot Display", "Oswald", "Bahnschrift", sans-serif;
+  --ui: "Superbot UI", "Archivo", "Liberation Sans", sans-serif;
+  --mono: "Superbot Mono", "IBM Plex Mono", "DejaVu Sans Mono", monospace;
+  --src-session: #ff1e2d;
+  --src-monado: #ffb020;
+  --src-weston: #35d6ff;
+  --src-proxy: #a78bfa;
+  --src-steam: #4ade80;
+  --src-pose: #ff7ab6;
 }
 
 * { box-sizing: border-box; }
@@ -24,7 +60,7 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font: 14px/1.4 var(--display);
+  font: 14px/1.4 var(--ui);
   overflow: hidden;
 }
 
@@ -189,11 +225,11 @@ button.active:hover:not(:disabled) {
   color: var(--text);
 }
 
-/* ---------- main deck: telemetry | stage | controls ---------- */
+/* ---------- main deck: stage | telemetry + controls ---------- */
 
 .deck {
   display: grid;
-  grid-template-columns: 240px minmax(0, 1fr) 260px;
+  grid-template-columns: minmax(0, 1fr) 300px;
   gap: 8px;
   min-height: 0;
 }
@@ -203,10 +239,9 @@ button.active:hover:not(:disabled) {
   gap: 8px;
   min-height: 0;
   align-content: start;
-  grid-template-rows: minmax(0, 1fr);
+  grid-template-rows: none;
   overflow: hidden auto;
 }
-.col-right { grid-template-rows: auto auto auto; }
 
 .panel {
   background: var(--panel);
@@ -352,9 +387,26 @@ button.active:hover:not(:disabled) {
   position: relative;
   width: 100%;
   max-height: 100%;
-  aspect-ratio: 1280 / 688;
+  aspect-ratio: 1920 / 1048;
   overflow: hidden;
   background: #000;
+}
+.preview-clip #preview { position: absolute; inset: 0; overflow: hidden; }
+#preview > div {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: block;
+  overflow: hidden !important;
+}
+#preview canvas {
+  position: absolute;
+  top: auto;
+  bottom: 0;
+  width: 100% !important;
+  height: auto !important;
+  margin: 0;
+  display: block;
 }
 .preview-clip img {
   display: block;
@@ -381,6 +433,29 @@ button.active:hover:not(:disabled) {
   background: #000;
   pointer-events: none;
 }
+
+.vnc-auth {
+  position: absolute;
+  inset: 0;
+  display: none;
+  place-content: center;
+  gap: 10px;
+  padding: 18px;
+  background: #000d;
+  z-index: 3;
+}
+.vnc-auth.visible { display: grid; }
+.vnc-auth label { display: grid; gap: 4px; color: var(--muted); font-size: 12px; }
+.vnc-auth input {
+  background: #0a0a0a;
+  color: var(--text);
+  border: 2px solid var(--edge);
+  border-radius: 0;
+  padding: 8px 10px;
+  font: inherit;
+}
+.vnc-auth button { justify-self: start; }
+#vnc-error { margin: 0; min-height: 1em; color: var(--red); }
 
 /* manual-mode overlay */
 .manual-overlay {
@@ -439,30 +514,40 @@ button.active:hover:not(:disabled) {
   background: #000;
   padding: 6px;
 }
-#body-box::before {
-  content: "ROBOT";
-  display: block;
-  margin: 0 0 6px;
+.body-head {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+.body-title {
+  flex: 1;
+  align-self: center;
   padding: 3px 8px;
   font-family: var(--display);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.35em;
+  text-transform: uppercase;
   color: #000;
   background: var(--text);
+}
+.body-head button {
+  padding: 2px 9px;
+  font-size: 9px;
+  border-width: 1px;
 }
 #body-wait {
   display: flex;
   align-items: center;
-  justify-content: center;
-  min-height: 140px;
+  min-height: 90px;
+  padding: 8px;
   color: var(--muted);
-  font-family: var(--display);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.3em;
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 1.5;
   text-transform: uppercase;
-  text-align: center;
+  word-break: break-word;
 }
 #body-wait[hidden] { display: none; }
 
@@ -521,20 +606,62 @@ button.active:hover:not(:disabled) {
 }
 .console-head h2 { margin: 0; flex: 0 0 auto; }
 .console-head h2::after { display: none; }
-.console-head select { flex: 0 0 auto; }
-.console-head button { flex: 0 0 auto; }
+
+/* filter chips: one per log source, coloured to match the stream */
+.log-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-left: auto;
+}
+.chip {
+  padding: 3px 9px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  background: #0a0a0a;
+}
+.chip[data-source="session"] { border-color: var(--src-session); color: var(--src-session); }
+.chip[data-source="monado"] { border-color: var(--src-monado); color: var(--src-monado); }
+.chip[data-source="weston"] { border-color: var(--src-weston); color: var(--src-weston); }
+.chip[data-source="proxy"] { border-color: var(--src-proxy); color: var(--src-proxy); }
+.chip[data-source="steam"] { border-color: var(--src-steam); color: var(--src-steam); }
+.chip[data-source="pose"] { border-color: var(--src-pose); color: var(--src-pose); }
+.chip.off { opacity: 0.28; text-decoration: line-through; }
+
+/* one stream, every source, tagged and coloured */
 #log-tail {
   margin: 8px 0 0;
   overflow: auto;
   background: #000;
   border: 2px solid var(--edge);
-  padding: 10px;
-  white-space: pre-wrap;
+  padding: 8px 10px;
   font-family: var(--mono);
   font-size: 11px;
   line-height: 1.5;
   color: #a8a8a8;
 }
+.log-line {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  gap: 10px;
+  padding: 1px 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.log-src {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  opacity: 0.8;
+}
+.log-line.src-session .log-src { color: var(--src-session); }
+.log-line.src-monado .log-src { color: var(--src-monado); }
+.log-line.src-weston .log-src { color: var(--src-weston); }
+.log-line.src-proxy .log-src { color: var(--src-proxy); }
+.log-line.src-steam .log-src { color: var(--src-steam); }
+.log-line.src-pose .log-src { color: var(--src-pose); }
 
 /* ---------- narrow screens: stack the deck ---------- */
 

@@ -11,8 +11,10 @@ import urllib.error
 import urllib.request
 from dataclasses import replace
 from pathlib import Path
+from typing import cast
 from unittest.mock import patch
 
+from superbot.body_preview import BodyPreview
 from superbot.config import load_config
 from superbot.dashboard import DashboardHandler, DashboardServer
 from superbot.manual_input import ManualInputError, ManualInputUnavailable
@@ -149,7 +151,8 @@ class DashboardTests(unittest.TestCase):
             headers=request_headers,
         )
         try:
-            with urllib.request.urlopen(request, timeout=5) as response:
+            # Local test server only; the scheme is fixed above.
+            with urllib.request.urlopen(request, timeout=5) as response:  # noqa: S310
                 return response.status, response.read()
         except urllib.error.HTTPError as exc:
             try:
@@ -160,7 +163,7 @@ class DashboardTests(unittest.TestCase):
     def request_with_headers(self, path: str):
         request = urllib.request.Request(f"http://127.0.0.1:{self.port}{path}")
         try:
-            with urllib.request.urlopen(request, timeout=5) as response:
+            with urllib.request.urlopen(request, timeout=5) as response:  # noqa: S310
                 return response.status, response.headers, response.read()
         except urllib.error.HTTPError as exc:
             try:
@@ -416,6 +419,22 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(lines[0], "line 50")
         self.assertEqual(lines[-1], "line 249")
 
+    def test_merged_log_stream_carries_every_source(self) -> None:
+        self.manager.logs["monado"].write_text("monado says hi\nsecond line")
+        self.manager.logs["weston"].write_text("weston says hi")
+        status, body = self.request("GET", "/api/logs")
+        self.assertEqual(status, 200)
+        logs = json.loads(body)["logs"]
+        self.assertEqual(set(logs), set(FakeManager.LOG_FILES))
+        self.assertEqual(logs["monado"], ["monado says hi", "second line"])
+        self.assertEqual(logs["weston"], ["weston says hi"])
+
+    def test_merged_log_stream_skips_missing_files(self) -> None:
+        self.manager.logs["steam"].unlink()
+        status, body = self.request("GET", "/api/logs")
+        self.assertEqual(status, 200)
+        self.assertNotIn("steam", json.loads(body)["logs"])
+
     def test_malformed_json(self) -> None:
         status, _ = self.request("POST", "/api/session/mode", raw=b"{")
         self.assertEqual(status, 400)
@@ -504,7 +523,7 @@ class ShippedStaticAssetsTests(unittest.TestCase):
     def request(self, path: str):
         request = urllib.request.Request(f"http://127.0.0.1:{self.port}{path}")
         try:
-            with urllib.request.urlopen(request, timeout=5) as response:
+            with urllib.request.urlopen(request, timeout=5) as response:  # noqa: S310
                 return response.status, response.read()
         except urllib.error.HTTPError as exc:
             try:
@@ -523,9 +542,24 @@ class ShippedStaticAssetsTests(unittest.TestCase):
         self.assertIn(b"/style.css", index)
         self.assertIn(b'data-mode="manual"', index)
 
+    def test_vendored_fonts_are_served(self) -> None:
+        for name in ("oswald-var.woff2", "archivo-var.woff2", "plex-mono-400.woff2"):
+            with self.subTest(name=name):
+                status, body = self.request(f"/fonts/{name}")
+                self.assertEqual(status, 200)
+                self.assertTrue(body)
+
+    def test_font_route_rejects_traversal(self) -> None:
+        for path in ("/fonts/%2e%2e%2fstyle.css", "/fonts/..%2fstyle.css", "/fonts/"):
+            with self.subTest(path=path):
+                status, _ = self.request(path)
+                self.assertEqual(status, 404)
+
 
 class _FakeBody:
     """Stands in for BodyPreview: only what the command route touches."""
+
+    out_dir: Path | None = None
 
     def __init__(self, path: Path, running: bool = True) -> None:
         self.path = path
@@ -650,7 +684,7 @@ class BodyCommandRouteTestCase(unittest.TestCase):
             body = _FakeBody(_P(tmp) / "control.sock")
             body.out_dir = _P(tmp)
             server = DashboardServer(("127.0.0.1", 0), self.manager, self.cfg, self.base,
-                                     body=body)
+                                     body=cast(BodyPreview | None, body))
             port = server.server_address[1]
             thread = threading.Thread(target=server.serve_forever,
                                       kwargs={"poll_interval": 0.05}, daemon=True)

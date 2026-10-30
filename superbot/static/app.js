@@ -46,12 +46,6 @@ const manualKeys = new Set();
 const manualButtons = new Set();
 const manualMouse = { dx: 0, dy: 0, wheel: 0 };
 
-function escapeHtml(value) {
-  return String(value ?? "").replace(/[&<>"']/g, (char) => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
-  }[char]));
-}
-
 async function api(path, options = {}) {
   const response = await fetch(path, {
     headers: { "Content-Type": "application/json" },
@@ -61,7 +55,7 @@ async function api(path, options = {}) {
     let message = response.statusText;
     try {
       message = (await response.json()).error || message;
-    } catch (_) {
+    } catch {
       // keep the status text
     }
     throw new Error(message);
@@ -165,7 +159,7 @@ function closePreview() {
   if (rfb) {
     try {
       rfb.disconnect();
-    } catch (_) {
+    } catch {
       // already gone
     }
   }
@@ -201,7 +195,7 @@ async function connectPreview() {
     if (generation !== previewGeneration || !previewCreds) {
       try {
         rfb.disconnect();
-      } catch (_) {
+      } catch {
         // already gone
       }
       return;
@@ -338,6 +332,10 @@ function applyControls(state) {
   const audioButton = $("mute-audio");
   audioButton.textContent = audio.muted ? "Unmute game audio" : "Mute game audio";
   audioButton.disabled = actionInFlight || !running || !audio.available;
+  const body = state.body || null;
+  const bodyRunning = Boolean(body && body.running);
+  $("body-start").disabled = actionInFlight || !body || !body.enabled || bodyRunning;
+  $("body-stop").disabled = actionInFlight || !body || !bodyRunning;
 }
 
 function clamp(value, limit) {
@@ -408,7 +406,7 @@ async function manualTick() {
       let message = `input rejected (${response.status})`;
       try {
         message = (await response.json()).error || message;
-      } catch (_) {
+      } catch {
         // keep the status message
       }
       manualLastError = message;
@@ -416,7 +414,7 @@ async function manualTick() {
     } else {
       manualLastError = "";
     }
-  } catch (_) {
+  } catch {
     manualLastError = "input unavailable";
   } finally {
     manualInFlight = false;
@@ -460,7 +458,7 @@ function requestManualControl() {
   try {
     const result = preview.requestPointerLock({ unadjustedMovement: true });
     if (result && typeof result.catch === "function") result.catch(fallback);
-  } catch (_) {
+  } catch {
     fallback();
   }
 }
@@ -538,30 +536,35 @@ function render(state) {
   updateManualUi(state);
   applyServerError(state.last_error);
 
-  const cards = Object.entries(state.processes).map(([name, process]) => `
-    <div class="card">
-      <strong>${escapeHtml(name)}</strong>
-      <span class="${process.alive ? "ok" : "bad"}">${process.alive ? "alive" : "down"}</span>
-      <small>${escapeHtml(process.pid ?? "")}</small>
-    </div>
-  `);
-  cards.push(`
-    <div class="card">
-      <strong>OpenXR</strong>
-      <span>${escapeHtml(state.openxr_client || "none")}</span>
-    </div>
-  `);
+  renderHealth(state);
+  bodySync();
+}
+
+function healthCard(label, value, valueClass, detail) {
+  const card = document.createElement("div");
+  card.className = "card";
+  const strong = document.createElement("strong");
+  strong.textContent = label;
+  const span = document.createElement("span");
+  span.className = valueClass || "";
+  span.textContent = value;
+  const small = document.createElement("small");
+  small.textContent = detail || "";
+  card.append(strong, span, small);
+  return card;
+}
+
+function renderHealth(state) {
+  const cards = Object.entries(state.processes).map(([name, process]) =>
+    healthCard(name, process.alive ? "alive" : "down",
+      process.alive ? "ok" : "bad", process.pid ?? "")
+  );
+  cards.push(healthCard("OpenXR", state.openxr_client || "none"));
   const preview = state.preview || {};
   const transportAlive = Boolean(preview.vnc_alive && preview.proxy_alive);
-  cards.push(`
-    <div class="card">
-      <strong>Preview</strong>
-      <span class="${transportAlive ? "ok" : "bad"}">${transportAlive ? "live" : "waiting"}</span>
-      <small>${escapeHtml(preview.mode)} · ${escapeHtml(preview.fps_target)} fps</small>
-    </div>
-  `);
-  $("health").innerHTML = cards.join("");
-  bodySync();
+  cards.push(healthCard("Preview", transportAlive ? "live" : "waiting",
+    transportAlive ? "ok" : "bad", `${preview.mode ?? ""} · ${preview.fps_target ?? 0} fps`));
+  $("health").replaceChildren(...cards);
 }
 
 async function refresh() {
@@ -622,25 +625,94 @@ $("kill-steam").onclick = () => {
 
 $("mute-audio").onclick = () => runAction(() => post("/api/audio/mute", { muted: !(lastState?.audio?.muted) }));
 
-// Logs: polls the selected log and streams it into the console. The console
-// sticks to the bottom unless the user scrolled up to read history; jumping
-// back down re-engages the tail.
-async function loadLog(forceScroll) {
-  const tail = $("log-tail");
-  const stick = forceScroll || tail.scrollTop + tail.clientHeight >= tail.scrollHeight - 6;
-  try {
-    const response = await fetch(`/api/logs/${$("log-name").value}`);
-    tail.textContent = response.ok ? await response.text() : `failed: ${response.status}`;
-  } catch (error) {
-    tail.textContent = error.message;
+$("body-start").onclick = () => runAction(() => post("/api/body/start"));
+
+$("body-stop").onclick = () => runAction(() => post("/api/body/stop"));
+
+// Logs: every session log in one colour-coded stream. The chips filter sources;
+// the console sticks to the bottom unless you scroll up to read history.
+const LOG_SOURCES = ["session", "monado", "weston", "proxy", "steam", "pose"];
+const LOG_POLL_MS = 2000;
+const logHidden = new Set();
+let logData = {};
+let logSources = [];
+let logChipKey = "";
+let logSignature = "";
+
+function buildLogChips(sources) {
+  const box = $("log-filters");
+  box.replaceChildren();
+  for (const name of sources) {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "chip";
+    chip.dataset.source = name;
+    chip.textContent = name;
+    chip.setAttribute("aria-pressed", "true");
+    chip.onclick = () => {
+      if (logHidden.has(name)) logHidden.delete(name);
+      else logHidden.add(name);
+      const on = !logHidden.has(name);
+      chip.classList.toggle("off", !on);
+      chip.setAttribute("aria-pressed", String(on));
+      renderLog(true);
+    };
+    box.appendChild(chip);
   }
+}
+
+function renderLog(stick) {
+  const tail = $("log-tail");
+  const frag = document.createDocumentFragment();
+  for (const name of logSources) {
+    if (logHidden.has(name)) continue;
+    for (const line of logData[name] || []) {
+      const row = document.createElement("div");
+      row.className = `log-line src-${name}`;
+      const tag = document.createElement("span");
+      tag.className = "log-src";
+      tag.textContent = name;
+      const text = document.createElement("span");
+      text.textContent = line || " ";
+      row.append(tag, text);
+      frag.appendChild(row);
+    }
+  }
+  tail.replaceChildren(frag);
   if (stick) tail.scrollTop = tail.scrollHeight;
 }
 
-$("log-refresh").onclick = () => loadLog(true);
-$("log-name").onchange = () => loadLog(true);
-loadLog(true);
-setInterval(() => loadLog(false), 2000);
+async function loadLog() {
+  const tail = $("log-tail");
+  const stick = tail.scrollTop + tail.clientHeight >= tail.scrollHeight - 8;
+  try {
+    const response = await fetch("/api/logs");
+    if (!response.ok) throw new Error(`failed: ${response.status}`);
+    const doc = await response.json();
+    logData = doc.logs || {};
+    logSources = Object.keys(logData).sort((a, b) => {
+      const rank = (name) => (LOG_SOURCES.includes(name) ? LOG_SOURCES.indexOf(name) : 99);
+      return rank(a) - rank(b);
+    });
+    const key = logSources.join(",");
+    if (key !== logChipKey) {
+      logChipKey = key;
+      buildLogChips(logSources);
+    }
+    // Rebuilding ~1k rows every poll is wasteful; only redraw on new output.
+    const signature = logSources
+      .map((name) => `${name}:${(logData[name] || []).length}:${(logData[name] || []).at(-1) || ""}`)
+      .join("|");
+    if (signature === logSignature) return;
+    logSignature = signature;
+    renderLog(stick);
+  } catch (error) {
+    tail.textContent = error.message;
+  }
+}
+
+loadLog();
+setInterval(loadLog, LOG_POLL_MS);
 
 $("preview-box").addEventListener("click", (event) => {
   if (event.target.closest("#vnc-auth")) return;
@@ -739,7 +811,11 @@ function bodyTiles(info) {
       tile = document.createElement("div");
       tile.className = "body-tile";
       tile.dataset.view = name;
-      tile.innerHTML = `<img alt=""><div class="tile-caption"></div>`;
+      const img = document.createElement("img");
+      img.alt = "";
+      const caption = document.createElement("div");
+      caption.className = "tile-caption";
+      tile.append(img, caption);
       box.appendChild(tile);
     }
     const caption = tile.querySelector(".tile-caption");
@@ -753,7 +829,17 @@ function bodyRefresh() {
   const wait = $("body-wait");
   if (!info || !info.running || !info.frame) {
     wait.hidden = false;
-    wait.textContent = info && info.error ? info.error : "body view off";
+    if (!info) {
+      wait.textContent = "body view off";
+    } else if (info.error) {
+      wait.textContent = info.error;
+    } else if (!info.running && info.frames_unmanaged) {
+      wait.textContent = "another body viewer is writing frames";
+    } else if (info.running) {
+      wait.textContent = "waiting for the first frame\u2026";
+    } else {
+      wait.textContent = "body view off";
+    }
     return;
   }
   wait.hidden = true;

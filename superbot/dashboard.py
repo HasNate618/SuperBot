@@ -5,7 +5,6 @@ import getpass
 import json
 import mimetypes
 import os
-import select
 import signal
 import sys
 import threading
@@ -22,6 +21,11 @@ from .processes import tail_stream
 
 class PayloadTooLarge(ValueError):
     pass
+
+
+#: Lines of each log the merged stream carries. Enough to read a failure, small
+#: enough that the whole payload stays well under a megabyte.
+LOG_TAIL_LINES = 250
 
 
 class DashboardServer(ThreadingHTTPServer):
@@ -86,6 +90,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return self._bytes(200, frame.read_bytes(), "image/jpeg")
             except OSError:
                 return self._error(404, "no body frame")
+        if path == "/api/logs":
+            return self._log_stream()
+        if path.startswith("/fonts/"):
+            return self._font(path[len("/fonts/"):])
         if path.startswith("/api/logs/"):
             name = path[len("/api/logs/"):]
             decoded = unquote(name)
@@ -256,6 +264,27 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return self._error(404, "not found")
         self._bytes(200, data, content_type)
 
+    def _log_stream(self) -> None:
+        """Every public log in one payload, so the UI can merge and filter them."""
+        streams: dict[str, list[str]] = {}
+        for name in self.server.manager.LOG_FILES:
+            path = self.server.manager.log_path(name)
+            if path is None:
+                continue
+            try:
+                with path.open("rb") as handle:
+                    text = tail_stream(handle, lines=LOG_TAIL_LINES)
+            except OSError:
+                continue
+            streams[name] = text.splitlines()
+        self._json({"logs": streams})
+
+    def _font(self, name: str) -> None:
+        # Only the vendored font directory is served, and never a traversal.
+        if not name or "/" in name or "\\" in name or name in (".", ".."):
+            return self._error(404, "not found")
+        return self._static(f"fonts/{name}", "font/woff2")
+
     def _log(self, name: str) -> None:
         path = self.server.manager.log_path(name)
         if path is None:
@@ -275,6 +304,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             username = getpass.getuser()
         except Exception:
             username = ""
+        try:
+            assets = bool(rfb is not None and rfb.is_file() and os.access(rfb, os.R_OK))
+        except OSError:
+            assets = False
         self._json({
             "mode": "vnc",
             "vnc_port": self.server.config.preview.vnc_port,
@@ -285,9 +318,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             in ("starting", "running", "stopping"),
             "transport_alive": bool(preview.get("vnc_alive"))
             and bool(preview.get("proxy_alive")),
-            "assets_available": bool(
-                rfb is not None and rfb.is_file() and os.access(rfb, os.R_OK)
-            ),
+            "assets_available": assets,
         })
 
     def _novnc(self, name: str) -> None:

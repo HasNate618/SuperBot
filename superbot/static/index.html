@@ -21,22 +21,16 @@
       <div class="top-actions">
         <button id="start" class="btn btn-go" disabled>▶ Start</button>
         <button id="stop" class="btn btn-halt" disabled>■ Stop</button>
+        <button id="mute-audio" class="btn" disabled>Mute game audio</button>
       </div>
     </header>
 
     <main class="deck">
-      <aside class="col col-left">
-        <section class="panel grow">
-          <h2>Telemetry</h2>
-          <div id="health"></div>
-        </section>
-      </aside>
-
       <section class="stage">
         <div class="stage-views">
           <section class="preview" id="preview-box">
             <div class="preview-clip" id="preview-clip">
-              <img id="preview" alt="live C0 preview">
+              <div id="preview" tabindex="-1"></div>
             </div>
             <div id="preview-wait">session stopped</div>
             <div id="manual-overlay" class="manual-overlay">
@@ -45,8 +39,19 @@
                 <span id="manual-detail"></span>
               </div>
             </div>
+            <form id="vnc-auth" class="vnc-auth">
+              <label>Username <input id="vnc-user" autocomplete="username" required></label>
+              <label>Password <input id="vnc-pass" type="password" autocomplete="current-password" aria-describedby="vnc-error" required></label>
+              <button type="submit">Connect preview</button>
+              <p id="vnc-error" role="alert"></p>
+            </form>
           </section>
           <aside id="body-box">
+            <div class="body-head">
+              <span class="body-title">Robot</span>
+              <button id="body-start" type="button" disabled>Start</button>
+              <button id="body-stop" type="button" disabled>Stop</button>
+            </div>
             <div id="body-tiles"></div>
             <div id="body-wait">body view off</div>
           </aside>
@@ -55,6 +60,11 @@
       </section>
 
       <aside class="col col-right">
+        <section class="panel">
+          <h2>Telemetry</h2>
+          <div id="health"></div>
+        </section>
+
         <section class="panel">
           <h2>Pose mode</h2>
           <div id="modes">
@@ -92,16 +102,9 @@
     <footer class="console">
       <div class="console-head">
         <h2>Logs</h2>
-        <select id="log-name">
-          <option value="session">session</option>
-          <option value="monado">monado</option>
-          <option value="weston">weston</option>
-          <option value="steam">steam</option>
-          <option value="pose">pose</option>
-        </select>
-        <button id="log-refresh">Refresh</button>
+        <div id="log-filters" class="log-filters"></div>
       </div>
-      <pre id="log-tail"></pre>
+      <div id="log-tail" class="log-tail"></div>
     </footer>
   </div>
   <script src="/app.js"></script>

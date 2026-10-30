@@ -146,6 +146,19 @@ class BodyPreview:
     def latest(self) -> Path | None:
         return self.frame()
 
+    def _log_tail_line(self) -> str:
+        """The last non-empty line the viewer wrote, for summarizing a crash."""
+        try:
+            with self.log_path.open("rb") as handle:
+                handle.seek(0, os.SEEK_END)
+                size = handle.tell()
+                handle.seek(max(0, size - 4096))
+                text = handle.read().decode("utf-8", "replace")
+        except OSError:
+            return ""
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        return lines[-1][:200] if lines else ""
+
     def camera(self) -> dict:
         """What the viewer reports about its angles; empty when it has not yet."""
         try:
@@ -162,13 +175,23 @@ class BodyPreview:
         frame = self.latest()
         cam = self.camera()
         views = cam.get("views") or list(self.cfg.views)
+        proc = self._proc
+        alive = proc is not None and proc.poll() is None
+        exit_code = None if proc is None or alive else proc.returncode
+        age = None if frame is None else round(time.time() - frame.stat().st_mtime, 2)
+        error = self._error
+        if not error and exit_code is not None:
+            tail = self._log_tail_line()
+            error = f"body view exited ({exit_code})" + (f": {tail}" if tail else "")
         return {
             "enabled": self.cfg.enabled,
-            "running": self.running(),
+            "running": alive,
+            "exit_code": exit_code,
+            # A frame can be fresh while our child is dead: an older viewer may
+            # still be writing to the shared output directory.
+            "frames_unmanaged": bool(not alive and age is not None and age < 5.0),
             "frame": str(frame) if frame else None,
-            "frame_age_s": None
-            if frame is None
-            else round(time.time() - frame.stat().st_mtime, 2),
+            "frame_age_s": age,
             "views": views,
             "primary": cam.get("primary") or (views[0] if views else "three_quarter"),
             "follow": bool(cam.get("follow", True)),
