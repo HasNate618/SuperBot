@@ -76,7 +76,7 @@ class BodyRenderer:
         self.camera = mujoco.MjvCamera()  # pyright: ignore[reportAttributeAccessIssue]
         self.camera.type = mujoco.mjtCamera.mjCAMERA_FREE  # pyright: ignore[reportAttributeAccessIssue]
         self.camera.lookat[:] = [0.0, 0.0, 0.85]
-        self.camera.distance = 2.7
+        self.camera.distance = 2.2
         self.camera.azimuth = 140.0
         self.camera.elevation = 0.0
         self.follow = follow
@@ -87,7 +87,7 @@ class BodyRenderer:
             if name not in PRESETS or name in self.views:
                 continue
             self.views[name] = FollowCamera(
-                preset=name, distance=follow.distance if follow else 2.7,
+                preset=name, distance=follow.distance if follow else 2.2,
                 elevation=follow.elevation if follow else 0.0,
                 yaw_follow=follow.yaw_follow if follow else 0.0)
         self.primary = follow.preset if follow is not None else next(iter(self.views), "three_quarter")
@@ -516,8 +516,8 @@ def main(argv: list[str] | None = None) -> int:
                     base = renderer.follow
                     renderer.views[name] = FollowCamera(
                         preset=name,
-                        distance=base.distance if base else 2.3,
-                        elevation=base.elevation if base else -10.0,
+                        distance=base.distance if base else 2.2,
+                        elevation=base.elevation if base else 0.0,
                         yaw_follow=base.yaw_follow if base else 0.0)
                     renderer.primary = name
                 else:

@@ -259,10 +259,8 @@ class OrchestratorTests(unittest.TestCase):
         preview = snapshot["preview"]
         self.assertEqual(preview["mode"], "vnc")
         self.assertEqual(preview["width"], self.cfg.preview.width)
-        self.assertEqual(
-            preview["height"],
-            self.cfg.preview.height - self.cfg.preview.panel_height,
-        )
+        # The VNC clip is the full framebuffer: no panel is subtracted.
+        self.assertEqual(preview["height"], self.cfg.preview.height)
         self.assertEqual(preview["fps_target"], 30.0)
         self.assertEqual(preview["vnc_port"], 5901)
         self.assertEqual(preview["proxy_port"], 6080)

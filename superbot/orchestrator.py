@@ -441,7 +441,11 @@ class SessionManager:
         preview_status = {
             "mode": "vnc",
             "width": self.cfg.preview.width,
-            "height": self.cfg.preview.height - self.cfg.preview.panel_height,
+            # The VNC desktop is the full framebuffer (16:9). The old code
+            # subtracted the capture panel here, squeezing the frontend clip
+            # to 1920x1048 and letterboxing the game. panel_height still
+            # applies to the JPEG-capture path in preview.py, not to VNC.
+            "height": self.cfg.preview.height,
             "fps_target": self.cfg.preview.fps,
             "vnc_port": self.cfg.preview.vnc_port,
             "proxy_port": self.cfg.preview.proxy_port,

@@ -507,7 +507,10 @@ function render(state) {
 
   $("state").textContent = state.state;
   $("state").className = `badge ${state.state}`;
-  $("preview-clip").style.aspectRatio = `${state.preview.width} / ${state.preview.height}`;
+  // Weston serves the full 1920x1080 framebuffer over VNC. The state's height
+  // used to subtract a 32px capture panel that does not exist in this view,
+  // letterboxing the game - so the clip is pinned to 16:9, not to the state.
+  $("preview-clip").style.aspectRatio = "16 / 9";
 
   const showSession = state.state === "running" || state.state === "stopping";
   $("session-id").textContent = showSession ? state.session_id || "" : "";
