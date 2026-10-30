@@ -125,6 +125,7 @@ All values below are read from this repository. `research/` holds the per-spike 
 | Policy rate | **49.6–49.9 Hz idle** (0.99–1.00× real time) at `--fps` 10/15/30/50; **44.2–44.5 Hz with the game** (0.89×) | 10 substeps × 2 ms per tick | this session |
 | Second camera angle | **~0.6 ms** per tick; body viewer RSS **948 MB** with SONIC loaded | EGL on the 4060, 640×480 | `research/gl-render-cost.md` |
 | Pose feed decoupled from rendering | `body_state.json` **45.8/s** while frames render at **4.5/s** | `--fps 5` | this session |
+| Wrist residual at the clip's own target | **0.1557 m** left / **0.1208 m** right (settled hold: 0.0609 / 0.0324) | median, 1000 frames, achieved `lw`/`rw` minus commanded `vr_t[0:3]`/`vr_t[3:6]` | `spike/wbc/logs/c3m_H3_squat_f0_from_squat.jsonl` |
 | Repo test suite | **323 tests**, standard library only | no network, no GPU, no game | `python3 -m unittest discover -s tests -t .` |
 
 ---
@@ -319,7 +320,7 @@ The sharpest limitations, stated as facts rather than caveats:
 - **Reach is ~0.20 m.** A standing body cannot touch a 0.70 m pedestal; the pistol sits 27.3 cm out of reach.
 - **Controller orientation is unverified.** Positions are exact, but the robot's wrist frame is not an OpenXR controller grip, so the in-game aim ray may be rotated by a fixed offset. Untested.
 - **`hold` has a settle transient.** The 1.3×10⁻⁴ m/s figure is the settled hold; entering it from a walk costs about 0.05 m/s RMS for the first seconds.
-- **A static ~0.16 m offset between the model and the clip reference is unexplained.** Commanding the clip's exact wrist target still reads 0.1576 m, so every pose residual in this repository is inflated by it.
+- **A static ~0.156 m offset between the model and the clip reference is unexplained.** Commanding the clip's exact f0 wrist target still leaves a **0.1557 m** left-wrist residual (0.1208 m right, median over 1000 frames of `spike/wbc/logs/c3m_H3_squat_f0_from_squat.jsonl`). In a settled hold the same comparison reads 0.0609 / 0.0324 m, so the offset is specific to the clip-anchored case and inflates every residual measured there.
 
 The design's own anti-goals are worth repeating because they are the reason the numbers can be trusted: no desired IK targets or VLM-emitted poses in the pose path, no reading game memory, no claiming a punch hit when the residual is 13.5 cm, and no framing this as "robot plays Superhot" instead of whole-body control on an OpenXR task.
 

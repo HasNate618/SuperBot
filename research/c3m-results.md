@@ -145,3 +145,17 @@ time spike/e3/.venv/bin/python spike/wbc/hold_c3m.py
 ```
 
 Do not delete `spike/wbc/logs/c3m_*` — those files are the evidence for every table above.
+
+## Measurement trap: the `vr_t` slice order
+
+`vr_targets()` builds the command vector from `(BODY_L_WRIST, BODY_R_WRIST, BODY_TORSO)`,
+so `vr_t[0:3]` is the left wrist, `vr_t[3:6]` the right wrist and `vr_t[6:9]` the torso —
+**not** head-first. Every wrist residual quoted here must subtract the matching slice;
+subtracting the wrong one turns a 3 cm residual into 34 cm and makes a solved problem
+look broken.
+
+A related trap: searching a float band across a log directory (`0.1565 < v < 0.1575`)
+returns hits in *every* field — quaternion components, activation norms, positions —
+because any value can land in a band. A number recovered that way is not a measurement.
+The residual in the README (0.1557 m left / 0.1208 m right, median over 1000 frames of
+`c3m_H3_squat_f0_from_squat.jsonl`) is computed from named fields in one file.
