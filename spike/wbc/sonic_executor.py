@@ -167,9 +167,12 @@ class SonicExecutor:
             vr_pos=vr_pos,
             vr_orn=vr_orn,
         )
-        tokens = r.enc.run(None, {r.enc_in: enc_obs[None, :]})[0][0]
+        # onnxruntime annotates run() as returning SparseTensor | Tensor, but it
+        # actually returns a list holding one ndarray (checked at runtime), so the
+        # index is fine and the stub is what is wrong here.
+        tokens = r.enc.run(None, {r.enc_in: enc_obs[None, :]})[0][0]  # pyright: ignore[reportIndexIssue]
         dec_obs = r.build_decoder_obs(tokens)
-        action = r.dec.run(None, {r.dec_in: dec_obs[None, :]})[0][0].astype(np.float64)
+        action = r.dec.run(None, {r.dec_in: dec_obs[None, :]})[0][0].astype(np.float64)  # pyright: ignore[reportIndexIssue]
         r.step_policy(action)
 
         entry = r._state_entry(action)  # noqa: SLF001 - spike exposes no public API
@@ -273,12 +276,18 @@ class SonicExecutor:
         return self.hand_target(side, forward_m=forward_m, up_m=0.02)
 
     def dodge_target(self, lateral_m: float) -> Pose:
-        """Lateral torso/head offset, the only channel that can lean this body.
+        """Lateral torso/head offset: a lean, not a step.
 
-        AUTH_ROOT_VEL is not honoured in a hold session, so this is a lean, not
-        a step. Whether the base actually translates is measured, not assumed.
+        AUTH_ROOT_VEL is not honoured in a hold session, so the base barely moves.
+        Measured 2026-10-29 with a 0.14 m command: the head shifted 0.106-0.134 m
+        laterally while the base moved 0.008 m or less. That is the whole dodge.
+
+        The offset is on Y, not X. This frame is Z-up with +X forward and +Y left,
+        so the first version leaned the head forwards and back while calling it a
+        dodge - and the head channel barely honoured that, so the verb moved about
+        a centimetre in any direction. Fixing the axis took it to 10-13 cm.
         """
         pts, orns = self._clip_targets()
         start = 3 * HEAD
-        target = pts[start:start + 3] + np.array([lateral_m, 0.0, -0.04])
+        target = pts[start:start + 3] + np.array([0.0, lateral_m, -0.04])
         return _pose_from(target, orns[4 * HEAD:4 * HEAD + 4])
