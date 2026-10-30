@@ -265,23 +265,39 @@ def blank_packet() -> RemoteData:
 def fill(
     d: RemoteData,
     poses: Mapping[str, tuple[Sequence[float], Sequence[float]]],
-    trigger: float = 0.0,
-    squeeze: float = 0.0,
+    *,
+    grip: tuple[float, float] = (0.0, 0.0),
+    curl: tuple[float, float] = (0.0, 0.0),
+    trigger: tuple[float, float] = (0.0, 0.0),
+    trigger_click: tuple[bool, bool] = (False, False),
 ) -> RemoteData:
-    """Write `{"head"|"left"|"right": (position, quaternion_xyzw)}` into a packet."""
+    """Write `{"head"|"left"|"right": (position, quaternion_xyzw)}` into a packet.
+
+    Button tuples are (left, right). Grip, curl and trigger are separate on
+    purpose: a tracker's squeeze is not a finger curl, and which of them a game
+    reads is a question only the game can answer - so they travel independently
+    and the caller decides.
+
+    `trigger_click` is an edge, not a level. The previous version derived it from
+    `trigger > 0.0`, which re-clicked on every packet while the button was held;
+    the caller now owns the rising edge.
+    """
     p, q = poses["head"]
     d.head.center.position.x, d.head.center.position.y, d.head.center.position.z = p
     d.head.center.orientation.x, d.head.center.orientation.y, \
         d.head.center.orientation.z, d.head.center.orientation.w = q
-    for side in ("left", "right"):
+    for i, side in enumerate(("left", "right")):
         pos, quat = poses[side]
         c = getattr(d, side)
         c.pose.position.x, c.pose.position.y, c.pose.position.z = pos
         c.pose.orientation.x, c.pose.orientation.y, c.pose.orientation.z, c.pose.orientation.w = quat
-        c.trigger_value.x = trigger
-        c.squeeze_value.x = squeeze
-        c.trigger_click = trigger > 0.0
-        c.trigger_touch = trigger > 0.0
+        c.squeeze_value.x = grip[i]
+        c.squeeze_force.x = grip[i]
+        for k in range(5):
+            c.hand_curl[k] = curl[i]
+        c.trigger_value.x = trigger[i]
+        c.trigger_touch = trigger[i] > 0.0
+        c.trigger_click = bool(trigger_click[i])
         c.thumbstick.x = 0.0
         c.thumbstick.y = 0.0
     return d

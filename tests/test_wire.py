@@ -109,7 +109,9 @@ class BodyStateConversionTests(unittest.TestCase):
 class FillTests(unittest.TestCase):
     def test_fill_writes_poses_and_buttons(self) -> None:
         poses = wire.body_state_to_xr(BodyStateConversionTests.state())
-        d = wire.fill(wire.blank_packet(), poses, trigger=1.0)
+        d = wire.fill(
+            wire.blank_packet(), poses, trigger=(1.0, 1.0), trigger_click=(True, True)
+        )
         self.assertEqual(d.header, wire.HEADER)
         self.assertAlmostEqual(d.head.center.position.x, poses["head"][0][0], places=5)
         self.assertAlmostEqual(d.left.pose.position.y, poses["left"][0][1], places=5)
@@ -117,6 +119,40 @@ class FillTests(unittest.TestCase):
         self.assertAlmostEqual(d.right.trigger_value.x, 1.0)
         self.assertTrue(d.left.active)
         self.assertFalse(d.head.per_view_data_valid)
+
+    def test_fill_sends_buttons_per_hand(self) -> None:
+        packet = wire.fill(
+            wire.blank_packet(),
+            wire.REST_POSES,
+            grip=(0.0, 1.0),
+            trigger=(1.0, 0.0),
+            trigger_click=(True, False),
+        )
+        self.assertAlmostEqual(packet.left.squeeze_value.x, 0.0)
+        self.assertAlmostEqual(packet.right.squeeze_value.x, 1.0)
+        self.assertAlmostEqual(packet.left.trigger_value.x, 1.0)
+        self.assertAlmostEqual(packet.right.trigger_value.x, 0.0)
+        self.assertTrue(packet.left.trigger_click)
+        self.assertFalse(packet.right.trigger_click)
+
+    def test_curl_and_squeeze_are_separately_controllable(self) -> None:
+        squeeze_only = wire.fill(
+            wire.blank_packet(), wire.REST_POSES, grip=(1.0, 1.0), curl=(0.0, 0.0)
+        )
+        self.assertAlmostEqual(squeeze_only.left.squeeze_value.x, 1.0)
+        self.assertAlmostEqual(squeeze_only.left.squeeze_force.x, 1.0)
+        self.assertAlmostEqual(squeeze_only.left.hand_curl[0], 0.0)
+
+    def test_curl_alone_moves_no_button(self) -> None:
+        curl_only = wire.fill(wire.blank_packet(), wire.REST_POSES, curl=(1.0, 0.0))
+        self.assertAlmostEqual(curl_only.left.hand_curl[4], 1.0)
+        self.assertAlmostEqual(curl_only.left.squeeze_value.x, 0.0)
+
+    def test_held_trigger_does_not_repeat_the_click(self) -> None:
+        held = wire.fill(wire.blank_packet(), wire.REST_POSES, trigger=(1.0, 1.0))
+        self.assertFalse(held.left.trigger_click, "a click is an edge, not a level")
+        self.assertAlmostEqual(held.left.trigger_value.x, 1.0)
+        self.assertTrue(held.left.trigger_touch)
 
 
 if __name__ == "__main__":
