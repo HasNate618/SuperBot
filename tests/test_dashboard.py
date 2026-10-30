@@ -659,9 +659,21 @@ class BodyCommandRouteTestCase(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertIn("unknown verb", doc.get("error", ""))
 
-    def test_stopped_body_returns_503(self) -> None:
-        status, _ = self._serve(_FakeBody(self.sock_path, running=False), {"verb": "punch"})
+    def test_command_reaches_a_viewer_the_dashboard_did_not_start(self) -> None:
+        # The handle only knows about processes this dashboard spawned. A viewer
+        # started another way (or one that outlived a restart) holds the socket
+        # perfectly well, and refusing on the handle alone broke the buttons.
+        verbs = _VerbSocket(self.sock_path, {"ok": True, "verb": "look_left", "seq": 1})
+        self.addCleanup(verbs.close)
+        status, doc = self._serve(_FakeBody(self.sock_path, running=False), {"verb": "look_left"})
+        self.assertEqual(status, 200)
+        self.assertEqual(doc.get("verb"), "look_left")
+        self.assertEqual(verbs.seen, [{"verb": "look_left"}])
+
+    def test_dead_body_socket_returns_503_with_the_reason(self) -> None:
+        status, doc = self._serve(_FakeBody(self.sock_path, running=False), {"verb": "punch"})
         self.assertEqual(status, 503)
+        self.assertIn("body control unavailable", doc.get("error", ""))
 
     def test_view_switch_reaches_the_body_socket(self) -> None:
         verbs = _VerbSocket(self.sock_path, {"ok": True, "view": "side"})

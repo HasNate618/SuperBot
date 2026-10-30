@@ -158,8 +158,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
             view = self.server.body
             if view is None:
                 return self._error(400, "body view disabled")
-            if not view.running():
-                return self._error(503, "body view is not running")
+            # No running() gate: that only knows about the process *this* dashboard
+            # spawned, and a viewer started another way (or one that outlived a
+            # restart) publishes frames and holds the socket perfectly well. The
+            # socket is the authority - if nothing is listening, send_control says so
+            # with the real reason instead of a guess about our own handle.
             if "view" in body and "verb" not in body:
                 name = body.get("view")
                 if not isinstance(name, str) or name not in BODY_VIEWS:
