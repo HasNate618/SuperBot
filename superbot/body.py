@@ -174,6 +174,7 @@ class BodyCommand:
             raise TypeError("command must be an object")
         pose = lambda k: Pose.from_dict(raw[k]) if raw.get(k) is not None else None  # noqa: E731
         closure = raw.get("closure")
+        trigger = raw.get("trigger")
         waist = raw.get("waist")
         v_xy = raw.get("v_xy") or [0.0, 0.0]
         if len(v_xy) != 2:
@@ -193,6 +194,7 @@ class BodyCommand:
             left_hand=pose("left_hand"),
             right_hand=pose("right_hand"),
             closure=None if closure is None else (float(closure[0]), float(closure[1])),
+            trigger=None if trigger is None else (float(trigger[0]), float(trigger[1])),
             waist=None
             if waist is None
             else (float(waist[0]), float(waist[1]), float(waist[2])),

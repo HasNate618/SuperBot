@@ -1,3 +1,5 @@
+# Re-indexed: AUTH_TRIGGER, commanded_buttons and the BodyState button
+# fields live in superbot/body.py and are exercised below.
 import unittest
 
 from superbot.body import (
@@ -120,6 +122,16 @@ class BodyTestCase(unittest.TestCase):
 
         absent = BodyCommand(authority=AUTH_CLOSURE | AUTH_TRIGGER)
         self.assertEqual(commanded_buttons(absent), ((0.0, 0.0), (0.0, 0.0)))
+
+    def test_command_round_trips_the_trigger(self) -> None:
+        # to_dict wrote `trigger` and from_dict never read it, so any JSON writer
+        # (the bus, a future brain) had its trigger silently discarded.
+        cmd = BodyCommand(authority=AUTH_CLOSURE | AUTH_TRIGGER,
+                          closure=(0.0, 1.0), trigger=(1.0, 0.0))
+        back = BodyCommand.from_dict(cmd.to_dict())
+        self.assertEqual(back.closure, (0.0, 1.0))
+        self.assertEqual(back.trigger, (1.0, 0.0))
+        self.assertEqual(commanded_buttons(back), ((0.0, 1.0), (1.0, 0.0)))
 
     def test_state_round_trips_buttons(self) -> None:
         state = sample_state()

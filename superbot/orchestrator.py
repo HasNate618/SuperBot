@@ -3,10 +3,10 @@ from __future__ import annotations
 import codecs
 import contextlib
 import json
-import subprocess
 import os
 import re
 import shutil
+import subprocess
 import sys
 import threading
 import time
@@ -668,7 +668,28 @@ class SessionManager:
                 if self.runner.systemd_unit_active(unit):
                     raise PreflightError(f"user unit {unit} is still active after stopping it")
         if self.runner.port_in_use("127.0.0.1", 4242):
-            raise PreflightError("TCP 4242 is already in use")
+            # Not an unconditional refusal: a previous session's monado-service can
+            # outlive its teardown, get reparented to init and match neither unit
+            # above, while it keeps 4242 and makes every start refuse. Reclaim it
+            # when it is ours; refuse when it is somebody else's.
+            print(
+                "superbot session: TCP 4242 is in use; checking whether it is our monado",
+                file=sys.stderr,
+                flush=True,
+            )
+            try:
+                reclaimed = self.runner.reclaim_port(4242, expect="monado")
+            except Exception as exc:  # noqa: BLE001 - preflight turns it into a message
+                raise PreflightError(str(exc)) from exc
+            if reclaimed:
+                print(
+                    "superbot session: stopped leftover monado "
+                    + ", ".join(str(pid) for pid in reclaimed),
+                    file=sys.stderr,
+                    flush=True,
+                )
+            if self.runner.port_in_use("127.0.0.1", 4242):
+                raise PreflightError("TCP 4242 is already in use")
         with self._lock:
             self._require_attempt_active(generation)
             self.runner.remove_stale_socket(self.runtime_dir / "monado_comp_ipc")

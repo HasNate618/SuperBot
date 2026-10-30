@@ -71,6 +71,10 @@ HOLD_FRAME = 0
 FALL_Z = 0.25
 FALL_UP_Z = 0.3
 
+#: Ticks a commanded trigger stays pressed. Long enough for a 50 Hz consumer to
+#: sample it, short enough that a second press is a second press.
+FIRE_HOLD_TICKS = 3
+
 # Point order in the VR 3-point interface, from `sonic_runner.vr_targets`:
 # it iterates (BODY_L_WRIST, BODY_R_WRIST, BODY_TORSO). `pts` is flat (9,) and
 # `orns` is flat (12,), not (3,3) / (3,4).
@@ -102,6 +106,16 @@ class SonicExecutor:
         self.ticks = 0
         self.fell = False
         self.last_state: BodyState | None = None
+        #: Latched (left, right) grip. See the comment in `step()`: the body has no
+        #: fingers, so this is a commanded value that persists until released.
+        self._buttons: tuple[tuple[float, float], tuple[float, float]] = (
+            (0.0, 0.0),
+            (0.0, 0.0),
+        )
+        #: Remaining ticks of trigger hold, per hand. A trigger is momentary: latching
+        #: it would let the body fire exactly once per session, because nothing but a
+        #: `release` verb would ever bring it back down.
+        self._fire_ticks = [0, 0]
 
     # ---- geometry -------------------------------------------------------
 
@@ -206,11 +220,29 @@ class SonicExecutor:
                     flags |= FLAG_SATURATED
 
         root_q = r.data.qpos[3:7]
-        # The body has no fingers and no trigger, so these are the values it was
-        # told to hold, not measured contact. They are recomputed every tick from
-        # the command in hand: an empty-mask hold therefore reports (0, 0) instead
-        # of leaving the last grip closed.
+        # Buttons are device state, not a skill, so the GRIP latches: a command that
+        # does not mention it leaves it where it was, exactly as a physical button does
+        # not spring open because you waved your other arm. Measured before this: every
+        # verb except grab reopened the hand on the next tick, and the command bus's TTL
+        # did the same after 2 s, so a floppy could be picked up and never carried.
+        # `release_*` is how a hand opens; an empty-mask hold is not.
+        #
+        # The TRIGGER is deliberately not latched. It is a press, and a latched press
+        # fires once per session because no verb brings it back down.
         closure, trigger = commanded_buttons(cmd)
+        held_grip, _ = self._buttons
+        if (cmd.authority & AUTH_CLOSURE) != 0:
+            held_grip = closure
+        self._buttons = (held_grip, (0.0, 0.0))
+        if (cmd.authority & AUTH_TRIGGER) != 0:
+            for hand in (0, 1):
+                self._fire_ticks[hand] = FIRE_HOLD_TICKS if trigger[hand] > 0.0 else 0
+        held_fire = tuple(
+            1.0 if self._fire_ticks[hand] > 0 else 0.0 for hand in (0, 1)
+        )
+        for hand in (0, 1):
+            if self._fire_ticks[hand] > 0:
+                self._fire_ticks[hand] -= 1
         state = BodyState(
             seq_ack=cmd.seq,
             t_mono_ns=now_ns,
@@ -228,8 +260,8 @@ class SonicExecutor:
             residual_right_m=residuals[2],
             flags=flags,
             supported=SUPPORTED_AUTH,
-            closure=closure,
-            trigger=trigger,
+            closure=held_grip,
+            trigger=(held_fire[0], held_fire[1]),
             invalid_count=0,
         )
         self.last_state = state

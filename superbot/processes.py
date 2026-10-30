@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import IO
 
+from . import portowner
+
 
 def _listening_in(text: str, port: int) -> bool:
     suffix = f":{port:04X}"
@@ -269,6 +271,49 @@ class ProcessRunner:
             if _listening_in(text, port):
                 return True
         return False
+
+    def reclaim_port(
+        self,
+        port: int,
+        expect: str = "monado",
+        net_text: str | None = None,
+        timeout: float = 3.0,
+    ) -> list[int]:
+        """Free a port we own; refuse when the holder is somebody else's.
+
+        A session's monado-service can outlive a teardown, get reparented to init
+        and match no systemd unit, so the unit-reclaim path never sees it while it
+        keeps 4242. Refusing at that point is correct for a stranger's listener and
+        wrong for our own leftover, so resolve the holder first (see
+        `superbot.portowner`), then decide.
+        """
+        decision = portowner.plan(
+            expect, proc_root=self.proc_root, net_text=net_text, port=port
+        )
+        if decision.refuse:
+            raise ProcessError(decision.refuse)
+        if not decision.kill:
+            return []
+
+        killed = [holder.pid for holder in decision.kill]
+        for pid in killed:
+            with suppress(ProcessLookupError, PermissionError):
+                os.kill(pid, signal.SIGTERM)
+        if self._wait_port_free(port, timeout):
+            return killed
+        for pid in killed:
+            self.kill_pid(pid)
+        if self._wait_port_free(port, timeout):
+            return killed
+        raise ProcessError(f"port {port} is still in use after stopping {killed}")
+
+    def _wait_port_free(self, port: int, timeout: float) -> bool:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if not self.port_in_use("127.0.0.1", port):
+                return True
+            time.sleep(0.05)
+        return not self.port_in_use("127.0.0.1", port)
 
     def wait_port(self, host: str, port: int, timeout: float, abort=None) -> None:
         deadline = time.monotonic() + timeout

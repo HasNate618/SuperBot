@@ -89,16 +89,33 @@ class ClickEdge:
     The wire format carries a click as well as a value, and a click is an edge.
     Sending click=true on every packet while the trigger is down is what the old
     fill() did; Unity reads that as a fresh press every frame.
+
+    `hold_packets` keeps the click high for a couple of packets. One packet is
+    about 20 ms, and Monado's hub latches only the newest packet, so a single
+    packet can be overwritten before a slow game frame ever samples it - measured
+    at 1 click in 30 packets, which is exactly the intermittent fire that makes a
+    null result unattributable.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, hold_packets: int = 2) -> None:
         self._prev: tuple[float, float] = (0.0, 0.0)
+        self._left = [0, 0]
+        self.hold_packets = max(hold_packets, 1)
 
     def update(self, values: Sequence[float]) -> tuple[bool, bool]:
-        clicks = tuple(
-            v > 0.0 and p <= 0.0 for v, p in zip(values, self._prev, strict=True)
-        )
-        self._prev = (float(values[0]), float(values[1]))
+        # Clamp rather than raise: this runs inside the 50 Hz loop, where losing a
+        # packet beats dying mid-session.
+        pair = (float(values[0]), float(values[1])) if len(values) >= 2 else (0.0, 0.0)
+        clicks: list[bool] = []
+        for i, value in enumerate(pair):
+            if value > 0.0 and self._prev[i] <= 0.0:
+                self._left[i] = self.hold_packets
+            elif value <= 0.0:
+                self._left[i] = 0
+            clicks.append(self._left[i] > 0)
+            if self._left[i] > 0:
+                self._left[i] -= 1
+        self._prev = pair
         return (clicks[0], clicks[1])
 
 
@@ -190,7 +207,14 @@ def connect(host: str, port: int, timeout: float = CONNECT_TIMEOUT_SEC) -> socke
 
 def log_row(writer: Any, t: float, poses: dict[str, Any], note: str, age: float | None,
             grip: tuple[float, float] = (0.0, 0.0),
-            fire: tuple[float, float] = (0.0, 0.0)) -> None:
+            fire: tuple[float, float] = (0.0, 0.0),
+            curl: tuple[float, float] = (0.0, 0.0),
+            click: tuple[bool, bool] = (False, False)) -> None:
+    """One row per emitted packet. `grip`/`curl`/`fire` are what the wire carried.
+
+    They are logged after the --grab-mode mask on purpose: logging the request
+    instead would claim a squeeze the game never saw under --grab-mode curl.
+    """
     hp, hq = poses["head"]
     lp, _ = poses["left"]
     rp, _ = poses["right"]
@@ -200,7 +224,10 @@ def log_row(writer: Any, t: float, poses: dict[str, Any], note: str, age: float 
         f"{hq[0]:.5f}", f"{hq[1]:.5f}", f"{hq[2]:.5f}", f"{hq[3]:.5f}",
         f"{lp[0]:.4f}", f"{lp[1]:.4f}", f"{lp[2]:.4f}",
         f"{rp[0]:.4f}", f"{rp[1]:.4f}", f"{rp[2]:.4f}",
-        f"{grip[0]:.1f}", f"{grip[1]:.1f}", f"{fire[0]:.1f}", f"{fire[1]:.1f}",
+        f"{grip[0]:.1f}", f"{grip[1]:.1f}",
+        f"{curl[0]:.1f}", f"{curl[1]:.1f}",
+        f"{fire[0]:.1f}", f"{fire[1]:.1f}",
+        f"{int(click[0])}", f"{int(click[1])}",
         "" if age is None else f"{age:.3f}",
         note,
     ])
@@ -208,12 +235,14 @@ def log_row(writer: Any, t: float, poses: dict[str, Any], note: str, age: float 
 
 LOG_HEADER = ["t", "hx", "hy", "hz", "hqx", "hqy", "hqz", "hqw",
               "lx", "ly", "lz", "rx", "ry", "rz",
-              "grip_l", "grip_r", "fire_l", "fire_r", "state_age", "note"]
+              "grip_l", "grip_r", "curl_l", "curl_r",
+              "fire_l", "fire_r", "click_l", "click_r",
+              "state_age", "note"]
 
 
 def run(host: str, port: int, state_path: Path, log_path: Path | None,
         duration: float, hz: float, force_grab: str = "none",
-        force_trigger: str = "none", grab_mode: str = "both") -> int:
+        force_trigger: str = "none", grab_mode: str = "squeeze") -> int:
     wire.assert_layout()
     source = PacketSource(StateSource(state_path))
     sock = connect(host, port)
@@ -255,20 +284,24 @@ def run(host: str, port: int, state_path: Path, log_path: Path | None,
             )
             grip = grip_force if grip_force != (0.0, 0.0) else grip_state
             fire = fire_force if fire_force != (0.0, 0.0) else fire_state
+            grip_field = grip if grab_mode in ("squeeze", "both") else (0.0, 0.0)
+            curl_field = grip if grab_mode in ("curl", "both") else (0.0, 0.0)
+            click = edge.update(fire)
             packet = wire.fill(
                 wire.blank_packet(),
                 poses,
-                grip=grip if grab_mode in ("squeeze", "both") else (0.0, 0.0),
-                curl=grip if grab_mode in ("curl", "both") else (0.0, 0.0),
+                grip=grip_field,
+                curl=curl_field,
                 trigger=fire,
-                trigger_click=edge.update(fire),
+                trigger_click=click,
             )
             stream.write(bytes(packet))
             stream.flush()
             sent += 1
             notes[note] = notes.get(note, 0) + 1
             if writer is not None:
-                log_row(writer, now - started, poses, note, age, grip, fire)
+                log_row(writer, now - started, poses, note, age,
+                        grip_field, fire, curl_field, click)
             next_tick += period
             sleep = next_tick - time.monotonic()
             if sleep > 0:
@@ -302,8 +335,9 @@ def main(argv: list[str] | None = None) -> int:
                     help="hold one hand closed regardless of the body, for the hub A/B")
     ap.add_argument("--force-trigger", choices=FORCE_MODES, default="none",
                     help="hold one trigger pressed regardless of the body")
-    ap.add_argument("--grab-mode", choices=GRAB_MODES, default="both",
-                    help="which wire field a closure drives (the game decides which it reads)")
+    ap.add_argument("--grab-mode", choices=GRAB_MODES, default="squeeze",
+                    help="which wire field a closure drives; squeeze is the controller "
+                         "button (curl only feeds Monado's hand-tracking skeleton)")
     args = ap.parse_args(argv)
     log_path = Path(args.log) if args.log else None
     return run(args.host, args.port, Path(args.state), log_path, args.duration, args.hz,

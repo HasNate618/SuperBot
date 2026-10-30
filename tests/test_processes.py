@@ -58,6 +58,30 @@ class ProcessTests(unittest.TestCase):
             self.assertTrue(runner.pid_alive(123))
             self.assertFalse(runner.pid_alive(999))
 
+    def test_reclaim_port_refuses_a_stranger(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            proc_root = Path(raw)
+            pid_dir = proc_root / "777"
+            pid_dir.mkdir()
+            (pid_dir / "cmdline").write_bytes(b"game-server\0--port\04242\0")
+            net = proc_root / "net"
+            net.mkdir()
+            (net / "tcp").write_text(
+                "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n"
+                "   0: 00000000:1092 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 55 1\n"
+            )
+            (pid_dir / "fd").mkdir()
+            os.symlink("socket:[55]", pid_dir / "fd" / "4")
+            runner = ProcessRunner(Path(raw) / "pointer.json", proc_root=proc_root)
+            with self.assertRaises(ProcessError) as caught:
+                runner.reclaim_port(4242, expect="monado", net_text=(net / "tcp").read_text())
+            self.assertIn("game-server", str(caught.exception))
+
+    def test_reclaim_port_plans_nothing_when_the_port_is_free(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            runner = ProcessRunner(Path(raw) / "pointer.json", proc_root=Path(raw))
+            self.assertEqual(runner.reclaim_port(4242, expect="monado", net_text=""), [])
+
     def test_remove_stale_socket(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             path = Path(raw) / "monado_comp_ipc"

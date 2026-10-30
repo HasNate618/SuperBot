@@ -15,6 +15,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from superbot.config import load_config
+from superbot.processes import ProcessError
 from superbot.orchestrator import (
     ConflictError,
     PreflightError,
@@ -65,6 +66,7 @@ class FakeRunner:
         self.alive_pids: set[int] = set()
         self.removed_socket = False
         self.stopped_units: list[str] = []
+        self.reclaimed_ports: list[tuple[int, str]] = []
 
     def start(self, name, argv, env, cwd, log_path, stderr_path=None):
         self.starts.append((name, [str(item) for item in argv]))
@@ -116,6 +118,16 @@ class FakeRunner:
 
     def port_in_use(self, host, port):
         return (host, port) in self.ports_in_use
+
+    def reclaim_port(self, port, expect="monado", net_text=None, timeout=3.0):
+        self.reclaimed_ports.append((port, expect))
+        if self.fail_at == "reclaim":
+            raise ProcessError(
+                "port 4242 is held by pid 7 (game-server --port 4242), "
+                "which is not a monado process"
+            )
+        self.ports_in_use.discard(("127.0.0.1", port))
+        return [1410672]
 
     def remove_stale_socket(self, path):
         self.removed_socket = True
@@ -586,6 +598,28 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(self.manager.state_value(), "failed")
         self.assertIsNone(self.runner.pointer)
         self.assertEqual(self.runner.handles, {})
+
+    def test_preflight_reclaims_a_leftover_monado_on_4242(self) -> None:
+        # A previous session's monado outliving its teardown matches no unit, so it
+        # used to make every later start refuse with "TCP 4242 is already in use".
+        self.runner.ports_in_use.add(("127.0.0.1", 4242))
+        with patch("superbot.orchestrator.missing_requirements", return_value=[]):
+            try:
+                self.manager.start()
+            except Exception:
+                pass  # only the preflight decision is under test here
+        self.assertEqual(self.runner.reclaimed_ports, [(4242, "monado")])
+        self.assertNotIn(("127.0.0.1", 4242), self.runner.ports_in_use)
+
+    def test_preflight_refuses_when_4242_belongs_to_a_stranger(self) -> None:
+        self.runner.ports_in_use.add(("127.0.0.1", 4242))
+        self.runner.fail_at = "reclaim"
+        with patch("superbot.orchestrator.missing_requirements", return_value=[]):
+            with self.assertRaises(PreflightError) as raised:
+                self.manager.start()
+        self.assertIn("game-server", str(raised.exception))
+        self.assertEqual(self.manager.state_value(), "failed")
+        self.assertIsNone(self.runner.pointer)
 
     def test_systemd_probe_failure_blocks_start(self) -> None:
         with (

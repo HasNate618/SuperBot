@@ -1,3 +1,5 @@
+# Re-indexed: AUTH_TRIGGER and the trigger range check live in
+# superbot/validate.py and superbot/body.py.
 import math
 import unittest
 

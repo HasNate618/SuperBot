@@ -150,8 +150,17 @@ class DriverButtonsTests(unittest.TestCase):
         self.assertEqual(pose_relay.forced_pair("both"), (1.0, 1.0))
         self.assertEqual(pose_relay.forced_pair("none"), (0.0, 0.0))
 
+    def test_click_lasts_long_enough_to_survive_a_slow_game_frame(self) -> None:
+        # Measured: one click packet in 30. Monado latches only the newest packet,
+        # so a single 20 ms window can be overwritten before the game samples it.
+        edge = pose_relay.ClickEdge(hold_packets=2)
+        self.assertEqual(edge.update((1.0, 0.0)), (True, False), "rising edge")
+        self.assertEqual(edge.update((1.0, 0.0)), (True, False), "still held for one more")
+        self.assertEqual(edge.update((1.0, 0.0)), (False, False), "then released")
+
     def test_click_is_the_rising_edge_only(self) -> None:
-        edge = pose_relay.ClickEdge()
+        # hold_packets=1 isolates the edge from the click's width (see the test below).
+        edge = pose_relay.ClickEdge(hold_packets=1)
         self.assertEqual(edge.update((1.0, 0.0)), (True, False), "first press clicks")
         self.assertEqual(edge.update((1.0, 0.0)), (False, False), "holding does not re-click")
         self.assertEqual(edge.update((0.0, 0.0)), (False, False))
@@ -271,6 +280,22 @@ class RelayRunTests(unittest.TestCase):
         self.assertAlmostEqual(driver.last_trigger[1], 0.0)
         self.assertEqual(rows[-1]["grip_r"], "1.0")
         self.assertEqual(rows[-1]["fire_l"], "1.0")
+
+    def test_log_records_the_masked_field_not_the_request(self) -> None:
+        # Under --grab-mode curl the wire carries squeeze 0, so logging the raw
+        # request would claim a grip the game never saw.
+        driver = RecordingDriver(); driver.start()
+        with tempfile.TemporaryDirectory() as raw:
+            state_path = Path(raw) / "body_state.json"
+            state_path.write_text(json.dumps(sample_state()), encoding="utf-8")
+            log_path = Path(raw) / "poses.csv"
+            pose_relay.run("127.0.0.1", driver.port, state_path, log_path,
+                           duration=0.3, hz=50.0, force_grab="right", grab_mode="curl")
+            driver.closed.wait(5)
+            rows = list(csv.DictReader(log_path.read_text().splitlines()))
+        self.assertEqual(rows[-1]["grip_r"], "0.0", "squeeze was masked off")
+        self.assertEqual(rows[-1]["curl_r"], "1.0", "the curl is what was sent")
+        self.assertAlmostEqual(driver.last_squeeze[1], 0.0)
 
     def test_state_buttons_are_forwarded_when_not_forced(self) -> None:
         driver = RecordingDriver()

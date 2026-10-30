@@ -119,18 +119,28 @@ AUTH_ROOT_HEIGHT = 1 << 1
 AUTH_HEAD        = 1 << 2
 AUTH_L_HAND      = 1 << 3
 AUTH_R_HAND      = 1 << 4
-AUTH_CLOSURE     = 1 << 5   # 0 open .. 1 closed; adapter maps to trigger/grip
+AUTH_CLOSURE     = 1 << 5   # 0 open .. 1 closed; grip/squeeze, latched per hand
 AUTH_WAIST       = 1 << 6   # yaw, pitch, roll (bounded)
 AUTH_GAIT        = 1 << 7   # unused in v1; executor reports UNSUPPORTED
 AUTH_POSTURE     = 1 << 8   # unused in v1 except stand default
+AUTH_TRIGGER     = 1 << 9   # 0 released .. 1 pressed; momentary, its own channel
 ```
+
+Grip and trigger are separate channels because they have different shapes: a grip
+is held while a trigger is pressed, and Superhot needs both at once (hold a gun,
+pull its trigger). `KNOWN_AUTH = (1 << 10) - 1`.
+
+Semantics, measured: the grip **latches** - a command that does not mention it
+leaves it where it was, like a physical button - and `release` is how it opens. The
+trigger stays pressed for `FIRE_HOLD_TICKS` and then releases by itself, because a
+latched trigger fires once per session.
 
 **`BodyCommand`** (writer-agnostic):
 
 - `schema`, `seq`, `t_mono_ns`, `ttl_ms` (default 200 for continuous; ballistic uses `duration_ms`), `source` ∈ {human, vlm, planner, script}
 - `authority`, `frame` ∈ {root, world} — default **root**
 - Base: `v_xy` (m/s), `yaw_rate` (rad/s), `height` (m or null = executor default)
-- Upper: `head`, `left_hand`, `right_hand` as `{p[3], q_xyzw[4]}` root-relative metres; `closure` (L,R); `waist` (yaw, pitch, roll) or null
+- Upper: `head`, `left_hand`, `right_hand` as `{p[3], q_xyzw[4]}` root-relative metres; `closure` (L,R); `trigger` (L,R); `waist` (yaw, pitch, roll) or null
 - Optional: `gait`, `posture` — v1 executor may ignore and set `UNSUPPORTED`
 - Execution: `priority`, `preempt` (false = queue behind ballistic), `duration_ms` (0 = until preempted), `done_when` ∈ {duration, target, external}, `tolerance_m` (default 0.02), `max_joint_speed` (default **2.0 rad/s**, E3), `max_hand_speed` (default 1.0 m/s)
 
@@ -200,7 +210,7 @@ Adapters compile a named intent into `BodyCommand`. They are the only place Supe
 | `strike(side, p)` | one hand + waist/head; duration ~2 s (E3 punch phase); `preempt=False`; trigger/closure follows achieved phase | **required** after reach; do not name it “hit” |
 | `move(v_xy)` | `ROOT_VEL`; policy stays running, outer loop off | **enabled.** C3e: walks straight (+0.23° / 10 s) with **no** outer loop on the Playground model. Arm authority while moving is pending C3f. |
 | `dodge` | — | **disabled**; `UNSUPPORTED` |
-| `trigger` | not a body skill; adapter sets `AUTH_CLOSURE` + aim pose | mapped from strike/aim |
+| `trigger` | not a body skill; a momentary press on its own channel (`AUTH_TRIGGER`) | mapped from aim/strike |
 
 A cheap 2D tracker (KCF-class on the grim crop) **may** update the hand target during `reach`/`strike` at 10–30 Hz. The VLM does not. If the tracker is not written yet, scripted/root-relative offsets (E3 `REACH` / `PUNCH` local vectors) are acceptable.
 
