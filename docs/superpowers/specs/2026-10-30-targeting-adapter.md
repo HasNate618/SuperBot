@@ -17,7 +17,12 @@ Nothing can aim at an object. Every dashboard verb is a fixed open-loop pose (`l
 The missing piece is an **adapter that consumes a 2D target and produces `BodyCommand`s**, using two sensors we already own or can read:
 
 1. **Projection.** We emit the HMD pose and we know the wrist in `mjData`. The pixel error between the named target and the projected wrist is a 2D signal. Drive it to zero.
-2. **Glow.** Superhot highlights an object when a controller is in grab range `[OPERATOR]`. That is a free depth oracle. It is not a model output.
+2. **In-range signals the game already emits**, and they are not all the same thing
+   `[OPERATOR 2026-10-30]`: the hub floppy and the headset have **no** pre-grab glow
+   (proximity then one press; the confirmation is the object appearing in the hand),
+   while the **insertion slot glows green** - large and saturated - and only the
+   other, in-level grabbables have the faint proximity highlight. None of it is a
+   model output.
 
 d1 is not this adapter. On GPU it is a hold-time chooser (digest 62–176 ms `[MEASURED 2026-10-30, llama-server :11434, d1-Omni-2B-Q8_0]`). `box` is rejected on that build. Grid-choice grounding was near chance on one unverified frame. Even a perfect box is useless until something can servo to a pixel.
 
@@ -174,36 +179,77 @@ A pixel error of zero means **on the ray**, not in grab range. Depth is §8.
 
 If `FLAG_SATURATED` is set and error is still large, stop. Do not grow the target past the envelope. The 0.156 m / 0.121 m residual is in the budget; if the servo saturates short of the pixel, that is the deliverable, not a retry loop.
 
-## 8. Glow
+## 8. In-range signals
 
-Glow is Superhot painting a highlight when the controller is close enough to grab `[OPERATOR]`. Detection is a **local brightness delta against a baseline**, not object-colour tracking and not d1.
+Superhot gives three different "you may act now" signals, and conflating them
+produces a script that waits forever or grabs at nothing. `[OPERATOR 2026-10-30]`
 
-### 8.1 Pair first
+| Signal | Applies to | Looks like | Confirmation |
+| --- | --- | --- | --- |
+| **Proximity, no glow** | hub floppy, headset | nothing changes | the object appears in the hand |
+| **Green slot** | disk insertion point | large saturated green region | the game accepts the release |
+| **Subtle highlight** | other in-level grabbables | faint local brightening | the object lifts on grab |
 
-Before a threshold exists, capture two stills in **manual** mode: hand away (off) and hand on a disk (on). If those two JPEGs do not separate in a patch around the object, glow is not an oracle. Record that and stop; do not guess a constant.
+The first is not detectable at all, and does not need to be: presses are cheap and
+the pickup itself is the read-back. The second is the easiest problem in the whole
+game - a hue gate, not perception. The third is what §8.4's tail statistic is for,
+and it is **not** used by the hub.
 
-### 8.2 Runtime
+### 8.1 Hub pickup: press, then look at the hand
 
-At the start of a `reach` with a pixel, with the hand still retracted, save baseline frame `B` and its capture timestamp.
+`reach` toward the disk until projection error is inside tolerance, then `grab`.
+There is no glow to wait for. Termination is the **appearance change at the
+projected wrist**: the flat rectangle that replaces the hand. Score it as a
+fraction of changed pixels in a patch there (§8.4), not as a maximum - an object
+arriving covers a real area, and a single bright pixel is a specular edge.
 
-Each adapter tick, on current frame `F`:
+If nothing appears and the arm reports `SATURATED`, the disk is out of reach. That
+is the measured-residual finding, not a retry.
 
-1. Map `(u*, v*)` into the capture crop (§9). If the map is unknown, `glow = unknown`, `no_frame`.
-2. Take a patch around that point (spec default: **5% of the crop's min side**, clamped to at least 16 px).
-3. `D = clip(F − B, 0)` per channel. Score = **95th percentile of `max(R,G,B)`** in the patch. Outlines live in the tail; the mean often does not.
-4. `glow = yes` iff score ≥ threshold from the §8.1 pair; else `no`.
+### 8.2 Insertion slot: a hue gate
 
-Forbidden as the primary oracle: `F[t] − F[t−1]` (the approaching hand is a huge diff); full-frame mean (time-slow red flashes, HUD, controller mesh); d1 `noul` "is it grabbable."
+Detect the green region directly: a pixel counts when its green channel exceeds
+both others by a margin and clears a brightness floor; a patch counts when such
+pixels cover a minimum fraction; the target is their centroid, normalised to the
+HMD view. `reach` servos to that centroid and `release` inserts.
 
-### 8.3 How `reach` uses it
+A centroid is a 2D target, so this stays inside the design's no-3D rule: the game
+paints where the slot appears, and we point at the paint.
 
-`reach` with a pixel is done when **projection error is inside tolerance and `glow = yes`**.
+### 8.3 Headset: same as the disk
 
-- Projection good, glow no, timeout → `no_glow` (on the ray, not in range — residual or FOV/map wrong).
-- Glow yes, projection still large → do **not** treat as done (false highlight, or the patch is on the wrong object).
-- No frames → `no_frame`. Writer must not grab.
+Proximity and a press, then carry over the head. No glow, so it shares §8.1's
+termination. The reach itself is unmeasured (the G1 has no neck), and `SATURATED`
+is the recorded outcome if "above the head" is outside the envelope.
 
-`reach` without a pixel (open-loop aim) does not wait for glow.
+### 8.4 Subtle highlight (in-level only)
+
+Kept for the non-hub case, and only that:
+
+1. Baseline frame `B` with the hand retracted; current frame `F`.
+2. Patch around the named pixel (spec default **5%** of the crop's min side, at
+   least 16 px).
+3. `D = clip(F - B, 0)` per channel. Score = **95th percentile of `max(R,G,B)`**
+   over **every** pixel in the patch, not only the changed ones - collecting only
+   changed pixels collapses the statistic to "brightest changed pixel", which a
+   single stray pixel satisfies.
+4. `glow = yes` iff score passes a threshold measured from a real on/off pair.
+
+Forbidden as an oracle: `F[t] - F[t-1]` (the approaching hand is a huge diff);
+full-frame means (timing flashes, HUD, controller mesh); any model answering "is
+it grabbable".
+
+### 8.5 How `reach` terminates
+
+| Condition | Outcome |
+| --- | --- |
+| projection inside tolerance and pickup confirmed | `done` |
+| projection inside tolerance, nothing appeared, arm saturated | `saturated` |
+| frames unavailable or older than 0.3 s | `no_frame` |
+| no termination before the deadline | `timeout` |
+
+`reach` never closes the hand. `grab` and `release` are separate intents, so a
+false appearance signal cannot steal a disk.
 
 ## 9. Frame capture
 
@@ -232,11 +278,11 @@ Assume the session is already at the hub. The script does not launch Superhot.
 | Step | Intent | Adapter stops when | Writer next |
 | --- | --- | --- | --- |
 | 1. Acquire | `look` with `yaw_rad` steps, or one operator `pixel` | disk pixel known | if look saturates, fail honestly |
-| 2. Put the hand on it | `reach` + that pixel + `side=right` (or closer hand) | glow yes and projection inside tolerance | `no_glow` / `saturated` are terminal for this attempt |
-| 3. Grab | `grab` right | closure latched | |
-| 4. Carry | `reach` to insertion pixel | projection inside tolerance; glow optional | insertion pixel is a second named point (scripted or operator) |
+| 2. Put the hand on it | `reach` + that pixel + `side=right` (or closer hand) | projection inside tolerance | no glow to wait for: press is cheap |
+| 3. Grab | `grab` right | **floppy appears at the projected wrist** | nothing appeared + `saturated` = out of reach |
+| 4. Carry | `reach` toward the **green** slot centroid | projection inside tolerance | centroid from the hue gate, §8.2 |
 | 5. Insert | `release` | closure 0 | |
-| 6. Headset | `reach` up, then `grab` / `release` | **unmeasured** | `saturated` is the allowed fail; do not invent a stretch |
+| 6. Headset | `reach` up, `grab`, carry over head, `release` | **unmeasured** | `saturated` is the allowed fail; do not invent a stretch |
 
 Stay in spawn: this script sends no `AUTH_ROOT_VEL`. If a later spec adds a step, cap net translation from the session's start root at **1.0 m**.
 

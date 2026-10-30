@@ -206,12 +206,40 @@ git commit -m "feat(verbs): look and reach take a yaw and an offset"
 
 ---
 
+### Task 5: In-range signals, corrected (2026-10-30)
+
+Landed after the operator corrected the hub sequence: the floppy and headset have
+**no** pre-grab glow, and the insertion slot glows **green**.
+
+**Files:**
+- Modify: `superbot/glow.py`, `tests/test_glow.py`
+- Modify: `docs/superpowers/specs/2026-10-30-targeting-adapter.md` §1, §8, §10
+- Modify: `research/superhot-play.md` §1, §2
+
+**Interfaces:**
+- `lit_fraction(before, after, bounds, min_delta=40) -> float` - pickup confirmation.
+- `is_green(rgb) -> bool`, `green_fraction(frame, bounds=None) -> float`,
+  `green_centroid(frame, bounds=None, min_fraction=0.002) -> (u, v) | None`.
+
+- [x] **Step 1: Write the failing tests** (13 errors: attributes absent)
+- [x] **Step 2: Implement** the hue gate and the appearance fraction
+- [x] **Step 3: Run tests** - 26 pass in `tests/test_glow.py`
+- [x] **Step 4: Commit**
+
+**Open question, deliberately not guessed:** `superbot.intent/1` has no way to say
+"the target is whatever the green gate finds" - a writer currently names a pixel.
+Either the adapter computes the centroid when the intent carries no pixel, or the
+schema grows an explicit target-kind field. Decide it when the adapter exists, not
+before; a field added now would be a guess at a caller that does not exist.
+
 ## Not in this plan
 
 Gated on the live session and the operator; do not write them here.
 
 - **S3 of the spec** — measure the live FOV and the HMD→VNC crop map. Needs the game running and one recorded correspondence.
-- **S4** — the glow on/off still pair. If those two stills do not separate, glow is abandoned and S5 does not exist.
+- **S4** — the still pair for the *in-level* subtle highlight only. The hub no
+  longer depends on it: pickup is confirmed by `lit_fraction` and the slot by
+  `green_centroid`, both of which are implemented and unit-tested without the game.
 - **S5** — the adapter capture loop (RFB or `DISPLAY=:1`) and the 10–30 Hz skill loop.
 - **S6** — the hub script and the disk lift.
 - Everything E5/d1. The brain is a writer on `superbot.intent/1`, after S6 produces frames that are not all `hold`.

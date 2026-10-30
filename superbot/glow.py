@@ -6,9 +6,18 @@ for "this grab should have worked", which is why it matters more than it looks: 
 turns the reviewer's worst case - a grab that misses is indistinguishable from a
 button that never fired - into two distinguishable outcomes.
 
-What this module is: a local brightness delta against a **baseline** frame, scored
-at the 95th percentile of per-pixel max-channel. An outline lives in the tail of
-the distribution; the mean usually does not see it at all.
+The game gives three different "you may act now" signals, and conflating them
+produces a script that waits forever `[OPERATOR 2026-10-30]`:
+
+1. **The hub floppy and the headset do not glow at all.** Proximity, then one press;
+   the confirmation is the object appearing in the hand, which is
+   `lit_fraction` below.
+2. **The insertion slot glows green** - large and saturated. That is
+   `green_centroid` / `green_fraction`: a hue gate, not perception.
+3. **Other, in-level grabbables have a faint highlight**, which is `score_patch`: a
+   local brightness delta against a **baseline** frame, scored at the 95th
+   percentile of per-pixel max-channel. An outline lives in the tail; the mean
+   usually does not see it at all.
 
 What it is deliberately not:
 
@@ -106,3 +115,113 @@ def score_patch(
             delta = max(a[0] - b[0], a[1] - b[1], a[2] - b[2])
             values.append(delta if delta > 0 else 0)
     return float(_percentile(values, percentile))
+
+
+# ---------------------------------------------------------------- appearance
+#: A pixel counts as "the object arrived" at this max-channel delta. Above noise
+#: and shading, below a lit object replacing a hand.
+LIT_DELTA = 40
+
+
+def lit_fraction(
+    before: Frame,
+    after: Frame,
+    bounds: tuple[int, int, int, int],
+    min_delta: int = LIT_DELTA,
+) -> float:
+    """Fraction of the window whose max-channel delta reaches `min_delta`.
+
+    This is how a hub pickup is confirmed. The floppy has no glow, so the read-back
+    is the flat rectangle replacing the hand: an *area* change. A maximum would call
+    one specular pixel a pickup.
+    """
+    x0, y0, x1, y1 = bounds
+    total = 0
+    lit = 0
+    for y in range(y0, y1):
+        before_row = before[y]
+        after_row = after[y]
+        for x in range(x0, x1):
+            total += 1
+            b = before_row[x]
+            a = after_row[x]
+            if max(a[0] - b[0], a[1] - b[1], a[2] - b[2]) >= min_delta:
+                lit += 1
+    return lit / total if total else 0.0
+
+
+# ---------------------------------------------------------------- green slot
+#: Green must lead both other channels by this much, or white and grey pass.
+GREEN_MARGIN = 25
+#: ...and clear this on its own, or a dark green surface passes.
+GREEN_FLOOR = 60
+#: Below this fraction of the scanned area the region is a speck, not a slot.
+MIN_GREEN_FRACTION = 0.002
+
+
+def is_green(rgb: RGB, margin: int = GREEN_MARGIN, floor: int = GREEN_FLOOR) -> bool:
+    """True when a pixel is the slot's green: bright, and dominant over the rest."""
+    g = rgb[1]
+    return g >= floor and g - max(rgb[0], rgb[2]) >= margin
+
+
+def _scan_region(
+    frame: Frame, bounds: tuple[int, int, int, int] | None
+) -> tuple[int, int, int, int]:
+    if bounds is not None:
+        return bounds
+    if not frame or not frame[0]:
+        raise ValueError("frame must have a positive size")
+    return (0, 0, len(frame[0]), len(frame))
+
+
+def green_fraction(
+    frame: Frame, bounds: tuple[int, int, int, int] | None = None
+) -> float:
+    """Share of the scanned area that is the slot's green."""
+    x0, y0, x1, y1 = _scan_region(frame, bounds)
+    total = 0
+    hits = 0
+    for y in range(y0, y1):
+        row = frame[y]
+        for x in range(x0, x1):
+            total += 1
+            if is_green(row[x]):
+                hits += 1
+    return hits / total if total else 0.0
+
+
+def green_centroid(
+    frame: Frame,
+    bounds: tuple[int, int, int, int] | None = None,
+    min_fraction: float = MIN_GREEN_FRACTION,
+) -> tuple[float, float] | None:
+    """Normalised `(u, v)` centre of the green region, or None if there is none.
+
+    None rather than a fallback point on purpose: a centroid invented from noise
+    would servo the arm at a wall and report a confident failure. A centroid is
+    also still a 2D target, so this stays inside the design's no-3D rule - the game
+    paints where the slot is, and we point at the paint.
+    """
+    x0, y0, x1, y1 = _scan_region(frame, bounds)
+    total = 0
+    hits = 0
+    sum_x = 0
+    sum_y = 0
+    for y in range(y0, y1):
+        row = frame[y]
+        for x in range(x0, x1):
+            total += 1
+            if is_green(row[x]):
+                hits += 1
+                sum_x += x
+                sum_y += y
+    if not total or not hits or (hits / total) < min_fraction:
+        return None
+    width = len(frame[0])
+    height = len(frame)
+    # Normalise against the last index so the far edge maps to 1.0, matching the
+    # [0, 1] pixel convention in `superbot.intent`.
+    cx = (sum_x / hits) / max(1, width - 1)
+    cy = (sum_y / hits) / max(1, height - 1)
+    return (cx, cy)

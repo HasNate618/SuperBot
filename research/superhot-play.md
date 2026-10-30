@@ -21,11 +21,21 @@ Walking 40 m of MuJoCo floor is still a real SONIC result. Walking around a Supe
 
 `[OPERATOR]` The hub is a room of floppy disks. Level select is:
 
-1. Move a hand near a disk. Close enough, the object gets a subtle glow.
-2. Grab.
-3. Move the hand toward the insertion point.
+1. Move a hand near a disk. **Nothing glows.** The hub disk has no pre-grab
+   highlight; proximity is judged, then one press.
+2. Press once. The hand is replaced by the disk - a thin floating rectangle just
+   in front of the controller. That appearance *is* the confirmation.
+3. Move the hand to the insertion point, which glows **green**: large and
+   saturated, nothing like the subtle in-level highlight.
 4. Let go. That activates a headset above the player.
-5. Grab the headset and move it over the head.
+5. Move a hand to the headset and press once, then move it over the head. The
+   headset is proximity-and-press like the disk, also with no pre-grab glow.
+
+`[OPERATOR 2026-10-30, correcting the line above]` The subtle glow described in
+step 1 was wrong for the hub. It exists, but for *other* grabbables in a level
+(§2). The correction matters twice: a hub script that waited for a glow would
+wait forever, and the insertion slot is the one high-contrast signal the hub
+actually offers.
 
 Until that sequence works, The Fall does not exist. The join currently cannot do it: `pose_relay` calls `wire.fill(packet, poses)` with the defaults `trigger=0, squeeze=0` `[MEASURED: superbot/pose_relay.py]`, and `BodyState` has no closure field to forward even if it wanted to `[MEASURED: superbot/body.py]`. `AUTH_CLOSURE` is listed as supported on the executor and then ignored `[MEASURED: spike/wbc/sonic_executor.py]`.
 
@@ -37,7 +47,10 @@ Do not use `c0_client.py`'s `trigger` mode as that A/B. It sets `trigger` and `s
 
 `[OPERATOR]`
 
-- Glow-then-grab is the pickup rule for environment objects too. Grabbed objects can be thrown, or aimed and shot.
+- Glow-then-grab is the pickup rule for environment objects too: a subtle highlight
+  appears when a controller is close enough. The hub disk and the headset are the
+  exception - proximity and a press, no highlight (§1). Grabbed objects can be
+  thrown, or aimed and shot.
 - Two hands at once is allowed, not required.
 - Guns have limited ammo. An empty gun still "fires" — it clicks.
 - After some enemies die the player is teleported to a new location with new enemies. Infinite-wave mode still teleports; it is not a stay-in-one-room endurance test.

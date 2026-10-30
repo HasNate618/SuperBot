@@ -111,5 +111,95 @@ class Score(unittest.TestCase):
         self.assertEqual(glow.score_patch(before, after, (0, 0, 10, 10)), 0.0)
 
 
+class Appearance(unittest.TestCase):
+    """An object arriving in the hand is a *fraction* of changed pixels.
+
+    This is the hub pickup's confirmation: the floppy has no glow, so the only
+    read-back is that the flat rectangle replaces the hand. A maximum would call a
+    single specular pixel a pickup; a fraction asks for area.
+    """
+
+    def test_an_object_arriving_covers_part_of_the_patch(self) -> None:
+        before = flat(40, 40)
+        after = [row[:] for row in before]
+        for y in range(10, 20):
+            for x in range(10, 20):
+                after[y][x] = [200, 200, 200]
+        self.assertAlmostEqual(
+            glow.lit_fraction(before, after, (0, 0, 40, 40)), 100 / 1600, places=3
+        )
+
+    def test_an_unchanged_patch_is_a_fraction_of_zero(self) -> None:
+        frame = flat(40, 40)
+        self.assertEqual(glow.lit_fraction(frame, frame, (0, 0, 40, 40)), 0.0)
+
+    def test_one_stray_pixel_is_a_negligible_fraction(self) -> None:
+        before = flat(40, 40)
+        after = [row[:] for row in before]
+        after[5][5] = [255, 255, 255]
+        self.assertLess(glow.lit_fraction(before, after, (0, 0, 40, 40)), 0.01)
+
+    def test_a_faint_change_is_below_the_delta_floor(self) -> None:
+        before = flat(40, 40)
+        after = flat(40, 40, value=15)
+        self.assertEqual(glow.lit_fraction(before, after, (0, 0, 40, 40)), 0.0)
+
+
+def green_frame(width: int = 40, height: int = 40, box=None) -> list[list[list[int]]]:
+    frame = flat(width, height)
+    if box is not None:
+        x0, y0, x1, y1 = box
+        for y in range(y0, y1):
+            for x in range(x0, x1):
+                frame[y][x] = [20, 200, 40]
+    return frame
+
+
+class GreenSlot(unittest.TestCase):
+    """The insertion slot is the one high-contrast signal in the hub."""
+
+    def test_a_green_region_is_found_at_its_centre(self) -> None:
+        frame = green_frame(box=(10, 10, 30, 30))
+        centre = glow.green_centroid(frame)
+        assert centre is not None
+        self.assertAlmostEqual(centre[0], 0.5, delta=0.02)
+        self.assertAlmostEqual(centre[1], 0.5, delta=0.02)
+
+    def test_an_offcentre_region_reports_its_own_centre(self) -> None:
+        frame = green_frame(box=(0, 0, 10, 10))
+        centre = glow.green_centroid(frame)
+        assert centre is not None
+        self.assertLess(centre[0], 0.2)
+        self.assertLess(centre[1], 0.2)
+
+    def test_a_frame_without_green_reports_nothing(self) -> None:
+        self.assertIsNone(glow.green_centroid(flat(40, 40)))
+
+    def test_a_red_frame_is_not_a_slot(self) -> None:
+        frame = [[[200, 20, 20] for _ in range(40)] for _ in range(40)]
+        self.assertIsNone(glow.green_centroid(frame))
+
+    def test_a_dark_green_is_below_the_brightness_floor(self) -> None:
+        frame = [[[2, 12, 3] for _ in range(40)] for _ in range(40)]
+        self.assertIsNone(glow.green_centroid(frame))
+
+    def test_a_barely_green_pixel_is_not_green(self) -> None:
+        # Grey noise with a 5-level green lead is not the slot.
+        frame = [[[100, 105, 100] for _ in range(40)] for _ in range(40)]
+        self.assertIsNone(glow.green_centroid(frame))
+
+    def test_white_is_not_green(self) -> None:
+        frame = [[[255, 255, 255] for _ in range(40)] for _ in range(40)]
+        self.assertIsNone(glow.green_centroid(frame))
+
+    def test_a_tiny_green_speck_is_not_a_slot(self) -> None:
+        frame = green_frame(box=(5, 5, 6, 6))
+        self.assertIsNone(glow.green_centroid(frame))
+
+    def test_the_fraction_is_reported_independently(self) -> None:
+        frame = green_frame(box=(10, 10, 30, 30))
+        self.assertAlmostEqual(glow.green_fraction(frame), 400 / 1600, places=3)
+
+
 if __name__ == "__main__":
     unittest.main()
