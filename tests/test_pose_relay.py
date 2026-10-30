@@ -1,3 +1,5 @@
+# Re-indexed: forced_pair, ClickEdge and buttons_from_state live in
+# superbot/pose_relay.py; run() takes force_grab/force_trigger/grab_mode.
 from __future__ import annotations
 
 import csv
@@ -141,6 +143,29 @@ class HandshakeTests(unittest.TestCase):
             a.close()
 
 
+class DriverButtonsTests(unittest.TestCase):
+    def test_forced_pair_is_per_hand(self) -> None:
+        self.assertEqual(pose_relay.forced_pair("left"), (1.0, 0.0))
+        self.assertEqual(pose_relay.forced_pair("right"), (0.0, 1.0))
+        self.assertEqual(pose_relay.forced_pair("both"), (1.0, 1.0))
+        self.assertEqual(pose_relay.forced_pair("none"), (0.0, 0.0))
+
+    def test_click_is_the_rising_edge_only(self) -> None:
+        edge = pose_relay.ClickEdge()
+        self.assertEqual(edge.update((1.0, 0.0)), (True, False), "first press clicks")
+        self.assertEqual(edge.update((1.0, 0.0)), (False, False), "holding does not re-click")
+        self.assertEqual(edge.update((0.0, 0.0)), (False, False))
+        self.assertEqual(edge.update((1.0, 0.0)), (True, False), "re-press clicks again")
+
+    def test_state_without_buttons_still_sends_zero(self) -> None:
+        grip, fire = pose_relay.buttons_from_state(sample_state())
+        self.assertEqual((grip, fire), ((0.0, 0.0), (0.0, 0.0)))
+
+    def test_buttons_from_a_state_with_nonsense_fields(self) -> None:
+        grip, fire = pose_relay.buttons_from_state({"closure": "x", "trigger": [1.0]})
+        self.assertEqual((grip, fire), ((0.0, 0.0), (0.0, 0.0)))
+
+
 class FakeDriver(threading.Thread):
     """Stands in for the Monado remote driver: handshake, then count packets."""
 
@@ -172,6 +197,43 @@ class FakeDriver(threading.Thread):
             self.closed.set()
 
 
+class RecordingDriver(FakeDriver):
+    """FakeDriver that also remembers the last packet's per-hand button values."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.last_squeeze = (0.0, 0.0)
+        self.last_trigger = (0.0, 0.0)
+
+    def run(self) -> None:
+        conn, _ = self.listener.accept()
+        try:
+            conn.sendall(bytes(wire.blank_packet()))
+            conn.sendall(bytes(wire.blank_packet()))
+            buf = b""
+            while True:
+                chunk = conn.recv(4096)
+                if not chunk:
+                    break
+                buf += chunk
+                while len(buf) >= wire.SIZE:
+                    packet = wire.RemoteData.from_buffer_copy(buf[: wire.SIZE])
+                    buf = buf[wire.SIZE:]
+                    self.packets += 1
+                    self.last_squeeze = (
+                        packet.left.squeeze_value.x,
+                        packet.right.squeeze_value.x,
+                    )
+                    self.last_trigger = (
+                        packet.left.trigger_value.x,
+                        packet.right.trigger_value.x,
+                    )
+        finally:
+            conn.close()
+            self.listener.close()
+            self.closed.set()
+
+
 class RelayRunTests(unittest.TestCase):
     def test_sends_packets_at_the_requested_rate(self) -> None:
         driver = FakeDriver()
@@ -189,6 +251,40 @@ class RelayRunTests(unittest.TestCase):
         self.assertGreaterEqual(len(rows), 15)
         self.assertEqual(rows[0]["note"], "live")
         self.assertGreater(float(rows[0]["hy"]), 1.0)  # head above the hands
+
+    def test_forced_grab_reaches_the_packet_and_the_log(self) -> None:
+        """A grab that misses must still be readable as a grab that was sent."""
+        driver = RecordingDriver()
+        driver.start()
+        with tempfile.TemporaryDirectory() as raw:
+            state_path = Path(raw) / "body_state.json"
+            state_path.write_text(json.dumps(sample_state()), encoding="utf-8")
+            log_path = Path(raw) / "poses.csv"
+            pose_relay.run("127.0.0.1", driver.port, state_path, log_path,
+                           duration=0.3, hz=50.0, force_grab="right",
+                           force_trigger="left")
+            driver.closed.wait(5)
+            rows = list(csv.DictReader(log_path.read_text().splitlines()))
+        self.assertAlmostEqual(driver.last_squeeze[0], 0.0)
+        self.assertAlmostEqual(driver.last_squeeze[1], 1.0)
+        self.assertAlmostEqual(driver.last_trigger[0], 1.0)
+        self.assertAlmostEqual(driver.last_trigger[1], 0.0)
+        self.assertEqual(rows[-1]["grip_r"], "1.0")
+        self.assertEqual(rows[-1]["fire_l"], "1.0")
+
+    def test_state_buttons_are_forwarded_when_not_forced(self) -> None:
+        driver = RecordingDriver()
+        driver.start()
+        with tempfile.TemporaryDirectory() as raw:
+            state_path = Path(raw) / "body_state.json"
+            pressed = {**sample_state(), "closure": [1.0, 0.0]}
+            state_path.write_text(json.dumps(pressed), encoding="utf-8")
+            pose_relay.run("127.0.0.1", driver.port, state_path, None,
+                           duration=0.3, hz=50.0)
+            driver.closed.wait(5)
+        self.assertAlmostEqual(driver.last_squeeze[0], 1.0)
+        self.assertAlmostEqual(driver.last_squeeze[1], 0.0)
+        self.assertAlmostEqual(driver.last_trigger[0], 0.0)
 
     def test_log_is_readable_while_the_relay_runs(self) -> None:
         # A relay that runs for an hour must not hold its evidence in a buffer:

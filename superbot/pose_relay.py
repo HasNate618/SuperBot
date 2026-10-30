@@ -28,6 +28,7 @@ import json
 import socket
 import struct
 import time
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -39,9 +40,66 @@ except ImportError:  # pragma: no cover - only when executed as a script
 #: How old body_state.json may be before the relay reports it stale, seconds.
 STALE_AFTER_SEC = 0.30
 
+#: Ways to force a button without the body cooperating, for the hub A/B.
+FORCE_MODES = ("none", "left", "right", "both")
+
+#: Which wire field a hand closure drives. The game decides which one it reads,
+#: so this is a switch rather than a decision baked into the relay.
+GRAB_MODES = ("squeeze", "curl", "both")
+
 #: The driver closes the connection if it is not reading; a few seconds of retry
 #: covers Monado still coming up when the session starts.
 CONNECT_TIMEOUT_SEC = 20.0
+
+
+def forced_pair(mode: str) -> tuple[float, float]:
+    """(left, right) for a CLI force mode. 'none' releases both."""
+    return {
+        "none": (0.0, 0.0),
+        "left": (1.0, 0.0),
+        "right": (0.0, 1.0),
+        "both": (1.0, 1.0),
+    }[mode]
+
+
+def buttons_from_state(
+    state: Mapping[str, Any],
+) -> tuple[tuple[float, float], tuple[float, float]]:
+    """Read (closure, trigger) out of a state dict, as (left, right).
+
+    Tolerates a body that predates the fields, and a malformed pair: a bad button
+    field releases the button rather than killing the pipe.
+    """
+
+    def pair(key: str) -> tuple[float, float]:
+        raw = state.get(key)
+        if not isinstance(raw, (list, tuple)) or len(raw) != 2:
+            return (0.0, 0.0)
+        try:
+            return (float(raw[0]), float(raw[1]))
+        except (TypeError, ValueError):
+            return (0.0, 0.0)
+
+    return pair("closure"), pair("trigger")
+
+
+class ClickEdge:
+    """Turns a held trigger value into one click per press, per hand.
+
+    The wire format carries a click as well as a value, and a click is an edge.
+    Sending click=true on every packet while the trigger is down is what the old
+    fill() did; Unity reads that as a fresh press every frame.
+    """
+
+    def __init__(self) -> None:
+        self._prev: tuple[float, float] = (0.0, 0.0)
+
+    def update(self, values: Sequence[float]) -> tuple[bool, bool]:
+        clicks = tuple(
+            v > 0.0 and p <= 0.0 for v, p in zip(values, self._prev, strict=True)
+        )
+        self._prev = (float(values[0]), float(values[1]))
+        return (clicks[0], clicks[1])
 
 
 class StateSource:
@@ -78,9 +136,14 @@ class PacketSource:
         self.stale_after = stale_after
         self._last = wire.REST_POSES
         self._last_note = "rest"
+        #: The most recent state that parsed, so buttons can be forwarded even
+        #: when the pose is held or stale. A dead body must not release a grab.
+        self.last_state: dict[str, Any] | None = None
 
     def poses(self, now: float) -> tuple[dict[str, Any], str, float | None]:
         state, age = self.source.read(now)
+        if state is not None:
+            self.last_state = state
         if state is None:
             return self._last, self._last_note if self._last_note != "live" else "stale", age
         try:
@@ -125,7 +188,9 @@ def connect(host: str, port: int, timeout: float = CONNECT_TIMEOUT_SEC) -> socke
         return sock
 
 
-def log_row(writer: Any, t: float, poses: dict[str, Any], note: str, age: float | None) -> None:
+def log_row(writer: Any, t: float, poses: dict[str, Any], note: str, age: float | None,
+            grip: tuple[float, float] = (0.0, 0.0),
+            fire: tuple[float, float] = (0.0, 0.0)) -> None:
     hp, hq = poses["head"]
     lp, _ = poses["left"]
     rp, _ = poses["right"]
@@ -135,17 +200,20 @@ def log_row(writer: Any, t: float, poses: dict[str, Any], note: str, age: float 
         f"{hq[0]:.5f}", f"{hq[1]:.5f}", f"{hq[2]:.5f}", f"{hq[3]:.5f}",
         f"{lp[0]:.4f}", f"{lp[1]:.4f}", f"{lp[2]:.4f}",
         f"{rp[0]:.4f}", f"{rp[1]:.4f}", f"{rp[2]:.4f}",
+        f"{grip[0]:.1f}", f"{grip[1]:.1f}", f"{fire[0]:.1f}", f"{fire[1]:.1f}",
         "" if age is None else f"{age:.3f}",
         note,
     ])
 
 
 LOG_HEADER = ["t", "hx", "hy", "hz", "hqx", "hqy", "hqz", "hqw",
-              "lx", "ly", "lz", "rx", "ry", "rz", "state_age", "note"]
+              "lx", "ly", "lz", "rx", "ry", "rz",
+              "grip_l", "grip_r", "fire_l", "fire_r", "state_age", "note"]
 
 
 def run(host: str, port: int, state_path: Path, log_path: Path | None,
-        duration: float, hz: float) -> int:
+        duration: float, hz: float, force_grab: str = "none",
+        force_trigger: str = "none", grab_mode: str = "both") -> int:
     wire.assert_layout()
     source = PacketSource(StateSource(state_path))
     sock = connect(host, port)
@@ -157,6 +225,9 @@ def run(host: str, port: int, state_path: Path, log_path: Path | None,
     started = time.monotonic()
     sent = 0
     notes: dict[str, int] = {}
+    edge = ClickEdge()
+    grip_force = forced_pair(force_grab)
+    fire_force = forced_pair(force_trigger)
     handle = None
     writer = None
     try:
@@ -174,13 +245,30 @@ def run(host: str, port: int, state_path: Path, log_path: Path | None,
             if now - started >= duration:
                 break
             poses, note, age = source.poses(now)
-            packet = wire.fill(wire.blank_packet(), poses)
+            # Buttons: a forced mode wins, otherwise the body's own state. Both
+            # are per hand, and the two channels stay separate so a gun can be
+            # held while the trigger is pulled.
+            grip_state, fire_state = (
+                buttons_from_state(source.last_state)
+                if isinstance(source.last_state, Mapping)
+                else ((0.0, 0.0), (0.0, 0.0))
+            )
+            grip = grip_force if grip_force != (0.0, 0.0) else grip_state
+            fire = fire_force if fire_force != (0.0, 0.0) else fire_state
+            packet = wire.fill(
+                wire.blank_packet(),
+                poses,
+                grip=grip if grab_mode in ("squeeze", "both") else (0.0, 0.0),
+                curl=grip if grab_mode in ("curl", "both") else (0.0, 0.0),
+                trigger=fire,
+                trigger_click=edge.update(fire),
+            )
             stream.write(bytes(packet))
             stream.flush()
             sent += 1
             notes[note] = notes.get(note, 0) + 1
             if writer is not None:
-                log_row(writer, now - started, poses, note, age)
+                log_row(writer, now - started, poses, note, age, grip, fire)
             next_tick += period
             sleep = next_tick - time.monotonic()
             if sleep > 0:
@@ -210,9 +298,17 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--log", default=None, help="CSV of every emitted pose")
     ap.add_argument("--duration", type=float, default=3600.0)
     ap.add_argument("--hz", type=float, default=50.0)
+    ap.add_argument("--force-grab", choices=FORCE_MODES, default="none",
+                    help="hold one hand closed regardless of the body, for the hub A/B")
+    ap.add_argument("--force-trigger", choices=FORCE_MODES, default="none",
+                    help="hold one trigger pressed regardless of the body")
+    ap.add_argument("--grab-mode", choices=GRAB_MODES, default="both",
+                    help="which wire field a closure drives (the game decides which it reads)")
     args = ap.parse_args(argv)
     log_path = Path(args.log) if args.log else None
-    return run(args.host, args.port, Path(args.state), log_path, args.duration, args.hz)
+    return run(args.host, args.port, Path(args.state), log_path, args.duration, args.hz,
+               force_grab=args.force_grab, force_trigger=args.force_trigger,
+               grab_mode=args.grab_mode)
 
 
 if __name__ == "__main__":
