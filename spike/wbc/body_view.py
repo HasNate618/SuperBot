@@ -180,11 +180,15 @@ def reel_plan(
     ]
 
 
-def _hand_command(pose, side: str) -> BodyCommand:
-    """One hand's target on the matching authority bit."""
+def _hand_command(pose, side: str, frame: str = "root") -> BodyCommand:
+    """One hand's target on the matching authority bit.
+
+    `frame="head"` lets the executor carry the target with the torso twist, so a
+    reached hand stays where the camera is looking instead of swinging out of view.
+    """
     if side == "left":
-        return BodyCommand(seq=0, authority=AUTH_L_HAND, left_hand=pose)
-    return BodyCommand(seq=0, authority=AUTH_R_HAND, right_hand=pose)
+        return BodyCommand(seq=0, authority=AUTH_L_HAND, left_hand=pose, frame=frame)
+    return BodyCommand(seq=0, authority=AUTH_R_HAND, right_hand=pose, frame=frame)
 
 
 def _command_from_intent(
@@ -219,11 +223,13 @@ def _command_from_intent(
                 intent.side, forward_m=forward, up_m=up, lateral_m=lateral
             ),
             intent.side,
+            frame=intent.frame,
         )
     if intent.skill == "strike":
         return _hand_command(
             executor.hand_target(intent.side, forward_m=forward, up_m=up),
             intent.side,
+            frame=intent.frame,
         )
     return None
 

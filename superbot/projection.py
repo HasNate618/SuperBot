@@ -42,6 +42,32 @@ LEFT = (0.0, 1.0, 0.0)
 _MIN_FORWARD = 1e-6
 
 
+def root_offset(
+    forward_m: float = 0.0, up_m: float = 0.0, lateral_m: float = 0.0
+) -> tuple[float, float, float]:
+    """A named offset expressed in the model's root frame.
+
+    The single place a caller's words become a vector. Every builder that takes a
+    "forward", "up" or "lateral" distance should come through here rather than
+    restating the mapping, because restating it is exactly how `hand_target` came
+    to claim "+Y is forward, +X is the robot's left" while this module and
+    `dodge_target` used the opposite. Measured 2026-10-30 against the clip's wrist
+    positions (left y = +0.190, right y = -0.180), the model is +X forward,
+    +Y left, +Z up.
+
+    `lateral_m` is positive toward the robot's **left**, matching the sign of yaw
+    that turns left and the axis `dodge_target` is measured on.
+    """
+    fx, fy, fz = FORWARD
+    lx, ly, lz = LEFT
+    ux, uy, uz = UP
+    return (
+        forward_m * fx + lateral_m * lx + up_m * ux,
+        forward_m * fy + lateral_m * ly + up_m * uy,
+        forward_m * fz + lateral_m * lz + up_m * uz,
+    )
+
+
 @dataclass(frozen=True)
 class Fov:
     """An OpenXR-style asymmetric frustum, in radians.
@@ -89,6 +115,54 @@ def _rotate_inverse(q_xyzw: Sequence[float], v: Sequence[float]) -> tuple[float,
         vy + w * ty + (-z * tx + x * tz),
         vz + w * tz + (-x * ty + y * tx),
     )
+
+
+def yaw_of(q_xyzw: Sequence[float]) -> float:
+    """Heading about +Z, in radians, from a unit quaternion in `(x, y, z, w)`.
+
+    Positive is the robot's left, matching `look_target` and `root_offset`'s
+    lateral-is-left convention. Pitch and roll contribute nothing, which is the
+    point: carrying a hand with the head is a rotation about the vertical axis.
+
+    Wraps to `(-pi, pi]` because a heading of 270 degrees right is 90 degrees left.
+    """
+    x, y, z, w = q_xyzw
+    return math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
+
+
+def rotate_z(vec: Sequence[float], yaw_rad: float) -> tuple[float, float, float]:
+    """`vec` rotated about +Z by `yaw_rad`, height untouched.
+
+    A zero yaw returns the input **exactly**, by early return rather than by float
+    luck, because `frame="head"` guarantees that an untwisted body reproduces the
+    poses measured before that frame existed.
+    """
+    x, y, z = vec
+    if yaw_rad == 0.0:
+        return (x, y, z)
+    cos_t = math.cos(yaw_rad)
+    sin_t = math.sin(yaw_rad)
+    return (x * cos_t - y * sin_t, x * sin_t + y * cos_t, z)
+
+
+def carry_with_head(
+    point: Sequence[float], pivot: Sequence[float], delta_yaw: float
+) -> tuple[float, float, float]:
+    """Carry `point` around the vertical axis through `pivot` by `delta_yaw`.
+
+    This is "the hand follows the head": when the torso twists, a wrist held at a
+    fixed offset from the body stays in the same place relative to the gaze. `point`
+    standing exactly on `pivot` never moves, and the radius about the pivot is
+    preserved - a hand out in front swings, one at the axis does not.
+
+    Zero twist is an exact identity, not an approximate one (see `rotate_z`).
+    """
+    if delta_yaw == 0.0:
+        return (float(point[0]), float(point[1]), float(point[2]))
+    dx = point[0] - pivot[0]
+    dy = point[1] - pivot[1]
+    rx, ry, rz = rotate_z((dx, dy, point[2] - pivot[2]), delta_yaw)
+    return (rx + pivot[0], ry + pivot[1], rz + pivot[2])
 
 
 def project_point(

@@ -57,6 +57,7 @@ from superbot.body import (  # noqa: E402
     Pose,
     commanded_buttons,
 )
+from superbot.projection import carry_with_head, root_offset, yaw_of  # noqa: E402
 
 # Authority this controller can honour today. Walking needs a locomotion clip
 # loaded and a live lookahead, so ROOT_VEL is not honoured in a hold session.
@@ -140,6 +141,46 @@ class SonicExecutor:
         up = sr.quat_rotate(r.data.qpos[3:7], np.array([0.0, 0.0, 1.0]))
         return np.array(positions), np.array(quats), base, up
 
+    def _head_twist(self) -> float:
+        """How far the torso has twisted since the clip's head pose, in radians.
+
+        Zero twist must reproduce the poses measured before `frame="head"` existed,
+        so an unknown previous state, or a failed solve, returns exactly 0.0 rather
+        than a small number that would quietly shift every later target.
+
+        Composed from the **achieved** head and not the commanded one: the relay
+        sends achieved head to the game, so the camera the player sees is the
+        achieved pose. Using the command would make the hand and the view disagree
+        whenever tracking lags. The cost is one control tick (20 ms) of staleness,
+        which is the previous tick's state.
+        """
+        state = self.last_state
+        if state is None or state.head is None:
+            return 0.0
+        _, orns = self._clip_targets()
+        q_ref_xyzw = (
+            float(orns[4 * HEAD + 1]),
+            float(orns[4 * HEAD + 2]),
+            float(orns[4 * HEAD + 3]),
+            float(orns[4 * HEAD]),
+        )
+        delta = yaw_of(state.head.q_xyzw) - yaw_of(q_ref_xyzw)
+        # Wrap to (-pi, pi]: 350 deg of twist is 10 deg the other way.
+        return math.atan2(math.sin(delta), math.cos(delta))
+
+    def _carry_with_head(
+        self, pose: Pose, pivot: tuple[float, float, float], delta_yaw: float
+    ) -> Pose:
+        """Carry a hand pose with the torso twist: position about Z, and orientation."""
+        x, y, z = carry_with_head(pose.p, pivot, delta_yaw)
+        qx, qy, qz, qw = pose.q_xyzw
+        if delta_yaw != 0.0:
+            half = delta_yaw / 2.0
+            # wxyz convention for sr.quat_mul, then back to xyzw for the contract.
+            q_yaw = np.array([math.cos(half), 0.0, 0.0, math.sin(half)])
+            qw, qx, qy, qz = sr.quat_mul(q_yaw, np.array([qw, qx, qy, qz]))
+        return Pose((x, y, z), (float(qx), float(qy), float(qz), float(qw)))
+
     def _targets(self, cmd: BodyCommand) -> tuple[np.ndarray | None, np.ndarray | None]:
         """Absolute VR targets, replacing the clip's own, for the commanded points.
 
@@ -154,6 +195,15 @@ class SonicExecutor:
         orns = np.asarray(orns, dtype=np.float64).copy()
         touched = False
 
+        # `frame="head"`: carry hand targets by the torso twist, about the head's
+        # vertical axis, so a reached hand stays where the camera is looking.
+        delta_yaw = self._head_twist() if cmd.frame == "head" else 0.0
+        pivot = (
+            float(pts[3 * HEAD]),
+            float(pts[3 * HEAD + 1]),
+            float(pts[3 * HEAD + 2]),
+        )
+
         for bit, index, pose in (
             (AUTH_HEAD, HEAD, cmd.head),
             (AUTH_L_HAND, L_WRIST, cmd.left_hand),
@@ -161,6 +211,8 @@ class SonicExecutor:
         ):
             if not (cmd.authority & bit) or pose is None:
                 continue
+            if delta_yaw != 0.0 and bit != AUTH_HEAD:
+                pose = self._carry_with_head(pose, pivot, delta_yaw)
             pts[3 * index:3 * index + 3] = np.asarray(pose.p, dtype=np.float64)
             # Contract is xyzw; the controller wants wxyz.
             x, y, z, w = pose.q_xyzw
@@ -290,14 +342,27 @@ class SonicExecutor:
     ) -> Pose:
         """A wrist pose offset from the clip's wrist, optionally re-oriented.
 
-        The offset is applied in the pelvis frame: +Y is forward, +X is the
-        robot's left, +Z is up. `yaw_deg` turns the wrist about Z so an "aim"
-        can point somewhere other than the clip's palm direction.
+        The offset is in the model's root frame: **+X is forward, +Y is the robot's
+        left, +Z is up** (`superbot.projection.root_offset` owns that mapping). This
+        docstring previously stated the opposite - "+Y is forward, +X is the
+        robot's left" - and the code implemented *that*, so `forward_m` moved the
+        wrist across the body while `lateral_m` moved it forward. Measured
+        2026-10-30: `forward_m=0.15` took the right wrist from y=-0.180 to
+        y=-0.030 with x unchanged. `dodge_target` below documents the correct
+        frame and was already fixed for it (f4ca2e7); the fix had not reached here.
+
+        `yaw_deg` turns the wrist about Z so an "aim" can point somewhere other
+        than the clip's palm direction.
         """
         index = L_WRIST if side == "left" else R_WRIST
         pts, orns = self._clip_targets()
         start = 3 * index
-        target = pts[start:start + 3] + np.array([lateral_m, forward_m, up_m])
+        # One mapping, borrowed rather than restated: the previous duplicate here
+        # is what made two modules disagree about which axis was which.
+        offset = root_offset(
+            forward_m=forward_m, up_m=up_m, lateral_m=lateral_m
+        )
+        target = pts[start:start + 3] + np.asarray(offset, dtype=np.float64)
         quat = orns[4 * index:4 * index + 4]
         if yaw_deg:
             half = math.radians(yaw_deg) / 2.0

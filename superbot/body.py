@@ -13,7 +13,7 @@ Two rules decide everything else in this module:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 SCHEMA = "superbot.body/1"
@@ -43,7 +43,15 @@ FLAG_FALL_RISK = 1 << 2
 FLAG_UNSUPPORTED = 1 << 3
 
 SOURCES = ("human", "vlm", "planner", "script")
-FRAMES = ("root", "world")
+#: Frames a command's poses may be expressed in. `root` is the body frame
+#: (`_achieved` de-rotates by the base yaw, so it is the pelvis frame with +X
+#: forward). `head` carries hand offsets by the torso twist since the clip, so a
+#: hand stays in view when the body turns.
+#:
+#: `world` used to be listed here and is deliberately gone: the executor never
+#: implemented it, so it was accepted and silently ignored - a writer could believe
+#: it had asked for world coordinates and receive body ones.
+FRAMES = ("root", "head")
 DONE_WHEN = ("duration", "target", "external")
 
 # Defaults fixed by the contract.
@@ -64,7 +72,7 @@ class Pose:
         return {"p": list(self.p), "q_xyzw": list(self.q_xyzw)}
 
     @staticmethod
-    def from_dict(raw: Any) -> "Pose":
+    def from_dict(raw: Any) -> Pose:
         if not isinstance(raw, dict):
             raise TypeError("pose must be an object")
         p = raw["p"]

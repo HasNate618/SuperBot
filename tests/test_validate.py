@@ -147,3 +147,36 @@ class ValidateTestCase(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FrameTests(unittest.TestCase):
+    """The frame a command's poses are expressed in.
+
+    `frame="world"` used to be accepted and then silently ignored by the executor,
+    which is worse than rejecting it: a writer could believe it had asked for world
+    coordinates and get body coordinates. `frame="head"` replaces it, and means the
+    hand offsets are carried by however far the torso has twisted since the clip - so
+    the hand stays where the camera is looking.
+    """
+
+    def test_head_frame_is_accepted_for_a_hand(self) -> None:
+        result = validate_command(
+            cmd(authority=AUTH_R_HAND, frame="head", right_hand=unit_pose()), NOW
+        )
+        accepted(result)
+
+    def test_world_frame_is_rejected_rather_than_ignored(self) -> None:
+        result = validate_command(
+            cmd(authority=AUTH_R_HAND, frame="world", right_hand=unit_pose()), NOW
+        )
+        self.assertIsNone(result.command)
+        self.assertIn("unknown frame", result.reason or "")
+
+    def test_a_head_pose_cannot_be_in_the_head_frame(self) -> None:
+        # The head frame is defined by the head's own yaw, so asking for the head in
+        # it is circular. Rejecting keeps one meaning per frame.
+        result = validate_command(
+            cmd(authority=1 << 2, frame="head", head=unit_pose()), NOW
+        )
+        self.assertIsNone(result.command)
+        self.assertIn("head", (result.reason or "").lower())

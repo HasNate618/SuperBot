@@ -19,6 +19,7 @@ from dataclasses import dataclass
 
 from .body import (
     AUTH_CLOSURE,
+    AUTH_HEAD,
     AUTH_L_HAND,
     AUTH_R_HAND,
     AUTH_ROOT_HEIGHT,
@@ -40,8 +41,8 @@ from .body import (
 # ordinary raised arm, not an absurdity. Tighten in Phase 2 against achieved
 # positions from SONIC.
 HAND_BOX = (
-    (-0.80, 0.80),  # x, left/right
-    (-0.80, 0.80),  # y, forward/back
+    (-0.80, 0.80),  # x, forward/back
+    (-0.80, 0.80),  # y, left/right (positive is the robot's left)
     (-0.70, 1.00),  # z, down/up
 )
 
@@ -99,6 +100,12 @@ def validate_command(cmd: BodyCommand, now_ns: int) -> ValidationResult:
         return ValidationResult(None, f"unknown source {cmd.source!r}")
     if cmd.frame not in FRAMES:
         return ValidationResult(None, f"unknown frame {cmd.frame!r}")
+    if cmd.frame == "head" and (cmd.authority & AUTH_HEAD):
+        # The head frame is defined by the head's own yaw, so a head pose in it is
+        # circular. One meaning per frame, or the executor has to guess.
+        return ValidationResult(
+            None, "frame 'head' cannot carry a head pose; send the head in 'root'"
+        )
     if cmd.done_when not in DONE_WHEN:
         return ValidationResult(None, f"unknown done_when {cmd.done_when!r}")
 

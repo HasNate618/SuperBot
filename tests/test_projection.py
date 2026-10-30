@@ -86,6 +86,164 @@ class FovConstruction(unittest.TestCase):
         self.assertAlmostEqual(u, 0.0)
 
 
+class RootOffset(unittest.TestCase):
+    """The one place a named offset becomes a model-frame vector.
+
+    This class exists because the same convention was stated two ways in two
+    modules: `hand_target` claimed "+Y is forward, +X is the robot's left" while
+    `dodge_target` and this module use +X forward, +Y left. Measured 2026-10-30,
+    the model follows the latter (clip left wrist y = +0.190, right y = -0.180),
+    so `forward_m` was moving the wrist across the body and `lateral_m` was moving
+    it forward. A test asserting only `(0.15, 0, 0)` would not have caught that,
+    so the tests below pin each argument to a *named* axis, and one pins the sign
+    of lateral against the frame `dodge_target` documents.
+    """
+
+    def test_forward_is_plus_x(self) -> None:
+        self.assertEqual(projection.root_offset(forward_m=0.15), (0.15, 0.0, 0.0))
+
+    def test_lateral_is_plus_y_the_robots_left(self) -> None:
+        # Positive lateral is the robot's left, matching the yaw sign that turns
+        # left. The clip's left wrist has larger +Y than its right wrist, which is
+        # what makes +Y "left" in this model rather than a guess.
+        self.assertEqual(projection.root_offset(lateral_m=0.15), (0.0, 0.15, 0.0))
+
+    def test_up_is_plus_z(self) -> None:
+        self.assertEqual(projection.root_offset(up_m=0.15), (0.0, 0.0, 0.15))
+
+    def test_components_add(self) -> None:
+        self.assertEqual(
+            projection.root_offset(forward_m=0.2, up_m=0.1, lateral_m=-0.3),
+            (0.2, -0.3, 0.1),
+        )
+
+    def test_defaults_are_a_zero_offset(self) -> None:
+        self.assertEqual(projection.root_offset(), (0.0, 0.0, 0.0))
+
+    def test_the_axes_are_orthonormal(self) -> None:
+        # If someone "fixes" a sign without thinking, two axes can collapse onto
+        # each other and every offset becomes unrecoverable.
+        for a, b in (
+            (projection.FORWARD, projection.LEFT),
+            (projection.FORWARD, projection.UP),
+            (projection.LEFT, projection.UP),
+        ):
+            self.assertAlmostEqual(sum(x * y for x, y in zip(a, b)), 0.0)
+            self.assertAlmostEqual(math.sqrt(sum(x * x for x in a)), 1.0)
+
+    def test_lateral_agrees_with_the_dodge_frame(self) -> None:
+        # dodge_target leans on +Y and is measured at 10-13 cm of head shift.
+        # The hand must not silently disagree with the verb that already works.
+        self.assertEqual(projection.root_offset(lateral_m=1.0)[1], 1.0)
+
+
+class YawOf(unittest.TestCase):
+    """Heading about +Z, extracted from a body-frame quaternion.
+
+    Needed because "hand relative to head" is a rotation about the vertical axis by
+    however far the torso has twisted since the clip's reference pose. Poses in
+    `BodyState` are de-rotated into the base frame (`_achieved` applies `root_inv`),
+    so a torso twist moves the head and its camera while a fixed body-frame wrist
+    target does not - which is precisely why the hand leaves the view when the
+    body turns.
+    """
+
+    def test_identity_has_no_yaw(self) -> None:
+        self.assertAlmostEqual(projection.yaw_of((0.0, 0.0, 0.0, 1.0)), 0.0)
+
+    def test_a_left_turn_is_positive(self) -> None:
+        # Matches the sign `look_target` uses for a left turn and root_offset's
+        # lateral-is-left convention.
+        half = math.pi / 4.0
+        self.assertAlmostEqual(
+            projection.yaw_of((0.0, 0.0, math.sin(half), math.cos(half))), math.pi / 2.0
+        )
+
+    def test_a_right_turn_is_negative(self) -> None:
+        half = -math.pi / 4.0
+        self.assertAlmostEqual(
+            projection.yaw_of((0.0, 0.0, math.sin(half), math.cos(half))), -math.pi / 2.0
+        )
+
+    def test_a_pure_pitch_has_no_yaw(self) -> None:
+        half = math.pi / 4.0
+        self.assertAlmostEqual(
+            projection.yaw_of((0.0, math.sin(half), 0.0, math.cos(half))), 0.0
+        )
+
+    def test_a_pure_roll_has_no_yaw(self) -> None:
+        half = math.pi / 4.0
+        self.assertAlmostEqual(
+            projection.yaw_of((math.sin(half), 0.0, 0.0, math.cos(half))), 0.0
+        )
+
+    def test_yaw_wraps_rather_than_unwinding(self) -> None:
+        # 270 deg right and 90 deg left are the same heading.
+        half = math.radians(-270.0) / 2.0
+        self.assertAlmostEqual(
+            projection.yaw_of((0.0, 0.0, math.sin(half), math.cos(half))), math.pi / 2.0
+        )
+
+
+class RotateZ(unittest.TestCase):
+    def test_zero_is_exactly_the_identity(self) -> None:
+        # Exact, not approximate: the compatibility guarantee for frame="head" is
+        # that a zero twist reproduces today's poses bit for bit.
+        self.assertEqual(
+            projection.rotate_z((0.3, -0.2, 0.1), 0.0), (0.3, -0.2, 0.1)
+        )
+
+    def test_a_quarter_turn_sends_forward_to_left(self) -> None:
+        x, y, z = projection.rotate_z((1.0, 0.0, 0.0), math.pi / 2.0)
+        self.assertAlmostEqual(x, 0.0)
+        self.assertAlmostEqual(y, 1.0)
+        self.assertAlmostEqual(z, 0.0)
+
+    def test_height_and_radius_are_preserved(self) -> None:
+        v = (0.4, -0.3, 0.25)
+        out = projection.rotate_z(v, 0.7)
+        self.assertAlmostEqual(out[2], 0.25)
+        self.assertAlmostEqual(
+            math.hypot(out[0], out[1]), math.hypot(0.4, 0.3)
+        )
+
+
+class CarryWithHead(unittest.TestCase):
+    """The hand-follows-the-head rule, as arithmetic.
+
+    A wrist offset is carried by the torso's twist: the point is rotated about the
+    vertical axis *through the pivot*, so a hand at the pivot does not move and a
+    hand out in front swings with the gaze.
+    """
+
+    def test_zero_twist_leaves_the_point_exactly_alone(self) -> None:
+        self.assertEqual(
+            projection.carry_with_head((0.4, -0.2, 0.1), (0.1, 0.0, 0.0), 0.0),
+            (0.4, -0.2, 0.1),
+        )
+
+    def test_the_pivot_itself_never_moves(self) -> None:
+        pivot = (0.1, 0.05, 0.3)
+        self.assertEqual(
+            projection.carry_with_head(pivot, pivot, 1.2), pivot
+        )
+
+    def test_a_left_twist_carries_a_forward_hand_to_the_left(self) -> None:
+        x, y, _ = projection.carry_with_head((0.5, 0.0, 0.0), (0.0, 0.0, 0.0), math.pi / 2.0)
+        self.assertAlmostEqual(x, 0.0)
+        self.assertAlmostEqual(y, 0.5)
+
+    def test_radius_about_the_pivot_is_preserved(self) -> None:
+        pivot = (0.1, -0.05, 0.0)
+        before = (0.45, 0.2, 0.3)
+        after = projection.carry_with_head(before, pivot, 0.9)
+        self.assertAlmostEqual(
+            math.hypot(before[0] - pivot[0], before[1] - pivot[1]),
+            math.hypot(after[0] - pivot[0], after[1] - pivot[1]),
+        )
+        self.assertAlmostEqual(after[2], before[2])
+
+
 class PixelError(unittest.TestCase):
     def test_error_is_euclidean_in_normalised_pixels(self) -> None:
         self.assertAlmostEqual(

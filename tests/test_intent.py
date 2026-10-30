@@ -122,3 +122,41 @@ class VerbParsing(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FrameField(unittest.TestCase):
+    """`offset` needs a frame, and the frame vocabulary is the body contract's.
+
+    Importing `FRAMES` rather than restating it is deliberate: this session found
+    two modules disagreeing about which axis was forward, and a second copy of the
+    frame list would be the same mistake with a different noun.
+    """
+
+    def test_default_frame_is_root(self) -> None:
+        self.assertEqual(intent.Intent(skill="reach", side="right").frame, "root")
+
+    def test_head_frame_survives_a_round_trip(self) -> None:
+        before = intent.Intent(
+            skill="reach", side="right", frame="head", offset=(0.3, 0.2, 0.0)
+        )
+        after = intent.Intent.from_dict(before.to_dict())
+        self.assertEqual(after.frame, "head")
+        self.assertEqual(after, before)
+
+    def test_an_unknown_frame_is_rejected(self) -> None:
+        reason = intent.validate_intent(
+            intent.Intent(skill="reach", side="right", frame="world")
+        )
+        self.assertIn("unknown frame", reason)
+
+    def test_the_body_contract_owns_the_vocabulary(self) -> None:
+        # If `FRAMES` ever grows, this test must not need editing.
+        from superbot.body import FRAMES
+
+        for frame in FRAMES:
+            self.assertEqual(
+                intent.validate_intent(
+                    intent.Intent(skill="reach", side="right", frame=frame)
+                ),
+                "",
+            )

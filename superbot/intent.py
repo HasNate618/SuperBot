@@ -28,6 +28,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from .body import FRAMES
+
 SCHEMA = "superbot.intent/1"
 
 #: Skills the adapter knows. Closed on purpose: a writer that invents a skill is
@@ -74,6 +76,12 @@ class Intent:
     skill: str = "hold"
     side: str = "none"
 
+    #: Frame for `offset`. `root` is the body frame; `head` carries the offset by
+    #: however far the torso has twisted, so the hand stays where the camera looks.
+    #: Imported from the body contract so the two cannot drift apart - which is how
+    #: `hand_target` and `dodge_target` came to disagree about which axis was forward.
+    frame: str = "root"
+
     #: Target in the HMD view, normalised `[0, 1]`, origin top-left. Not a VNC
     #: pixel and not a 3D point; the adapter maps it into its own crop.
     pixel: tuple[float, float] | None = None
@@ -95,6 +103,7 @@ class Intent:
             "source": self.source,
             "skill": self.skill,
             "side": self.side,
+            "frame": self.frame,
             "pixel": list(self.pixel) if self.pixel is not None else None,
             "yaw_rad": self.yaw_rad,
             "offset": list(self.offset) if self.offset is not None else None,
@@ -115,6 +124,7 @@ class Intent:
             source=str(raw.get("source", "script")),
             skill=str(raw.get("skill", "hold")),
             side=str(raw.get("side", "none")),
+            frame=str(raw.get("frame", "root")),
             pixel=None
             if pixel is None
             else (float(pixel[0]), float(pixel[1])),
@@ -143,6 +153,8 @@ def validate_intent(intent: Intent) -> str:
         return f"unknown skill {intent.skill!r}"
     if intent.side not in SIDES:
         return f"unknown side {intent.side!r}"
+    if intent.frame not in FRAMES:
+        return f"unknown frame {intent.frame!r}"
     if intent.skill in SIDE_SKILLS and intent.side == "none":
         return f"{intent.skill} needs a side"
     if intent.skill not in SIDE_SKILLS and intent.side != "none":
