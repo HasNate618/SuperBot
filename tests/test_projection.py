@@ -15,7 +15,7 @@ from __future__ import annotations
 import math
 import unittest
 
-from superbot import projection
+import superbot.projection as projection
 from superbot.body import Pose
 
 IDENTITY = Pose((0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 1.0))
@@ -66,7 +66,7 @@ class ProjectPoint(unittest.TestCase):
         self.assertLess(u, 1.0)
 
 
-class Fov(unittest.TestCase):
+class FovConstruction(unittest.TestCase):
     def test_degrees_are_converted(self) -> None:
         self.assertAlmostEqual(HALF_45.angle_left, math.radians(45.0))
 
