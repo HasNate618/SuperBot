@@ -152,9 +152,20 @@ def lit_fraction(
 
 # ---------------------------------------------------------------- green slot
 #: Green must lead both other channels by this much, or white and grey pass.
-GREEN_MARGIN = 25
-#: ...and clear this on its own, or a dark green surface passes.
-GREEN_FLOOR = 60
+#:
+#: MEASURED 2026-10-30 on the hub frame
+#: `/tmp/pi-clipboard-bafecc17-e9f7-4601-8b13-8cc5b272dd55.png` (1127x853, the
+#: drive bay with the glowing slot at ~(0.76, 0.87)): at (25, 60) the centroid is
+#: pulled to (0.53, 0.78) by sticky notes and foliage (23k px); at (40, 120) it
+#: sits on the slot at (0.768, 0.890) over 9k px; at (60, 140) it tightens to
+#: (0.763, 0.873) over 2.9k px. So 25 is too loose for the hub and 60 is usable
+#: but close to the slot's own lead (~66 over its bluish B channel, mean G 222 /
+#: R 86 / B 156). 40 is the operating point: it holds the slot with margin to
+#: spare and still rejects grey (lead 5), white (lead 0) and dark green (G 12).
+GREEN_MARGIN = 40
+#: ...and clear this on its own, or a dark green surface passes. The slot's mean
+#: green is 198-222 across the usable gates; 120 keeps it with room below.
+GREEN_FLOOR = 120
 #: Below this fraction of the scanned area the region is a speck, not a slot.
 MIN_GREEN_FRACTION = 0.002
 
