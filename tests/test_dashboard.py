@@ -543,7 +543,7 @@ class ShippedStaticAssetsTests(unittest.TestCase):
         self.assertIn(b'data-mode="manual"', index)
 
     def test_vendored_fonts_are_served(self) -> None:
-        for name in ("oswald-var.woff2", "archivo-var.woff2", "plex-mono-400.woff2"):
+        for name in ("inter-var.woff2", "plex-mono-400.woff2", "plex-mono-600.woff2"):
             with self.subTest(name=name):
                 status, body = self.request(f"/fonts/{name}")
                 self.assertEqual(status, 200)

@@ -4,15 +4,8 @@
    overridden by whatever the desktop defaults to. */
 
 @font-face {
-  font-family: "Superbot Display";
-  src: url("/fonts/oswald-var.woff2") format("woff2");
-  font-weight: 200 700;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: "Superbot UI";
-  src: url("/fonts/archivo-var.woff2") format("woff2");
+  font-family: "Superbot Sans";
+  src: url("/fonts/inter-var.woff2") format("woff2");
   font-weight: 100 900;
   font-style: normal;
   font-display: swap;
@@ -38,11 +31,12 @@
   --panel: #0d0d0d;
   --edge: #2b2b2b;
   --text: #f2f2f2;
-  --muted: #6f6f6f;
+  --muted: #8f8f8f;
   --red: #ff1e2d;
   --red-dark: #8f0f18;
-  --display: "Superbot Display", "Oswald", "Bahnschrift", sans-serif;
-  --ui: "Superbot UI", "Archivo", "Liberation Sans", sans-serif;
+  --sans: "Superbot Sans", "Inter", "Liberation Sans", "DejaVu Sans", sans-serif;
+  --display: var(--sans);
+  --ui: var(--sans);
   --mono: "Superbot Mono", "IBM Plex Mono", "DejaVu Sans Mono", monospace;
   --src-session: #ff1e2d;
   --src-monado: #ffb020;
@@ -82,9 +76,9 @@ h2 {
   margin: 0 0 10px;
   font-family: var(--display);
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.35em;
+  letter-spacing: 0.1em;
   color: var(--muted);
 }
 h2::after {
@@ -113,16 +107,16 @@ h2::after {
 }
 .brand-mark {
   font-family: var(--display);
-  font-size: 20px;
-  font-weight: 800;
-  letter-spacing: 0.35em;
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
   color: var(--text);
 }
 .brand-tag {
   font-family: var(--display);
   font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.2em;
+  font-weight: 600;
+  letter-spacing: 0.06em;
   color: #000;
   background: var(--red);
   padding: 2px 7px;
@@ -139,7 +133,7 @@ h2::after {
 #session-id, #uptime {
   font-family: var(--mono);
   font-size: 11px;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.04em;
   color: var(--muted);
   white-space: nowrap;
   overflow: hidden;
@@ -170,7 +164,7 @@ button, select {
   font-family: var(--display);
   font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.03em;
   text-transform: uppercase;
   cursor: pointer;
 }
@@ -180,7 +174,7 @@ button:hover:not(:disabled) {
   color: #000;
   border-color: var(--text);
 }
-button:disabled { opacity: 0.3; cursor: default; }
+button:disabled { opacity: 0.45; cursor: default; }
 button.active {
   background: var(--red);
   border-color: var(--red);
@@ -191,7 +185,7 @@ button.active:hover:not(:disabled) {
   color: #000;
 }
 
-.btn { font-weight: 800; }
+.btn { font-weight: 700; }
 .btn-go:not(:disabled) { background: var(--text); color: #000; border-color: var(--text); }
 .btn-go:hover:not(:disabled) { background: var(--red); border-color: var(--red); }
 .btn-halt:not(:disabled) { background: var(--red-dark); color: var(--text); border-color: var(--red-dark); }
@@ -206,9 +200,9 @@ button.active:hover:not(:disabled) {
   color: var(--muted);
   font-family: var(--display);
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.3em;
+  letter-spacing: 0.1em;
 }
 .badge.running {
   border-color: var(--red);
@@ -277,17 +271,17 @@ button.active:hover:not(:disabled) {
 .card strong {
   font-family: var(--display);
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.2em;
+  letter-spacing: 0.06em;
   color: var(--muted);
 }
-.card span { font-family: var(--mono); font-size: 11px; font-weight: 700; }
+.card span { font-family: var(--mono); font-size: 12px; font-weight: 600; }
 .card small {
   grid-column: 1 / -1;
   color: var(--muted);
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 11px;
 }
 .ok { color: var(--text); }
 .ok::before { content: "■ "; color: var(--text); }
@@ -302,14 +296,14 @@ button.active:hover:not(:disabled) {
 }
 .verbs button {
   padding: 9px 4px;
-  font-size: 11px;
+  font-size: 12px;
   text-align: center;
 }
 .verb-status {
   min-height: 1.2em;
   margin-top: 8px;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--red);
   white-space: nowrap;
   overflow: hidden;
@@ -348,6 +342,7 @@ button.active:hover:not(:disabled) {
   flex: 1;
   min-height: 0;
   display: flex;
+  flex-direction: column;
   gap: 8px;
   background: var(--panel);
   border: 2px solid var(--edge);
@@ -376,8 +371,8 @@ button.active:hover:not(:disabled) {
   z-index: 2;
   font-family: var(--display);
   font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.35em;
+  font-weight: 600;
+  letter-spacing: 0.1em;
   color: #000;
   background: var(--red);
   padding: 3px 10px 3px 12px;
@@ -427,8 +422,8 @@ button.active:hover:not(:disabled) {
   color: var(--muted);
   font-family: var(--display);
   font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.4em;
+  font-weight: 600;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   background: #000;
   pointer-events: none;
@@ -480,11 +475,11 @@ button.active:hover:not(:disabled) {
   color: var(--text);
   font-family: var(--display);
   font-size: 13px;
-  font-weight: 800;
-  letter-spacing: 0.2em;
+  font-weight: 700;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
-.manual-panel span { color: var(--muted); font-size: 11px; font-family: var(--mono); }
+.manual-panel span { color: var(--muted); font-size: 12px; font-family: var(--mono); }
 .manual-mode .preview { cursor: pointer; }
 .manual-active .preview { cursor: none; }
 .manual-active .manual-panel { border-color: var(--red); }
@@ -507,9 +502,9 @@ button.active:hover:not(:disabled) {
 
 #body-box {
   position: relative;
-  flex: 0 0 220px;
+  flex: 0 0 auto;
   min-height: 0;
-  overflow-y: auto;
+  overflow: hidden;
   border: 2px solid var(--edge);
   background: #000;
   padding: 6px;
@@ -525,16 +520,16 @@ button.active:hover:not(:disabled) {
   align-self: center;
   padding: 3px 8px;
   font-family: var(--display);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.35em;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: #000;
   background: var(--text);
 }
 .body-head button {
-  padding: 2px 9px;
-  font-size: 9px;
+  padding: 3px 10px;
+  font-size: 10px;
   border-width: 1px;
 }
 #body-wait {
@@ -544,17 +539,19 @@ button.active:hover:not(:disabled) {
   padding: 8px;
   color: var(--muted);
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.5;
-  text-transform: uppercase;
+  text-transform: none;
   word-break: break-word;
 }
 #body-wait[hidden] { display: none; }
 
 /* one tile per camera angle, stacked filmstrip */
-#body-tiles { display: grid; gap: 6px; }
+#body-tiles { display: flex; gap: 6px; overflow-x: auto; }
 .body-tile {
   position: relative;
+  flex: 0 0 auto;
+  height: clamp(110px, 15vh, 180px);
   aspect-ratio: 560 / 420;
   border: 2px solid var(--edge);
   overflow: hidden;
@@ -573,9 +570,9 @@ button.active:hover:not(:disabled) {
   bottom: 0;
   max-width: 100%;
   font-family: var(--display);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.15em;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   white-space: nowrap;
   overflow: hidden;
@@ -616,9 +613,9 @@ button.active:hover:not(:disabled) {
 }
 .chip {
   padding: 3px 9px;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.05em;
   background: #0a0a0a;
 }
 .chip[data-source="session"] { border-color: var(--src-session); color: var(--src-session); }
@@ -637,8 +634,8 @@ button.active:hover:not(:disabled) {
   border: 2px solid var(--edge);
   padding: 8px 10px;
   font-family: var(--mono);
-  font-size: 11px;
-  line-height: 1.5;
+  font-size: 12px;
+  line-height: 1.55;
   color: #a8a8a8;
 }
 .log-line {
@@ -650,9 +647,9 @@ button.active:hover:not(:disabled) {
   word-break: break-word;
 }
 .log-src {
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   opacity: 0.8;
 }
