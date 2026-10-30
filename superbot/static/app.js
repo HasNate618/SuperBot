@@ -508,6 +508,7 @@ function render(state) {
   $("state").textContent = state.state;
   $("state").className = `badge ${state.state}`;
   $("preview-clip").style.aspectRatio = `${state.preview.width} / ${state.preview.height}`;
+  requestAnimationFrame(updateLetterbox);
 
   const showSession = state.state === "running" || state.state === "stopping";
   $("session-id").textContent = showSession ? state.session_id || "" : "";
@@ -796,33 +797,55 @@ const BODY_REFRESH_MS = 120;
 let bodyTimer = null;
 let bodyFailures = 0;
 
-function bodyTiles(info) {
-  // One tile per configured angle. Tiles are keyed by view name so a config
-  // change rebuilds them instead of stacking duplicates.
-  const box = $("body-tiles");
-  const views = (info && info.views) || [];
-  const wanted = new Set(views);
-  for (const tile of Array.from(box.children)) {
-    if (!wanted.has(tile.dataset.view)) tile.remove();
+function bodyTileFor(box, name) {
+  let tile = box.querySelector(`[data-view="${name}"]`);
+  if (!tile) {
+    tile = document.createElement("div");
+    tile.className = "body-tile";
+    tile.dataset.view = name;
+    const img = document.createElement("img");
+    img.alt = "";
+    const caption = document.createElement("div");
+    caption.className = "tile-caption";
+    tile.append(img, caption);
+    box.append(tile);
   }
-  for (const name of views) {
-    let tile = box.querySelector(`[data-view="${name}"]`);
-    if (!tile) {
-      tile = document.createElement("div");
-      tile.className = "body-tile";
-      tile.dataset.view = name;
-      const img = document.createElement("img");
-      img.alt = "";
-      const caption = document.createElement("div");
-      caption.className = "tile-caption";
-      tile.append(img, caption);
-      box.appendChild(tile);
-    }
-    const caption = tile.querySelector(".tile-caption");
-    caption.textContent = name.replace(/_/g, " ");
-  }
-  return Array.from(box.children);
+  tile.querySelector(".tile-caption").textContent = name.replace(/_/g, " ");
+  return tile;
 }
+
+function bodyTiles(info) {
+  // One tile per configured angle, split across the top and bottom letterbox
+  // bands so the game frame stays uncovered. Tiles are keyed by view name so
+  // a config change rebuilds them instead of stacking duplicates.
+  const top = $("body-tiles-top");
+  const bottom = $("body-tiles");
+  const views = (info && info.views) || [];
+  const cut = Math.ceil(views.length / 2);
+  const wantedTop = views.slice(0, cut);
+  const wantedBottom = views.slice(cut);
+  const syncRow = (box, wanted) => {
+    if (!box) return [];
+    const keep = new Set(wanted);
+    for (const tile of Array.from(box.children)) {
+      if (!keep.has(tile.dataset.view)) tile.remove();
+    }
+    return wanted.map((name) => bodyTileFor(box, name));
+  };
+  return [...syncRow(top, wantedTop), ...syncRow(bottom, wantedBottom)];
+}
+
+function updateLetterbox() {
+  // Measure the preview's dead bands and size the robot rows to match.
+  const preview = document.querySelector(".preview");
+  const clip = document.querySelector(".preview-clip");
+  const stage = document.querySelector(".stage-views");
+  if (!preview || !clip || !stage) return;
+  const band = Math.max(0, Math.floor((preview.clientHeight - clip.offsetHeight) / 2) - 6);
+  stage.style.setProperty("--letterbox", `${band}px`);
+}
+
+window.addEventListener("resize", () => requestAnimationFrame(updateLetterbox));
 
 function bodyRefresh() {
   const info = (lastState && lastState.body) || null;

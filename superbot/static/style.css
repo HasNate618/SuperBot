@@ -341,6 +341,7 @@ button.active:hover:not(:disabled) {
 .stage-views {
   flex: 1;
   min-height: 0;
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -349,6 +350,7 @@ button.active:hover:not(:disabled) {
   outline: 2px solid #161616;
   outline-offset: 3px;
   padding: 8px;
+  --letterbox: 110px;
 }
 
 .preview {
@@ -498,22 +500,42 @@ button.active:hover:not(:disabled) {
   text-transform: uppercase;
 }
 
-/* ---------- robot filmstrip inside the stage ---------- */
+/* ---------- robot views live in the game cam letterbox ---------- */
+/* The game frame is 1920/1048, so the preview letterboxes top/bottom most
+   of the time. The robot tiles overlay those dead bands instead of taking
+   their own strip: top views in the top band, the rest in the bottom band,
+   centred horizontally and scaled to the measured band height. */
 
 #body-box {
-  position: relative;
-  flex: 0 0 auto;
+  position: absolute;
+  inset: 8px;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
   min-height: 0;
   overflow: hidden;
-  border: 2px solid var(--edge);
-  background: #000;
-  padding: 6px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  pointer-events: none;
 }
 .body-head {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 3;
   display: flex;
   align-items: stretch;
   gap: 4px;
-  margin-bottom: 6px;
+  margin: 0;
+  pointer-events: auto;
+  background: #000;
+  border: 2px solid var(--edge);
+  padding: 3px;
+}
+.body-spacer {
+  flex: 1;
+  min-height: 0;
 }
 .body-title {
   flex: 1;
@@ -535,24 +557,39 @@ button.active:hover:not(:disabled) {
 #body-wait {
   display: flex;
   align-items: center;
-  min-height: 90px;
-  padding: 8px;
+  align-self: center;
+  max-width: 90%;
+  padding: 6px 10px;
   color: var(--muted);
+  background: #000;
+  border: 2px solid var(--edge);
   font-family: var(--mono);
   font-size: 11px;
   line-height: 1.5;
   text-transform: none;
   word-break: break-word;
+  pointer-events: auto;
 }
 #body-wait[hidden] { display: none; }
 
-/* one tile per camera angle, stacked filmstrip */
-#body-tiles { display: flex; gap: 6px; overflow-x: auto; }
+/* one row per letterbox band, tiles centred and scaled to the band */
+.body-tiles {
+  display: flex;
+  justify-content: center;
+  align-items: stretch;
+  gap: 8px;
+  height: var(--letterbox);
+  min-height: 0;
+  overflow: hidden;
+  flex: 0 0 auto;
+}
+.body-tiles:empty { display: none; }
 .body-tile {
   position: relative;
-  flex: 0 0 auto;
-  height: clamp(110px, 15vh, 180px);
+  flex: 0 1 auto;
+  height: 100%;
   aspect-ratio: 560 / 420;
+  max-width: 100%;
   border: 2px solid var(--edge);
   overflow: hidden;
   background: #000;
@@ -667,8 +704,7 @@ button.active:hover:not(:disabled) {
   .frame { height: auto; grid-template-rows: auto auto auto; }
   .deck { grid-template-columns: 1fr; }
   .stage { min-height: 50vh; }
-  .stage-views { flex-direction: column; }
-  #body-box { flex: none; }
+  .stage-views { --letterbox: 90px; }
   .col, .col-right { grid-template-rows: none; overflow: visible; }
   .console { height: 260px; }
 }
