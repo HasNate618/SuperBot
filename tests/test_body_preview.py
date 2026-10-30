@@ -1,7 +1,9 @@
+import os
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from superbot.body_preview import BodyPreview
 from superbot.config import BodyConfig
@@ -108,6 +110,62 @@ class BodyPreviewTestCase(unittest.TestCase):
             view.stop()
             view.stop()
             self.assertFalse(view.running())
+
+    def test_start_strips_parent_pythonpath_from_the_child(self) -> None:
+        # A dashboard launched through `nix develop` carries a 3.14 PYTHONPATH;
+        # the sidecar's own 3.12 interpreter must not inherit it.
+        with tempfile.TemporaryDirectory() as tmp:
+            view = BodyPreview(
+                make_cfg(python=sys.executable, script=__file__), out_dir=Path(tmp)
+            )
+            seen: dict = {}
+
+            class FakeProc:
+                pid = 1
+                returncode = None
+
+                def poll(self):
+                    return None
+
+            def fake_popen(argv, **kwargs):
+                seen.update(kwargs)
+                return FakeProc()
+
+            polluted = {
+                "PYTHONPATH": "/polluted/site-packages",
+                "PYTHONHOME": "/polluted/home",
+                "VIRTUAL_ENV": "/polluted/venv",
+            }
+            with patch.dict(os.environ, polluted), patch(
+                "superbot.body_preview.subprocess.Popen", side_effect=fake_popen
+            ):
+                self.assertEqual(view.start(), "")
+            env = seen["env"]
+            self.assertNotIn("PYTHONPATH", env)
+            self.assertNotIn("PYTHONHOME", env)
+            self.assertNotIn("VIRTUAL_ENV", env)
+
+    def test_status_explains_a_dead_child(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            view = BodyPreview(
+                make_cfg(python=sys.executable, script=__file__), out_dir=Path(tmp)
+            )
+
+            class DeadProc:
+                pid = 1
+                returncode = 3
+
+                def poll(self):
+                    return 3
+
+            with patch("superbot.body_preview.subprocess.Popen", return_value=DeadProc()):
+                self.assertEqual(view.start(), "")
+            view.log_path.write_text("Traceback...\nboom: missing numpy\n")
+            status = view.status()
+            self.assertFalse(status["running"])
+            self.assertEqual(status["exit_code"], 3)
+            self.assertIn("exited (3)", status["error"])
+            self.assertIn("boom: missing numpy", status["error"])
 
 
 if __name__ == "__main__":

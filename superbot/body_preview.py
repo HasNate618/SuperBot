@@ -101,12 +101,20 @@ class BodyPreview:
             return problem
         self.out_dir.mkdir(parents=True, exist_ok=True)
         self._error = ""
+        # The sidecar runs its own interpreter (a SONIC venv), so the parent's
+        # PYTHONPATH must not leak in: a dashboard started through `nix develop`
+        # carries the devshell's 3.14 site-packages, and the venv's 3.12 Python
+        # would import that numpy and die on a cpython-314 extension.
+        env = os.environ.copy()
+        for key in ("PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV"):
+            env.pop(key, None)
         with self.log_path.open("ab") as log:
             self._proc = subprocess.Popen(  # noqa: S603 - fixed argv, no shell
                 self.argv(),
                 stdout=log,
                 stderr=subprocess.STDOUT,
                 stdin=subprocess.DEVNULL,
+                env=env,
                 start_new_session=True,  # own process group, so stop() is clean
                 cwd=str(Path.cwd()),
             )
@@ -196,6 +204,6 @@ class BodyPreview:
             "primary": cam.get("primary") or (views[0] if views else "three_quarter"),
             "follow": bool(cam.get("follow", True)),
             "lookat": cam.get("lookat", {}),
-            "error": self._error,
+            "error": error,
             "log": str(self.log_path),
         }
