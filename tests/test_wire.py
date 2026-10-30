@@ -157,3 +157,53 @@ class FillTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DeclaredFov(unittest.TestCase):
+    """We emit the HMD data, so the field of view can be a decision, not a guess.
+
+    `per_view_data_valid` is the driver's own switch for "use `views[].fov`". Upstream
+    `drivers/remote/r_interface.h` documents it as "Is the per view data valid and
+    should be used?", and `r_head_data.views[2]` carries `{fov, pose, _pad}`. CITED from
+    https://monado.pages.freedesktop.org/monado/r__interface_8h_source.html
+    (accessed 2026-10-30).
+
+    What is NOT cited: the code that consumes it. That path could not be read from the
+    installed store or the raw source, so honouring it is an ASSUMPTION until the
+    two-FOV experiment measures it. These tests pin our side of the contract only.
+    """
+
+    def test_the_default_leaves_per_view_data_invalid(self) -> None:
+        # Unchanged behaviour: a caller that says nothing about FOV keeps the
+        # compositor's own default, exactly as before this field existed.
+        d = wire.fill(wire.blank_packet(), wire.REST_POSES)
+        self.assertFalse(d.head.per_view_data_valid)
+
+    def test_supplying_a_fov_marks_the_per_view_data_valid(self) -> None:
+        d = wire.fill(wire.blank_packet(), wire.REST_POSES, fov=(math.radians(55.0), math.radians(45.0)))
+        self.assertTrue(d.head.per_view_data_valid)
+
+    def test_a_symmetric_fov_writes_all_four_half_angles(self) -> None:
+        half_h = math.radians(55.0)
+        half_v = math.radians(45.0)
+        d = wire.fill(wire.blank_packet(), wire.REST_POSES, fov=(half_h, half_v))
+        for view in d.head.views:
+            self.assertAlmostEqual(view.fov.angle_left, half_h, places=6)
+            self.assertAlmostEqual(view.fov.angle_right, half_h, places=6)
+            self.assertAlmostEqual(view.fov.angle_up, half_v, places=6)
+            self.assertAlmostEqual(view.fov.angle_down, half_v, places=6)
+
+    def test_a_negative_or_zero_fov_is_rejected(self) -> None:
+        for bad in ((0.0, 0.5), (-0.5, 0.5), (0.5, 0.0), (float("nan"), 0.5), (0.5, float("inf"))):
+            with self.assertRaises(ValueError):
+                wire.fill(wire.blank_packet(), wire.REST_POSES, fov=bad)
+
+    def test_declaring_a_fov_does_not_move_anything(self) -> None:
+        # The experiment changes one variable. If declaring a FOV also perturbed the
+        # head pose, a changed image could not be attributed to the field of view.
+        plain = wire.fill(wire.blank_packet(), wire.REST_POSES)
+        fovved = wire.fill(wire.blank_packet(), wire.REST_POSES, fov=(1.0, 0.8))
+        self.assertEqual(plain.head.center.position.x, fovved.head.center.position.x)
+        self.assertEqual(plain.head.center.position.y, fovved.head.center.position.y)
+        self.assertEqual(plain.head.center.position.z, fovved.head.center.position.z)
+        self.assertEqual(plain.head.center.orientation.w, fovved.head.center.orientation.w)

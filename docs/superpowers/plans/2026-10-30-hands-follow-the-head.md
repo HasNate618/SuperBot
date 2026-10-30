@@ -82,26 +82,26 @@ Extends `docs/superpowers/specs/2026-10-30-targeting-adapter.md` §S3 (FOV / cro
 **Why first:** every later task moves the hand and reads where it went. On a swapped axis those
 readings are garbage.
 
-- [ ] Add a stdlib helper in `superbot/projection.py`:
+- [x] Add a stdlib helper in `superbot/projection.py`:
       `root_offset(forward_m, up_m=0.0, lateral_m=0.0) -> tuple[float, float, float]` returning
       `(forward, lateral, up)` in the model's `(x, y, z)`. Reuse the existing `FORWARD`/`UP`/`LEFT`
       axis constants rather than restating them — the whole bug is one module stating a convention
       that another module contradicts.
-- [ ] Tests in `tests/test_projection.py` (write first, watch them fail):
+- [x] Tests in `tests/test_projection.py` (write first, watch them fail):
       `root_offset(forward_m=0.15)` → `(0.15, 0, 0)`; `root_offset(lateral_m=0.15)` → `(0, 0.15, 0)`
       i.e. lateral is +Y = the robot's **left**; `root_offset(up_m=0.2)` → `(0, 0, 0.2)`.
       One test pins the *sign* of lateral against `dodge_target`'s documented frame.
-- [ ] Change `SonicExecutor.hand_target` to build its offset via `root_offset`, delete the wrong
+- [x] Change `SonicExecutor.hand_target` to build its offset via `root_offset`, delete the wrong
       docstring, state the real convention, and note that `f4ca2e7` fixed the same bug in
       `dodge_target`.
 - [ ] Keep `lateral_m`'s sign meaning **unchanged** (positive = robot's left) so `dodge_target` and
       the hand agree; `lateral_m` previously moved +X, so this is a real behaviour change and the
       commit message must say so.
-- [ ] Re-measure the forward envelope with a throwaway harness (`/tmp`, not committed): for
+- [x] Re-measure the forward envelope with a throwaway harness (`/tmp`, not committed): for
       `forward_m` in 0.10…0.40 and `up_m` in −0.10…+0.30, step 200 ticks per point, record achieved
       wrist, residual and `FLAG_SATURATED`. Record the largest `forward_m` that keeps residual under
       the 0.10 m tolerance, per `up_m`.
-- [ ] Write the numbers into `research/strike-results.md` as a dated section, including the retraction
+- [x] Write the numbers into `research/strike-results.md` as a dated section, including the retraction
       of the old ~0.15 m forward figure and why it was wrong.
 - [ ] `aim_target`/`punch_target` defaults are **not** retuned here — they move onto the correct axis
       and their residuals must be re-read from the harness output before any default changes.
@@ -114,30 +114,30 @@ and the new envelope is written down with residuals.
 **Why:** the game camera *is* the achieved head pose. A root-frame hand therefore swings out of view
 whenever the body turns, and no amount of aiming fixes that.
 
-- [ ] `superbot/projection.py`: add `yaw_of(q_xyzw) -> float` (heading, robust at gimbal-ish poses —
+- [x] `superbot/projection.py`: add `yaw_of(q_xyzw) -> float` (heading, robust at gimbal-ish poses —
       document the choice) and `rotate_z(vec, yaw_rad)`. Pure, no numpy.
-- [ ] Tests: `yaw_of` identity → 0, +90° about Z → +π/2 (left, matching the yaw sign used by
+- [x] Tests: `yaw_of` identity → 0, +90° about Z → +π/2 (left, matching the yaw sign used by
       `look_target`), round-trips; `rotate_z` at 0 is identity to the bit (this is the compatibility
       guarantee below), at +90° sends +X to +Y.
-- [ ] `superbot/body.py`: extend `FRAMES` to `("root", "head")` — `"world"` is currently accepted and
+- [x] `superbot/body.py`: extend `FRAMES` to `("root", "head")` — `"world"` is currently accepted and
       silently ignored by the executor, which is a pre-existing hole; either implement or reject it,
       and say which in the commit message. Validate that `frame="head"` is meaningless for a head
       pose: reject `frame="head"` when `AUTH_HEAD` is set.
-- [ ] `superbot/validate.py`: with `frame="head"`, treat the hand boxes as **offset magnitudes**
+- [x] `superbot/validate.py`: with `frame="head"`, treat the hand boxes as **offset magnitudes**
       around the clip wrist rather than absolute workspace points, documented as the same kind of
       sanity cap the module already describes ("not a reach model").
-- [ ] `SonicExecutor`: hold the clip's reference head yaw; when `cmd.frame == "head"`, rotate each
+- [x] `SonicExecutor`: hold the clip's reference head yaw; when `cmd.frame == "head"`, rotate each
       hand offset by `Δ = yaw(achieved head) − yaw(reference head)` about Z before placing it.
       Compose from the **achieved** head pose in `self.last_state`, not the commanded one — the relay
       sends achieved head to the game, so a composed-from-commanded hand diverges from the camera
       whenever tracking lags. Accept the one-tick (20 ms) lag and document it.
-- [ ] **Compatibility guarantee:** `Δ = 0` must reproduce today's poses exactly. Test it by comparing
+- [x] **Compatibility guarantee:** `Δ = 0` must reproduce today's poses exactly. Test it by comparing
       the composed target against `hand_target`'s output at zero yaw, asserting exact equality, not
       approximate.
-- [ ] Carry the flag through: `superbot/intent.py` gains nothing; the *verb* layer
+- [x] Carry the flag through: `superbot/intent.py` gains nothing; the *verb* layer
       (`spike/wbc/body_view.py`) gains `frame` on `reach`, and `verb_to_intent` validates it.
       Pixels stay out of the body contract.
-- [ ] Verify offline: with a commanded head yaw of +35° and `frame="head"`, the right wrist target
+- [x] Verify offline: with a commanded head yaw of +35° and `frame="head"`, the right wrist target
       should rotate to the robot's left by 35° about Z at constant radius. Assert the radius is
       preserved to within 1e-9 and print the achieved wrist for the record.
 
@@ -149,13 +149,13 @@ and a +35° yaw carries the wrist 35° with the radius unchanged.
 **Why:** `projection.py` refuses to invent a FOV, correctly. But we *emit* the HMD data, so the FOV
 can be a decision rather than a measurement — if Monado honours it.
 
-- [ ] Read the installed Monado `remote` driver source for how `per_view_data_valid` and `views[].fov`
+- [x] Read the installed Monado `remote` driver source for how `per_view_data_valid` and `views[].fov`
       are consumed. Cite file and function in the commit. If the driver ignores them, stop this task,
       record the negative result, and fall back to Task 5's fit for FOV.
-- [ ] Add `wire.fill(..., fov=None)` writing symmetric `angle_left/right/up/down` from a single
+- [x] Add `wire.fill(..., fov=None)` writing symmetric `angle_left/right/up/down` from a single
       horizontal+vertical pair and setting `per_view_data_valid = True` when a FOV is supplied.
       Also write `views[].pose` for the eye offsets we assume, and document that assumption.
-- [ ] Tests in `tests/test_wire.py`: default keeps `per_view_data_valid = False` (unchanged
+- [x] Tests in `tests/test_wire.py`: default keeps `per_view_data_valid = False` (unchanged
       behaviour); supplying a FOV marks it valid and writes all four half-angles; angles are radians
       and in range; layout still asserts 376 bytes.
 - [ ] **Experiment (the measurement):** run the live session twice with two very different FOVs
@@ -183,7 +183,7 @@ window would look like success and be worthless.
       the frames to differ substantially (reuse the earlier frame-diff statistics: a real turn moved
       15k–17k pixels at mean 3.3–4.3, a stale frame moved ~1k at 0.17). Return a verdict, not a bool
       with a buried threshold: `("live", diff)` / `("stale", diff)` / `("steam", diff)`.
-- [ ] Unit-test the pure parts (`downscale`, the diff statistic) with synthetic frames; the capture and
+- [x] Unit-test the pure parts (`downscale`, the diff statistic) with synthetic frames; the capture and
       verdict run attended.
 - [ ] A `--dry-run` that captures one frame and prints the verdict and the green-gate reading **without
       moving the body** — the first thing to run, and it needs no approval to be safe.

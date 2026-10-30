@@ -270,6 +270,7 @@ def fill(
     curl: tuple[float, float] = (0.0, 0.0),
     trigger: tuple[float, float] = (0.0, 0.0),
     trigger_click: tuple[bool, bool] = (False, False),
+    fov: tuple[float, float] | None = None,
 ) -> RemoteData:
     """Write `{"head"|"left"|"right": (position, quaternion_xyzw)}` into a packet.
 
@@ -281,7 +282,31 @@ def fill(
     `trigger_click` is an edge, not a level. The previous version derived it from
     `trigger > 0.0`, which re-clicked on every packet while the button was held;
     the caller now owns the rising edge.
+
+    `fov` is `(horizontal_half_angle, vertical_half_angle)` in radians and declares
+    a symmetric frustum via `head.views[].fov` + `head.per_view_data_valid`. We are
+    the ones emitting the HMD data, so the field of view can be a stated number
+    rather than something inferred from images. Default `None` leaves the
+    compositor's own value in charge, which is the behaviour every earlier
+    measurement was taken under. ASSUMPTION: that this build's driver honours the
+    flag - the struct documents it (upstream `drivers/remote/r_interface.h`:
+    "Is the per view data valid and should be used?") but the consuming code path
+    was not readable from the installed store, so it is measured, not assumed, by
+    the two-FOV experiment in the plan.
     """
+    if fov is not None:
+        half_h, half_v = float(fov[0]), float(fov[1])
+        if not (math.isfinite(half_h) and math.isfinite(half_v)):
+            raise ValueError("fov angles must be finite")
+        if half_h <= 0.0 or half_v <= 0.0:
+            raise ValueError("fov half-angles must be positive")
+        for view in d.head.views:
+            view.fov.angle_left = half_h
+            view.fov.angle_right = half_h
+            view.fov.angle_up = half_v
+            view.fov.angle_down = half_v
+        d.head.per_view_data_valid = True
+
     p, q = poses["head"]
     d.head.center.position.x, d.head.center.position.y, d.head.center.position.z = p
     d.head.center.orientation.x, d.head.center.orientation.y, \
