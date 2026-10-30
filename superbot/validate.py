@@ -18,9 +18,11 @@ import math
 from dataclasses import dataclass
 
 from .body import (
+    AUTH_CLOSURE,
     AUTH_L_HAND,
     AUTH_R_HAND,
     AUTH_ROOT_HEIGHT,
+    AUTH_TRIGGER,
     AUTH_WAIST,
     DONE_WHEN,
     FRAMES,
@@ -136,10 +138,15 @@ def validate_command(cmd: BodyCommand, now_ns: int) -> ValidationResult:
             if problem:
                 return ValidationResult(None, problem)
 
-    if cmd.closure is not None and (cmd.authority & (1 << 5)):
+    if cmd.closure is not None and (cmd.authority & AUTH_CLOSURE):
         for value in cmd.closure:
             if not _finite(value) or not (0.0 <= value <= 1.0):
                 return ValidationResult(None, "closure outside [0, 1]")
+
+    if cmd.trigger is not None and (cmd.authority & AUTH_TRIGGER):
+        for value in cmd.trigger:
+            if not _finite(value) or not (0.0 <= value <= 1.0):
+                return ValidationResult(None, "trigger outside [0, 1]")
 
     if cmd.waist is not None and (cmd.authority & AUTH_WAIST):
         if len(cmd.waist) != 3:

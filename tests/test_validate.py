@@ -7,6 +7,7 @@ from superbot.body import (
     AUTH_L_HAND,
     AUTH_POSTURE,
     AUTH_R_HAND,
+    AUTH_TRIGGER,
     AUTH_WAIST,
     BodyCommand,
     Pose,
@@ -131,6 +132,15 @@ class ValidateTestCase(unittest.TestCase):
             result = validate_command(bad, NOW)
             self.assertFalse(result.ok)
             self.assertIsInstance(result.reason, str)
+
+    def test_trigger_outside_unit_range_is_rejected(self) -> None:
+        result = validate_command(cmd(authority=AUTH_TRIGGER, trigger=(1.5, 0.0)), NOW)
+        self.assertFalse(result.ok)
+        self.assertIn("trigger", result.reason)
+
+    def test_closure_and_trigger_validate_only_under_their_own_bit(self) -> None:
+        grip_only = cmd(authority=AUTH_CLOSURE, closure=(1.0, 0.0), trigger=(9.0, 9.0))
+        self.assertTrue(validate_command(grip_only, NOW).ok, "an unset bit must not be validated")
 
 
 if __name__ == "__main__":

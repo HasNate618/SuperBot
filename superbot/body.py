@@ -24,12 +24,13 @@ AUTH_ROOT_HEIGHT = 1 << 1  # height
 AUTH_HEAD = 1 << 2  # head pose
 AUTH_L_HAND = 1 << 3
 AUTH_R_HAND = 1 << 4
-AUTH_CLOSURE = 1 << 5  # 0 open .. 1 closed; adapter maps to trigger/grip
+AUTH_CLOSURE = 1 << 5  # 0 open .. 1 closed; the adapter maps it to grip/squeeze
 AUTH_WAIST = 1 << 6  # yaw, pitch, roll (bounded)
 AUTH_GAIT = 1 << 7  # unused in v1; executor reports UNSUPPORTED
 AUTH_POSTURE = 1 << 8  # unused in v1 except the stand default
+AUTH_TRIGGER = 1 << 9  # 0 released .. 1 pressed; a channel of its own, not a closure value
 
-KNOWN_AUTH = (1 << 9) - 1
+KNOWN_AUTH = (1 << 10) - 1
 
 # Bits this executor understands but v1 does not honour. Requesting them is
 # legal — the executor flags UNSUPPORTED rather than silently pretending.
@@ -76,6 +77,13 @@ class Pose:
         )
 
 
+def _pair_or_zero(raw: Any) -> tuple[float, float]:
+    """A per-hand pair, tolerating a state file written before the field existed."""
+    if not isinstance(raw, (list, tuple)) or len(raw) != 2:
+        return (0.0, 0.0)
+    return (float(raw[0]), float(raw[1]))
+
+
 @dataclass(frozen=True)
 class BodyCommand:
     """Writer-agnostic task-space command. Frozen: writers build a new one."""
@@ -97,6 +105,10 @@ class BodyCommand:
     left_hand: Pose | None = None
     right_hand: Pose | None = None
     closure: tuple[float, float] | None = None
+    #: Grip and trigger are separate on purpose. One scalar cannot hold a gun
+    #: (closure 1.0, steady) and pull its trigger (0 -> 1 -> 0), and Superhot
+    #: needs exactly that. Closure is a grip; trigger is a press.
+    trigger: tuple[float, float] | None = None
     waist: tuple[float, float, float] | None = None
 
     gait: dict[str, Any] | None = None
@@ -142,6 +154,7 @@ class BodyCommand:
             "left_hand": self.left_hand.to_dict() if self.left_hand else None,
             "right_hand": self.right_hand.to_dict() if self.right_hand else None,
             "closure": list(self.closure) if self.closure is not None else None,
+            "trigger": list(self.trigger) if self.trigger is not None else None,
             "waist": list(self.waist) if self.waist is not None else None,
             "gait": self.gait,
             "posture": self.posture,
@@ -210,6 +223,10 @@ class BodyState:
     head: Pose
     left_hand: Pose
     right_hand: Pose
+    #: Commanded, not achieved: the G1 has no fingers, so there is no measured
+    #: closure to report. Read this as "what the writer asked the hand to do".
+    closure: tuple[float, float] = (0.0, 0.0)
+    trigger: tuple[float, float] = (0.0, 0.0)
     residual_head_m: float = 0.0
     residual_left_m: float = 0.0
     residual_right_m: float = 0.0
@@ -233,6 +250,8 @@ class BodyState:
             "head": self.head.to_dict(),
             "left_hand": self.left_hand.to_dict(),
             "right_hand": self.right_hand.to_dict(),
+            "closure": list(self.closure),
+            "trigger": list(self.trigger),
             "residual_head_m": self.residual_head_m,
             "residual_left_m": self.residual_left_m,
             "residual_right_m": self.residual_right_m,
@@ -262,6 +281,8 @@ class BodyState:
             head=Pose.from_dict(raw["head"]),
             left_hand=Pose.from_dict(raw["left_hand"]),
             right_hand=Pose.from_dict(raw["right_hand"]),
+            closure=_pair_or_zero(raw.get("closure")),
+            trigger=_pair_or_zero(raw.get("trigger")),
             residual_head_m=float(raw.get("residual_head_m", 0.0)),
             residual_left_m=float(raw.get("residual_left_m", 0.0)),
             residual_right_m=float(raw.get("residual_right_m", 0.0)),
@@ -279,6 +300,28 @@ def hold(seq: int = 0, now_ns: int = 0, ttl_ms: int = DEFAULT_TTL_MS) -> BodyCom
     return BodyCommand(seq=seq, t_mono_ns=now_ns, ttl_ms=ttl_ms, authority=0, source="script")
 
 
+def commanded_buttons(
+    cmd: BodyCommand,
+) -> tuple[tuple[float, float], tuple[float, float]]:
+    """(closure, trigger) as (left, right), zero where the writer asked for nothing.
+
+    The G1 has no fingers, so there is no achieved closure to report - see
+    `BodyState.closure`. This is the commanded value, and a caller must never read
+    it as evidence that a hand actually closed.
+    """
+    grip = (
+        cmd.closure
+        if (cmd.closure is not None and (cmd.authority & AUTH_CLOSURE) != 0)
+        else (0.0, 0.0)
+    )
+    fire = (
+        cmd.trigger
+        if (cmd.trigger is not None and (cmd.authority & AUTH_TRIGGER) != 0)
+        else (0.0, 0.0)
+    )
+    return (float(grip[0]), float(grip[1])), (float(fire[0]), float(fire[1]))
+
+
 def describe_auth(authority: int) -> list[str]:
     """Human-readable authority bits, for logs and the digest."""
     names = [
@@ -291,5 +334,6 @@ def describe_auth(authority: int) -> list[str]:
         (AUTH_WAIST, "waist"),
         (AUTH_GAIT, "gait"),
         (AUTH_POSTURE, "posture"),
+        (AUTH_TRIGGER, "trigger"),
     ]
     return [name for bit, name in names if authority & bit]

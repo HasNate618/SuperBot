@@ -1,13 +1,17 @@
 import unittest
 
 from superbot.body import (
+    AUTH_CLOSURE,
     AUTH_HEAD,
     AUTH_L_HAND,
     AUTH_ROOT_VEL,
+    AUTH_TRIGGER,
+    KNOWN_AUTH,
     SCHEMA,
     BodyCommand,
     BodyState,
     Pose,
+    commanded_buttons,
     describe_auth,
     hold,
 )
@@ -95,6 +99,34 @@ class BodyTestCase(unittest.TestCase):
             describe_auth(AUTH_ROOT_VEL | AUTH_HEAD | AUTH_L_HAND),
             ["root_vel", "head", "left_hand"],
         )
+
+    def test_trigger_is_its_own_authority_bit(self) -> None:
+        self.assertEqual(AUTH_TRIGGER, 1 << 9)
+        self.assertEqual(AUTH_TRIGGER & AUTH_CLOSURE, 0)
+        self.assertEqual(AUTH_TRIGGER & ~KNOWN_AUTH, 0, "trigger must be inside KNOWN_AUTH")
+        self.assertEqual(describe_auth(AUTH_TRIGGER), ["trigger"])
+
+    def test_commanded_buttons_are_per_hand_and_authority_gated(self) -> None:
+        grip_and_fire = BodyCommand(
+            authority=AUTH_CLOSURE | AUTH_TRIGGER,
+            closure=(0.0, 1.0),
+            trigger=(1.0, 0.0),
+        )
+        self.assertEqual(commanded_buttons(grip_and_fire), ((0.0, 1.0), (1.0, 0.0)))
+
+    def test_commanded_buttons_are_zero_without_their_bit(self) -> None:
+        no_authority = BodyCommand(closure=(1.0, 1.0), trigger=(1.0, 1.0))
+        self.assertEqual(commanded_buttons(no_authority), ((0.0, 0.0), (0.0, 0.0)))
+
+        absent = BodyCommand(authority=AUTH_CLOSURE | AUTH_TRIGGER)
+        self.assertEqual(commanded_buttons(absent), ((0.0, 0.0), (0.0, 0.0)))
+
+    def test_state_round_trips_buttons(self) -> None:
+        state = sample_state()
+        state = BodyState(**{**state.__dict__, "closure": (0.0, 1.0), "trigger": (1.0, 0.0)})
+        back = BodyState.from_dict(state.to_dict())
+        self.assertEqual(back.closure, (0.0, 1.0))
+        self.assertEqual(back.trigger, (1.0, 0.0))
 
 
 if __name__ == "__main__":
