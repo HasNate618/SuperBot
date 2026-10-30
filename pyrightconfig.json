@@ -9,8 +9,9 @@
   "extraPaths": ["."],
   "overrides": [
     {
-      "include": ["spike/wbc/**"],
-      "reportAttributeAccessIssue": "none"
+      "include": ["spike/wbc/**", "spike/c0/**"],
+      "reportAttributeAccessIssue": "none",
+      "reportArgumentType": "none"
     }
   ]
 }

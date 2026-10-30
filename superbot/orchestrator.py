@@ -20,7 +20,7 @@ from .manual_input import ManualInputBridge
 from .processes import Aborted, ProcessHandle, ProcessRunner
 
 
-MODES = ("hold", "yaw", "trigger", "dodge", "walk", "clock", "manual")
+MODES = ("hold", "yaw", "trigger", "dodge", "walk", "clock", "manual", "body")
 
 
 class State(StrEnum):
@@ -371,15 +371,13 @@ class SessionManager:
         muted = self.game_audio_muted()
         value = "1" if muted else "0"
         for node_id in self._game_audio_node_ids():
-            try:
+            with contextlib.suppress(Exception):
                 subprocess.run(
                     ["wpctl", "set-mute", str(node_id), value],
                     capture_output=True,
                     text=True,
                     timeout=5,
                 )
-            except Exception:
-                pass
 
     def kill(self, target: str) -> None:
         with self._lock:
@@ -746,7 +744,7 @@ class SessionManager:
         )
 
     def _start_weston(self) -> None:
-        if self._session_id is None:
+        if self._session_id is None or self._session_dir is None:
             raise StartupError("no active session")
         self._socket_name = f"superbot-{self._session_id.split('-')[-1]}"
         weston_log = self._log("weston")
@@ -840,6 +838,22 @@ class SessionManager:
                 str(input_socket),
             ]
             needle = "connected 127.0.0.1"
+        elif mode == "body":
+            # The join: the pose client stops inventing poses and relays the ones
+            # the simulated body actually achieved (see superbot/pose_relay.py).
+            relay = Path(__file__).with_name("pose_relay.py")
+            state = Path(self.cfg.paths.session_root) / "body" / "body_state.json"
+            argv = [
+                sys.executable,
+                str(relay),
+                "--state",
+                str(state),
+                "--duration",
+                "3600",
+                "--log",
+                str(self._session_dir / "body_pose.csv"),
+            ]
+            needle = "handshake ok"
         else:
             argv = [
                 sys.executable,

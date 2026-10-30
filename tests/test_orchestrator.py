@@ -1910,6 +1910,19 @@ class OrchestratorTests(unittest.TestCase):
         socket_path = Path(argv[argv.index("--input-socket") + 1])
         self.assertEqual(socket_path.name, f"{self.manager._socket_name}-manual.sock")
 
+    def test_body_mode_starts_the_pose_relay(self) -> None:
+        self.start()
+        self.manager.set_mode("body")
+        snapshot = self.manager.snapshot()
+        self.assertEqual(snapshot["mode"], "body")
+        argv = self.runner.starts[-1][1]
+        self.assertTrue(argv[1].endswith("pose_relay.py"), argv)
+        self.assertNotIn("--mode", argv)
+        state = Path(argv[argv.index("--state") + 1])
+        self.assertEqual(state.name, "body_state.json")
+        self.assertEqual(state.parent.name, "body")
+        self.assertIn("--log", argv)
+
     def test_manual_input_requires_manual_mode(self) -> None:
         self.start()
         with self.assertRaisesRegex(ConflictError, "manual"):
