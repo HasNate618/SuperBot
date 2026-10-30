@@ -393,7 +393,15 @@ class VerbServer:
         # Parameterised verbs (`look` with a yaw, `reach` with an offset) are parsed
         # and validated here, so rejection has exactly one owner and the error can
         # name the problem instead of claiming an unknown verb.
-        parsed = verb_to_intent(name, raw)
+        #
+        # The parse is guarded because it raises on non-numeric input: unguarded, a
+        # single `{"verb": "reach", "forward_m": "far"}` would propagate out of
+        # `_serve` and kill the socket thread, leaving the dashboard driving a body
+        # that no longer answers. Measured before the guard: ValueError escaped.
+        try:
+            parsed = verb_to_intent(name, raw)
+        except (TypeError, ValueError) as exc:
+            return {"ok": False, "error": f"bad verb parameters: {exc}"}
         if parsed is not None:
             problem = validate_intent(parsed)
             if problem:
@@ -402,11 +410,15 @@ class VerbServer:
         if cmd is None:
             return {"ok": False, "error": f"unknown verb: {raw['verb']}"}
         self._seq += 1
+        try:
+            ttl_ms = int(raw.get("ttl_ms", 2000))
+        except (TypeError, ValueError) as exc:
+            return {"ok": False, "error": f"bad ttl_ms: {exc}"}
         stamped = BodyCommand(**{
             **cmd.__dict__,
             "seq": self._seq,
             "t_mono_ns": time.monotonic_ns(),
-            "ttl_ms": int(raw.get("ttl_ms", 2000)),
+            "ttl_ms": ttl_ms,
         })
         self.bus.push(stamped)
         return {"ok": True, "verb": raw["verb"], "seq": self._seq,
