@@ -62,6 +62,7 @@ from superbot.body import (  # noqa: E402
 )
 from superbot.bus import CommandBus  # noqa: E402
 from superbot.camera import PRESETS, FollowCamera, yaw_from_quat  # noqa: E402
+from superbot.intent import Intent, validate_intent, verb_to_intent  # noqa: E402
 
 
 class BodyRenderer:
@@ -179,13 +180,70 @@ def reel_plan(
     ]
 
 
-def verb_command(executor: SonicExecutor, name: str) -> BodyCommand | None:
+def _hand_command(pose, side: str) -> BodyCommand:
+    """One hand's target on the matching authority bit."""
+    if side == "left":
+        return BodyCommand(seq=0, authority=AUTH_L_HAND, left_hand=pose)
+    return BodyCommand(seq=0, authority=AUTH_R_HAND, right_hand=pose)
+
+
+def _command_from_intent(
+    executor: SonicExecutor, intent: Intent
+) -> BodyCommand | None:
+    """Compile an intent to the `BodyCommand` it implies, via executor builders.
+
+    Only the parameterised skills route through here. Buttons stay in
+    `verb_command`'s own table because they travel with a hand pose, and that pose
+    is what makes a null result attributable to the reach rather than the button.
+    """
+    if intent.skill == "hold":
+        return hold()
+    if intent.skill == "look":
+        return BodyCommand(
+            seq=0,
+            authority=AUTH_HEAD,
+            head=executor.look_target(float(intent.yaw_rad or 0.0)),
+        )
+    if intent.skill == "dodge":
+        # The lean is on the pelvis-frame lateral axis. A writer that names a
+        # shallower lean than the default gets exactly that.
+        _, _, lateral = intent.offset or (0.0, 0.0, 0.14)
+        return BodyCommand(
+            seq=0, authority=AUTH_HEAD, head=executor.dodge_target(lateral)
+        )
+
+    forward, up, lateral = intent.offset or (0.0, 0.0, 0.0)
+    if intent.skill == "reach":
+        return _hand_command(
+            executor.hand_target(
+                intent.side, forward_m=forward, up_m=up, lateral_m=lateral
+            ),
+            intent.side,
+        )
+    if intent.skill == "strike":
+        return _hand_command(
+            executor.hand_target(intent.side, forward_m=forward, up_m=up),
+            intent.side,
+        )
+    return None
+
+
+def verb_command(
+    executor: SonicExecutor, name: str, intent: Intent | None = None
+) -> BodyCommand | None:
     """Map a pushed button to a `BodyCommand`, using the executor's own builders.
 
     This is an adapter, exactly like the future game adapters: the contract stays
     `BodyCommand`, and a verb is only a shortcut for the pose it implies. Returns
     None for an unknown verb so the caller can report it rather than guess.
+
+    `intent` is the already-parsed, already-validated form of a parameterised verb
+    (`look` with a yaw, `reach` with an offset). Parsing happens once in the caller
+    so that rejection has one owner; this function only compiles.
     """
+    if intent is not None:
+        return _command_from_intent(executor, intent)
+
     # Yaw is about +Z in this Z-up frame, and a positive rotation turns toward
     # +Y, which is the robot's own left. These two signs were swapped: "look
     # left" yawed -35 and turned the body to its right, measured in the world
@@ -331,7 +389,16 @@ class VerbServer:
             result = self.bus.push_json(line)       # a full BodyCommand
             return {"ok": bool(result.ok), "error": result.reason or ""}
 
-        cmd = verb_command(self.executor, str(raw["verb"]))
+        name = str(raw["verb"])
+        # Parameterised verbs (`look` with a yaw, `reach` with an offset) are parsed
+        # and validated here, so rejection has exactly one owner and the error can
+        # name the problem instead of claiming an unknown verb.
+        parsed = verb_to_intent(name, raw)
+        if parsed is not None:
+            problem = validate_intent(parsed)
+            if problem:
+                return {"ok": False, "error": problem}
+        cmd = verb_command(self.executor, name, parsed)
         if cmd is None:
             return {"ok": False, "error": f"unknown verb: {raw['verb']}"}
         self._seq += 1
