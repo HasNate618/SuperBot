@@ -827,14 +827,18 @@ function bodyTiles(info) {
 function bodyRefresh() {
   const info = (lastState && lastState.body) || null;
   const wait = $("body-wait");
-  if (!info || !info.running || !info.frame) {
+  // "running" only means this dashboard spawned the viewer. A viewer started
+  // another way still writes frames, and the server already reports that as
+  // frames_unmanaged. Gating on running alone stopped the refresh loop and left
+  // the tiles showing whatever they last loaded - live frames on disk, still
+  // images on screen.
+  const live = Boolean(info && info.frame && (info.running || info.frames_unmanaged));
+  if (!live) {
     wait.hidden = false;
     if (!info) {
       wait.textContent = "body view off";
     } else if (info.error) {
       wait.textContent = info.error;
-    } else if (!info.running && info.frames_unmanaged) {
-      wait.textContent = "another body viewer is writing frames";
     } else if (info.running) {
       wait.textContent = "waiting for the first frame\u2026";
     } else {
@@ -868,7 +872,9 @@ function bodyRefresh() {
 
 function bodySync() {
   const info = (lastState && lastState.body) || null;
-  const wanted = Boolean(info && info.running);
+  // Same rule as bodyRefresh: a live frame counts even when this dashboard did
+  // not spawn the viewer, otherwise the refresh timer never starts at all.
+  const wanted = Boolean(info && info.frame && (info.running || info.frames_unmanaged));
   if (wanted && bodyTimer === null) {
     bodyTimer = setInterval(bodyRefresh, BODY_REFRESH_MS);
     bodyRefresh();
