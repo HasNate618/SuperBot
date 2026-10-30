@@ -10,9 +10,10 @@
   --muted: #6f6f6f;
   --red: #ff1e2d;
   --red-dark: #8f0f18;
-  --ok: #f2f2f2;
-  --warn: #ff1e2d;
-  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  --display: "Bahnschrift", "DIN Alternate", "Franklin Gothic Medium",
+    "Arial Narrow", "Helvetica Neue", system-ui, sans-serif;
+  --mono: "JetBrains Mono", "Fira Code", "Noto Sans Mono",
+    "Liberation Mono", "DejaVu Sans Mono", monospace;
 }
 
 * { box-sizing: border-box; }
@@ -23,7 +24,7 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font: 14px/1.4 system-ui, sans-serif;
+  font: 14px/1.4 var(--display);
   overflow: hidden;
 }
 
@@ -43,11 +44,11 @@ body {
 
 h2 {
   margin: 0 0 10px;
-  font-family: var(--mono);
+  font-family: var(--display);
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.3em;
+  letter-spacing: 0.35em;
   color: var(--muted);
 }
 h2::after {
@@ -75,14 +76,14 @@ h2::after {
   border-right: 2px solid var(--edge);
 }
 .brand-mark {
-  font-family: var(--mono);
+  font-family: var(--display);
   font-size: 20px;
   font-weight: 800;
   letter-spacing: 0.35em;
   color: var(--text);
 }
 .brand-tag {
-  font-family: var(--mono);
+  font-family: var(--display);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.2em;
@@ -117,7 +118,6 @@ h2::after {
 }
 .top-actions .btn {
   border: 0;
-  border-radius: 0;
   padding: 0 26px;
   font-size: 13px;
 }
@@ -131,10 +131,10 @@ button, select {
   border: 2px solid var(--edge);
   border-radius: 0;
   padding: 8px 12px;
-  font-family: var(--mono);
+  font-family: var(--display);
   font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   cursor: pointer;
 }
@@ -168,7 +168,7 @@ button.active:hover:not(:disabled) {
   border: 2px solid var(--edge);
   background: #141414;
   color: var(--muted);
-  font-family: var(--mono);
+  font-family: var(--display);
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
@@ -182,20 +182,18 @@ button.active:hover:not(:disabled) {
 .badge.starting, .badge.stopping {
   border-color: var(--red);
   color: var(--red);
-  animation: blink 0.8s steps(2) infinite;
 }
 .badge.failed {
   border-color: var(--red);
   background: var(--red-dark);
   color: var(--text);
 }
-@keyframes blink { 50% { opacity: 0.35; } }
 
-/* ---------- main deck: three columns ---------- */
+/* ---------- main deck: telemetry | stage | controls ---------- */
 
 .deck {
   display: grid;
-  grid-template-columns: 240px minmax(0, 1fr) 360px;
+  grid-template-columns: 240px minmax(0, 1fr) 260px;
   gap: 8px;
   min-height: 0;
 }
@@ -205,10 +203,10 @@ button.active:hover:not(:disabled) {
   gap: 8px;
   min-height: 0;
   align-content: start;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr);
   overflow: hidden auto;
 }
-.col-right { grid-template-rows: minmax(0, 1fr); }
+.col-right { grid-template-rows: auto auto auto; }
 
 .panel {
   background: var(--panel);
@@ -230,7 +228,7 @@ button.active:hover:not(:disabled) {
 }
 #modes button.active::before { content: "▹ "; color: #000; }
 
-/* health readouts */
+/* telemetry readouts */
 #health { display: grid; gap: 6px; }
 .card {
   border: 2px solid var(--edge);
@@ -242,7 +240,7 @@ button.active:hover:not(:disabled) {
   align-items: baseline;
 }
 .card strong {
-  font-family: var(--mono);
+  font-family: var(--display);
   font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
@@ -260,6 +258,28 @@ button.active:hover:not(:disabled) {
 .ok::before { content: "■ "; color: var(--text); }
 .bad { color: var(--red); }
 .bad::before { content: "■ "; color: var(--red); }
+
+/* verb pad */
+.verbs {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+.verbs button {
+  padding: 9px 4px;
+  font-size: 11px;
+  text-align: center;
+}
+.verb-status {
+  min-height: 1.2em;
+  margin-top: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--red);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 /* danger zone */
 .danger { border-color: var(--red-dark); }
@@ -279,7 +299,7 @@ button.active:hover:not(:disabled) {
   color: #000;
 }
 
-/* ---------- center stage: the game cam in a viewport bezel ---------- */
+/* ---------- center stage: game cam + robot filmstrip, one viewport ---------- */
 
 .stage {
   display: flex;
@@ -289,18 +309,28 @@ button.active:hover:not(:disabled) {
   gap: 8px;
 }
 
+.stage-views {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 8px;
+  background: var(--panel);
+  border: 2px solid var(--edge);
+  outline: 2px solid #161616;
+  outline-offset: 3px;
+  padding: 8px;
+}
+
 .preview {
   position: relative;
   flex: 1;
+  min-width: 0;
   min-height: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   background: #000;
-  /* cockpit viewport: double bezel with red top strip */
-  border: 3px solid var(--edge);
-  outline: 2px solid #161616;
-  outline-offset: 3px;
+  border: 2px solid var(--edge);
   overflow: hidden;
 }
 .preview::before {
@@ -309,7 +339,7 @@ button.active:hover:not(:disabled) {
   top: 0;
   left: 0;
   z-index: 2;
-  font-family: var(--mono);
+  font-family: var(--display);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.35em;
@@ -325,23 +355,6 @@ button.active:hover:not(:disabled) {
   aspect-ratio: 1280 / 688;
   overflow: hidden;
   background: #000;
-}
-.preview-clip #preview { position: absolute; inset: 0; overflow: hidden; }
-#preview > div {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  display: block;
-  overflow: hidden !important;
-}
-#preview canvas {
-  position: absolute;
-  top: auto;
-  bottom: 0;
-  width: 100% !important;
-  height: auto !important;
-  margin: 0;
-  display: block;
 }
 .preview-clip img {
   display: block;
@@ -360,7 +373,7 @@ button.active:hover:not(:disabled) {
   display: grid;
   place-items: center;
   color: var(--muted);
-  font-family: var(--mono);
+  font-family: var(--display);
   font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.4em;
@@ -390,7 +403,7 @@ button.active:hover:not(:disabled) {
 }
 .manual-panel strong {
   color: var(--text);
-  font-family: var(--mono);
+  font-family: var(--display);
   font-size: 13px;
   font-weight: 800;
   letter-spacing: 0.2em;
@@ -409,82 +422,79 @@ button.active:hover:not(:disabled) {
   border: 2px solid var(--red);
   background: var(--red);
   padding: 10px 12px;
-  font-family: var(--mono);
+  font-family: var(--display);
   font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
 }
 
-.vnc-auth {
-  position: absolute;
-  inset: 0;
-  display: none;
-  place-content: center;
-  gap: 10px;
-  padding: 18px;
-  background: #000d;
-  z-index: 3;
-}
-.vnc-auth.visible { display: grid; }
-.vnc-auth label { display: grid; gap: 4px; color: var(--muted); font-size: 12px; }
-.vnc-auth input {
-  background: #0a0a0a;
-  color: var(--text);
+/* ---------- robot filmstrip inside the stage ---------- */
+
+#body-box {
+  position: relative;
+  flex: 0 0 220px;
+  min-height: 0;
+  overflow-y: auto;
   border: 2px solid var(--edge);
-  border-radius: 0;
-  padding: 8px 10px;
-  font: inherit;
+  background: #000;
+  padding: 6px;
 }
-.vnc-auth button { justify-self: start; }
-#vnc-error { margin: 0; min-height: 1em; color: var(--red); }
+#body-box::before {
+  content: "ROBOT";
+  display: block;
+  margin: 0 0 6px;
+  padding: 3px 8px;
+  font-family: var(--display);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.35em;
+  color: #000;
+  background: var(--text);
 }
-
-/* ---------- right rail: robot view ---------- */
-
-.robot { display: flex; flex-direction: column; }
-
-#body-box { position: relative; min-height: 0; }
 #body-wait {
-  position: absolute;
-  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 120px;
+  min-height: 140px;
   color: var(--muted);
-  font-family: var(--mono);
+  font-family: var(--display);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.3em;
   text-transform: uppercase;
+  text-align: center;
 }
 #body-wait[hidden] { display: none; }
 
-/* one tile per camera angle, stacked in the rail */
-#body-tiles { display: grid; gap: 8px; }
+/* one tile per camera angle, stacked filmstrip */
+#body-tiles { display: grid; gap: 6px; }
 .body-tile {
+  position: relative;
   aspect-ratio: 560 / 420;
   border: 2px solid var(--edge);
+  overflow: hidden;
+  background: #000;
 }
 .body-tile img {
-  transform: none;
-  top: 0;
-  bottom: auto;
+  display: block;
   width: 100%;
   height: 100%;
   object-fit: contain;
-  background: #000;
 }
 .body-tile img:not([src]) { display: none; }
 .tile-caption {
   position: absolute;
   left: 0;
   bottom: 0;
-  font-family: var(--mono);
+  max-width: 100%;
+  font-family: var(--display);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.15em;
   text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: var(--text);
   background: #000;
   border-top: 2px solid var(--edge);
@@ -493,37 +503,12 @@ button.active:hover:not(:disabled) {
   pointer-events: none;
 }
 
-/* verb + camera buttons */
-.verbs {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
-  margin-top: 10px;
-}
-.verbs button {
-  padding: 8px 4px;
-  font-size: 11px;
-  text-align: center;
-}
-.views-row {
-  grid-template-columns: repeat(4, 1fr);
-  border-top: 2px solid var(--edge);
-  padding-top: 8px;
-}
-.verb-status {
-  min-height: 1.2em;
-  margin-top: 8px;
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--red);
-}
-
 /* ---------- bottom console ---------- */
 
 .console {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  height: clamp(140px, 22vh, 240px);
+  height: clamp(170px, 26vh, 300px);
   background: var(--panel);
   border: 2px solid var(--edge);
   padding: 8px 12px 12px;
@@ -558,6 +543,8 @@ button.active:hover:not(:disabled) {
   .frame { height: auto; grid-template-rows: auto auto auto; }
   .deck { grid-template-columns: 1fr; }
   .stage { min-height: 50vh; }
-  .col { grid-template-rows: none; overflow: visible; }
-  .console { height: 240px; }
+  .stage-views { flex-direction: column; }
+  #body-box { flex: none; }
+  .col, .col-right { grid-template-rows: none; overflow: visible; }
+  .console { height: 260px; }
 }

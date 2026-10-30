@@ -21,12 +21,40 @@
       <div class="top-actions">
         <button id="start" class="btn btn-go" disabled>▶ Start</button>
         <button id="stop" class="btn btn-halt" disabled>■ Stop</button>
-        <button id="mute-audio" class="btn" disabled>Mute game audio</button>
       </div>
     </header>
 
     <main class="deck">
       <aside class="col col-left">
+        <section class="panel grow">
+          <h2>Telemetry</h2>
+          <div id="health"></div>
+        </section>
+      </aside>
+
+      <section class="stage">
+        <div class="stage-views">
+          <section class="preview" id="preview-box">
+            <div class="preview-clip" id="preview-clip">
+              <img id="preview" alt="live C0 preview">
+            </div>
+            <div id="preview-wait">session stopped</div>
+            <div id="manual-overlay" class="manual-overlay">
+              <div class="manual-panel">
+                <strong id="manual-title"></strong>
+                <span id="manual-detail"></span>
+              </div>
+            </div>
+          </section>
+          <aside id="body-box">
+            <div id="body-tiles"></div>
+            <div id="body-wait">body view off</div>
+          </aside>
+        </div>
+        <p id="error" class="error" role="alert"></p>
+      </section>
+
+      <aside class="col col-right">
         <section class="panel">
           <h2>Pose mode</h2>
           <div id="modes">
@@ -40,47 +68,8 @@
           </div>
         </section>
 
-        <section class="panel grow">
-          <h2>Health</h2>
-          <div id="health"></div>
-        </section>
-
-        <section class="panel danger">
-          <h2>Danger zone</h2>
-          <button id="kill-game" disabled>Kill game</button>
-          <button id="kill-steam" disabled>Shutdown Steam</button>
-        </section>
-      </aside>
-
-      <section class="stage">
-        <section class="preview" id="preview-box">
-          <div class="preview-clip" id="preview-clip">
-            <div id="preview" tabindex="-1"></div>
-          </div>
-          <div id="preview-wait">session stopped</div>
-          <div id="manual-overlay" class="manual-overlay">
-            <div class="manual-panel">
-              <strong id="manual-title"></strong>
-              <span id="manual-detail"></span>
-            </div>
-          </div>
-          <form id="vnc-auth" class="vnc-auth">
-            <label>Username <input id="vnc-user" autocomplete="username" required></label>
-            <label>Password <input id="vnc-pass" type="password" autocomplete="current-password" aria-describedby="vnc-error" required></label>
-            <button type="submit">Connect preview</button>
-            <p id="vnc-error" role="alert"></p>
-          </form>
-        </section>
-        <p id="error" class="error" role="alert"></p>
-      </section>
-
-      <aside class="col col-right">
-        <section class="panel grow robot">
-          <h2>Robot view</h2>
-          <div id="body-box">
-            <div id="body-tiles"></div>
-            <div id="body-wait">body view off</div>
-          </div>
+        <section class="panel">
+          <h2>Verbs</h2>
           <div class="verbs">
             <button type="button" data-verb="look_left">look left</button>
             <button type="button" data-verb="look_right">look right</button>
@@ -90,12 +79,12 @@
             <button type="button" data-verb="hold">hold</button>
           </div>
           <div id="verb-status" class="verb-status"></div>
-          <div class="verbs views-row">
-            <button type="button" data-view="three_quarter">¾ view</button>
-            <button type="button" data-view="front">front</button>
-            <button type="button" data-view="side">side</button>
-            <button type="button" data-view="back">back</button>
-          </div>
+        </section>
+
+        <section class="panel danger">
+          <h2>Danger zone</h2>
+          <button id="kill-game" disabled>Kill game</button>
+          <button id="kill-steam" disabled>Shutdown Steam</button>
         </section>
       </aside>
     </main>
@@ -109,7 +98,6 @@
           <option value="weston">weston</option>
           <option value="steam">steam</option>
           <option value="pose">pose</option>
-          <option value="proxy">proxy</option>
         </select>
         <button id="log-refresh">Refresh</button>
       </div>

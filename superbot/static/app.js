@@ -622,15 +622,25 @@ $("kill-steam").onclick = () => {
 
 $("mute-audio").onclick = () => runAction(() => post("/api/audio/mute", { muted: !(lastState?.audio?.muted) }));
 
-$("log-refresh").onclick = async () => {
+// Logs: polls the selected log and streams it into the console. The console
+// sticks to the bottom unless the user scrolled up to read history; jumping
+// back down re-engages the tail.
+async function loadLog(forceScroll) {
+  const tail = $("log-tail");
+  const stick = forceScroll || tail.scrollTop + tail.clientHeight >= tail.scrollHeight - 6;
   try {
-    const name = $("log-name").value;
-    const response = await fetch(`/api/logs/${name}`);
-    $("log-tail").textContent = response.ok ? await response.text() : `failed: ${response.status}`;
+    const response = await fetch(`/api/logs/${$("log-name").value}`);
+    tail.textContent = response.ok ? await response.text() : `failed: ${response.status}`;
   } catch (error) {
-    $("log-tail").textContent = error.message;
+    tail.textContent = error.message;
   }
-};
+  if (stick) tail.scrollTop = tail.scrollHeight;
+}
+
+$("log-refresh").onclick = () => loadLog(true);
+$("log-name").onchange = () => loadLog(true);
+loadLog(true);
+setInterval(() => loadLog(false), 2000);
 
 $("preview-box").addEventListener("click", (event) => {
   if (event.target.closest("#vnc-auth")) return;
@@ -719,8 +729,6 @@ function bodyTiles(info) {
   // change rebuilds them instead of stacking duplicates.
   const box = $("body-tiles");
   const views = (info && info.views) || [];
-  const primary = (info && info.primary) || null;
-  const follow = Boolean(info && info.follow);
   const wanted = new Set(views);
   for (const tile of Array.from(box.children)) {
     if (!wanted.has(tile.dataset.view)) tile.remove();
@@ -729,16 +737,13 @@ function bodyTiles(info) {
     let tile = box.querySelector(`[data-view="${name}"]`);
     if (!tile) {
       tile = document.createElement("div");
-      tile.className = "preview-clip body-tile";
+      tile.className = "body-tile";
       tile.dataset.view = name;
       tile.innerHTML = `<img alt=""><div class="tile-caption"></div>`;
       box.appendChild(tile);
     }
     const caption = tile.querySelector(".tile-caption");
-    const marks = [];
-    if (name === primary) marks.push("primary");
-    marks.push(follow ? "follow on" : "static");
-    caption.textContent = `${name} · ${marks.join(" · ")}`;
+    caption.textContent = name.replace(/_/g, " ");
   }
   return Array.from(box.children);
 }
@@ -804,25 +809,7 @@ async function bodyVerb(verb, button) {
   }
 }
 
-async function bodyView(name, button) {
-  const status = $("verb-status");
-  if (button) button.disabled = true;
-  try {
-    const reply = await post("/api/body/command", { view: name });
-    status.textContent = reply.ok ? `view → ${reply.view ?? name}` : `view rejected`;
-  } catch (error) {
-    status.textContent = `view failed: ${error.message}`;
-  } finally {
-    if (button) button.disabled = false;
-  }
-}
-
 document.addEventListener("click", (event) => {
   const verbButton = event.target.closest("button[data-verb]");
-  if (verbButton) {
-    bodyVerb(verbButton.dataset.verb, verbButton);
-    return;
-  }
-  const viewButton = event.target.closest("button[data-view]");
-  if (viewButton) bodyView(viewButton.dataset.view, viewButton);
+  if (verbButton) bodyVerb(verbButton.dataset.verb, verbButton);
 });
