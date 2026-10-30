@@ -454,6 +454,15 @@ def main(argv: list[str] | None = None) -> int:
             now = time.monotonic()
             if bus is not None:
                 bus.publish_state(state)
+            # Written every control tick, NOT inside the render branch. This file
+            # is what the pose relay reads, so gating it on the render cadence made
+            # the game's pose rate a side effect of the tile's frame rate: at
+            # --fps 10 the body ran at 45 Hz but the game got 100 ms pose steps.
+            # ~2 KB at 45 Hz is cheap next to a 22 ms control tick.
+            write_atomic(
+                out / "body_state.json",
+                json.dumps(state.to_dict()).encode("utf-8"),
+            )
             if now >= next_render:
                 if renderer is not None:
                     for name, img in renderer.frames(executor.runner.data).items():
@@ -475,10 +484,6 @@ def main(argv: list[str] | None = None) -> int:
                             },
                         }).encode("utf-8"),
                     )
-                write_atomic(
-                    out / "body_state.json",
-                    json.dumps(state.to_dict()).encode("utf-8"),
-                )
                 next_render = now + period
                 renders += 1
             if executor.fell:
