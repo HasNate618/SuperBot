@@ -45,8 +45,12 @@ class FollowCamera:
     """Damped follow camera. `update()` once per frame, then read the values."""
 
     preset: str = DEFAULT_PRESET
-    distance: float = 2.3
-    elevation: float = -10.0
+    # Framing fills the tile: the head lands just inside the top and the
+    # feet just inside the bottom (verified against live renders). The old
+    # 2.3 m / -10 deg parked the body in the bottom half under a big black
+    # sky (elevation below zero looks up).
+    distance: float = 2.7
+    elevation: float = 0.0
     # Frames the middle of the body. Measured on the hold pose: feet ~0.03 m,
     # head geoms top out at 1.217 m, so mid-body is ~0.62 m, i.e. 0.15 m BELOW
     # the root. An earlier revision aimed 0.75 m above the root and put the
