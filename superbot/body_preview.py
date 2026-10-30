@@ -35,6 +35,15 @@ BODY_VERBS: tuple[str, ...] = (
     "punch",
     "dodge_left",
     "dodge_right",
+    # Buttons. Superhot grabs on a squeeze and fires on a trigger, and the body
+    # has neither, so each is a verb with a side: a grab with no side cannot be
+    # bound to anything.
+    "grab_left",
+    "grab_right",
+    "release_left",
+    "release_right",
+    "fire_left",
+    "fire_right",
 )
 
 

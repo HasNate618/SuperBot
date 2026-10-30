@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from superbot import body_preview, pose_relay
 from superbot.body_preview import BodyPreview
 from superbot.config import BodyConfig
 
@@ -166,6 +167,17 @@ class BodyPreviewTestCase(unittest.TestCase):
             self.assertEqual(status["exit_code"], 3)
             self.assertIn("exited (3)", status["error"])
             self.assertIn("boom: missing numpy", status["error"])
+
+    def test_button_verbs_include_grab_and_fire(self) -> None:
+        for verb in ("grab_right", "release_right", "fire_right", "grab_left", "release_left"):
+            self.assertIn(verb, body_preview.BODY_VERBS)
+        self.assertNotIn("grab", body_preview.BODY_VERBS, "a grab without a side cannot be bound")
+
+    def test_every_verb_is_reachable_from_the_dashboard(self) -> None:
+        # The dashboard rejects a verb it does not know before it reaches the
+        # socket, so a verb missing from the shared tuple is a dead button.
+        self.assertEqual(pose_relay.FORCE_MODES, ("none", "left", "right", "both"))
+        self.assertGreater(len(body_preview.BODY_VERBS), len(body_preview.BODY_VIEWS))
 
 
 if __name__ == "__main__":

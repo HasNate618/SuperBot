@@ -51,7 +51,15 @@ import mujoco  # pyright: ignore[reportMissingImports]  # noqa: E402
 from PIL import Image  # pyright: ignore[reportMissingImports]  # noqa: E402
 
 from sonic_executor import SonicExecutor  # pyright: ignore[reportMissingImports]  # noqa: E402
-from superbot.body import AUTH_HEAD, AUTH_R_HAND, BodyCommand, hold  # noqa: E402
+from superbot.body import (  # noqa: E402
+    AUTH_CLOSURE,
+    AUTH_HEAD,
+    AUTH_L_HAND,
+    AUTH_R_HAND,
+    AUTH_TRIGGER,
+    BodyCommand,
+    hold,
+)
 from superbot.bus import CommandBus  # noqa: E402
 from superbot.camera import PRESETS, FollowCamera, yaw_from_quat  # noqa: E402
 
@@ -207,6 +215,34 @@ def verb_command(executor: SonicExecutor, name: str) -> BodyCommand | None:
         return BodyCommand(
             seq=0, authority=AUTH_HEAD, head=executor.dodge_target(-0.14))
 
+    def hand_button(side: str, closed: bool) -> BodyCommand:
+        """Close or open one hand, at the reach the aim verb already uses.
+
+        The closure travels with a hand pose on purpose: a bare button press fires
+        at whatever the arm happens to be doing, which makes a null result
+        impossible to attribute to a reach or to a button.
+        """
+        target = executor.aim_target(side, forward_m=0.22)
+        closed_pair = (1.0, 0.0) if side == "left" else (0.0, 1.0)
+        closure = closed_pair if closed else (0.0, 0.0)
+        if side == "right":
+            return BodyCommand(
+                seq=0,
+                authority=AUTH_R_HAND | AUTH_CLOSURE,
+                right_hand=target,
+                closure=closure,
+            )
+        return BodyCommand(
+            seq=0,
+            authority=AUTH_L_HAND | AUTH_CLOSURE,
+            left_hand=target,
+            closure=closure,
+        )
+
+    def fire(side: str) -> BodyCommand:
+        trigger = (0.0, 1.0) if side == "right" else (1.0, 0.0)
+        return BodyCommand(seq=0, authority=AUTH_TRIGGER, trigger=trigger)
+
     verbs = {
         "hold": hold,
         "look_left": head_left,
@@ -215,6 +251,12 @@ def verb_command(executor: SonicExecutor, name: str) -> BodyCommand | None:
         "punch": punch,
         "dodge_left": dodge_left,
         "dodge_right": dodge_right,
+        "grab_left": lambda: hand_button("left", True),
+        "grab_right": lambda: hand_button("right", True),
+        "release_left": lambda: hand_button("left", False),
+        "release_right": lambda: hand_button("right", False),
+        "fire_left": lambda: fire("left"),
+        "fire_right": lambda: fire("right"),
     }
     make = verbs.get(name)
     if make is None:
