@@ -176,17 +176,26 @@ window would look like success and be worthless.
 - [ ] Reuse `superbot/preview.py:PreviewCapture.capture_once` for capture; do not write a second
       screenshooter wrapper. Verify it returns the path it wrote (the tool ignores its argument and
       writes a timestamped name in the cwd).
-- [ ] New `spike/wbc/frames.py` (venv): `load(path) -> Frame` where `Frame` holds `width`, `height`
+- [x] New `spike/wbc/frames.py` (venv): `load(path) -> Frame` where `Frame` holds `width`, `height`
       and `rows` (nested lists of `(r, g, b)` ints), plus `downscale(step)`. Decoding lives here
       because `superbot/` may not import PIL.
-- [ ] `spike/wbc/calibrate_view.py`: `liveness(captures)` — capture at head yaw 0 and +20°, and require
+- [x] `spike/wbc/calibrate_view.py`: `liveness(captures)` — capture at head yaw 0 and +20°, and require
       the frames to differ substantially (reuse the earlier frame-diff statistics: a real turn moved
       15k–17k pixels at mean 3.3–4.3, a stale frame moved ~1k at 0.17). Return a verdict, not a bool
       with a buried threshold: `("live", diff)` / `("stale", diff)` / `("steam", diff)`.
 - [x] Unit-test the pure parts (`downscale`, the diff statistic) with synthetic frames; the capture and
       verdict run attended.
-- [ ] A `--dry-run` that captures one frame and prints the verdict and the green-gate reading **without
+- [x] A `--dry-run` that captures one frame and prints the verdict and the green-gate reading **without
       moving the body** — the first thing to run, and it needs no approval to be safe.
+
+**Deviation, measured.** The plan asked for a three-way verdict (`live` / `stale` / `steam`).
+It cannot be honest: a Steam-UI frame and a game frame are nearly identical by mean colour
+(73.1/105.8/117.1 vs 76.3/108.8/120.8, measured today), so no colour test separates them.
+What separates them is motion — a Steam window does not follow the head — so the verdict is
+`responding` / `not responding`, and *not responding* covers both a stale capture and the
+wrong window. Telling those apart needs one human glance, which is cheaper than a
+classifier that would be guessing. Shipped as `shot` / `motion` / `sweep` subcommands;
+`sweep` is Task 6's tool as well.
 
 **Done when:** `--dry-run` distinguishes a live game from a Steam window on demand, and the numbers
 it prints are recorded in `research/`.
