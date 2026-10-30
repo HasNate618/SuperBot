@@ -47,6 +47,7 @@ from superbot.body import (  # noqa: E402
     AUTH_L_HAND,
     AUTH_R_HAND,
     AUTH_ROOT_HEIGHT,
+    AUTH_TRIGGER,
     FLAG_FALL_RISK,
     FLAG_SATURATED,
     FLAG_UNSUPPORTED,
@@ -54,11 +55,14 @@ from superbot.body import (  # noqa: E402
     BodyCommand,
     BodyState,
     Pose,
+    commanded_buttons,
 )
 
 # Authority this controller can honour today. Walking needs a locomotion clip
 # loaded and a live lookahead, so ROOT_VEL is not honoured in a hold session.
-SUPPORTED_AUTH = AUTH_HEAD | AUTH_L_HAND | AUTH_R_HAND | AUTH_CLOSURE | AUTH_ROOT_HEIGHT
+SUPPORTED_AUTH = (
+    AUTH_HEAD | AUTH_L_HAND | AUTH_R_HAND | AUTH_CLOSURE | AUTH_ROOT_HEIGHT | AUTH_TRIGGER
+)
 
 HOLD_CLIP = "squat_001__A359"
 HOLD_FRAME = 0
@@ -202,6 +206,11 @@ class SonicExecutor:
                     flags |= FLAG_SATURATED
 
         root_q = r.data.qpos[3:7]
+        # The body has no fingers and no trigger, so these are the values it was
+        # told to hold, not measured contact. They are recomputed every tick from
+        # the command in hand: an empty-mask hold therefore reports (0, 0) instead
+        # of leaving the last grip closed.
+        closure, trigger = commanded_buttons(cmd)
         state = BodyState(
             seq_ack=cmd.seq,
             t_mono_ns=now_ns,
@@ -219,6 +228,8 @@ class SonicExecutor:
             residual_right_m=residuals[2],
             flags=flags,
             supported=SUPPORTED_AUTH,
+            closure=closure,
+            trigger=trigger,
             invalid_count=0,
         )
         self.last_state = state
