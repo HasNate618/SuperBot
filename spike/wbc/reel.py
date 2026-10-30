@@ -68,9 +68,9 @@ def phases(ex: SonicExecutor) -> list[tuple[str, float, BodyCommand]]:
 
     return [
         ("hold", 2.0, hold(seq=0)),
-        ("look_left35", 1.5, cmd(AUTH_HEAD, head=ex.look_target(math.radians(-35)))),
+        ("look_left35", 1.5, cmd(AUTH_HEAD, head=ex.look_target(math.radians(35)))),
         ("hold", 1.0, hold(seq=0)),
-        ("look_right35", 1.5, cmd(AUTH_HEAD, head=ex.look_target(math.radians(35)))),
+        ("look_right35", 1.5, cmd(AUTH_HEAD, head=ex.look_target(math.radians(-35)))),
         ("hold", 1.0, hold(seq=0)),
         ("aim_right", 2.0, cmd(AUTH_R_HAND, right_hand=ex.aim_target("right", forward_m=0.22))),
         ("punch_right", 1.5, cmd(AUTH_R_HAND, right_hand=ex.punch_target("right"))),

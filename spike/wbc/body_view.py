@@ -155,10 +155,10 @@ def reel_plan(
     return [
         ("hold", 1.5, None),
         ("look left 35", 3.0, lambda: BodyCommand(
-            seq=0, authority=AUTH_HEAD, head=executor.look_target(math.radians(-35.0)))),
+            seq=0, authority=AUTH_HEAD, head=executor.look_target(math.radians(35.0)))),
         ("hold", 1.5, None),
         ("look right 35", 3.0, lambda: BodyCommand(
-            seq=0, authority=AUTH_HEAD, head=executor.look_target(math.radians(35.0)))),
+            seq=0, authority=AUTH_HEAD, head=executor.look_target(math.radians(-35.0)))),
         ("hold", 1.5, None),
         ("aim right", 2.5, lambda: BodyCommand(
             seq=0, authority=AUTH_R_HAND,
@@ -178,13 +178,17 @@ def verb_command(executor: SonicExecutor, name: str) -> BodyCommand | None:
     `BodyCommand`, and a verb is only a shortcut for the pose it implies. Returns
     None for an unknown verb so the caller can report it rather than guess.
     """
+    # Yaw is about +Z in this Z-up frame, and a positive rotation turns toward
+    # +Y, which is the robot's own left. These two signs were swapped: "look
+    # left" yawed -35 and turned the body to its right, measured in the world
+    # forward vector (facing -Y at rest, so its left is +X).
     def head_left() -> BodyCommand:
         return BodyCommand(
-            seq=0, authority=AUTH_HEAD, head=executor.look_target(math.radians(-35.0)))
+            seq=0, authority=AUTH_HEAD, head=executor.look_target(math.radians(35.0)))
 
     def head_right() -> BodyCommand:
         return BodyCommand(
-            seq=0, authority=AUTH_HEAD, head=executor.look_target(math.radians(35.0)))
+            seq=0, authority=AUTH_HEAD, head=executor.look_target(math.radians(-35.0)))
 
     def aim() -> BodyCommand:
         return BodyCommand(
