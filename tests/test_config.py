@@ -345,3 +345,31 @@ class YawOffsetConfig(unittest.TestCase):
             path.write_text("[body]\nyaw_offset = 90.0\n", encoding="utf-8")
             with self.assertRaises(ConfigError):
                 load_config(path, env={})
+
+
+class FieldOfViewConfig(unittest.TestCase):
+    """The declared headset field of view, as a config knob.
+
+    Undeclared by default, because that is the behaviour every earlier measurement was
+    taken under. Two angles or none: a lone horizontal angle would need an invented
+    aspect ratio.
+    """
+
+    def test_nothing_is_declared_by_default(self) -> None:
+        body = load_config(None, env={}).body
+        self.assertEqual((body.fov_h_deg, body.fov_v_deg), (0.0, 0.0))
+
+    def test_it_reads_from_the_file(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "config.toml"
+            path.write_text("[body]\nfov_h_deg = 110.0\nfov_v_deg = 78.0\n", encoding="utf-8")
+            body = load_config(path, env={}).body
+            self.assertEqual((body.fov_h_deg, body.fov_v_deg), (110.0, 78.0))
+
+    def test_half_a_field_of_view_is_refused_at_load(self) -> None:
+        # Caught here rather than at body-mode start, so the session never opens.
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "config.toml"
+            path.write_text("[body]\nfov_h_deg = 110.0\n", encoding="utf-8")
+            with self.assertRaises(ConfigError):
+                load_config(path, env={})

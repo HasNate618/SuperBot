@@ -2,7 +2,9 @@
 # superbot/pose_relay.py; run() takes force_grab/force_trigger/grab_mode.
 from __future__ import annotations
 
+import contextlib
 import csv
+import io
 import json
 import math
 import socket
@@ -426,7 +428,7 @@ class YawOffsetCli(unittest.TestCase):
     is that the flag is *parsed and forwarded*, not merely that argv mentions it.
     """
 
-    def _capture(self, argv: list[str]) -> dict:
+    def _capture(self, argv: list[str], *, stderr: bool = False) -> dict:
         from superbot import pose_relay
 
         seen: dict = {}
@@ -464,3 +466,82 @@ class YawOffsetCli(unittest.TestCase):
         with self.assertRaises(SystemExit) as caught:
             self._capture(["--state", "/nonexistent/s.json", "--yaw-offset-deg", "nan"])
         self.assertNotEqual(caught.exception.code, 0)
+
+
+
+class DeclaredFovCli(unittest.TestCase):
+    """Widening the view: `--fov-h-deg` / `--fov-v-deg` to `run`.
+
+    Nothing declares a field of view by default, so `per_view_data_valid` is False and
+    the remote driver falls back to its own default - which is why the preview looks
+    narrow. Declaring one is the knob; whether this build honours it is the experiment.
+
+    Args and config are FULL angles, because 110 deg is how anyone describes a headset.
+    `wire.fill` wants half-angles in radians, and the halving happens exactly once, in
+    main().
+    """
+
+    def _capture(self, argv: list[str], *, sink: dict | None = None) -> dict:
+        """Run main() with `run` stubbed out; never opens a socket or a file."""
+        from superbot import pose_relay
+
+        seen: dict = {}
+
+        def fake_run(host, port, state, log, duration, hz, **kw):
+            seen["fov_rad"] = kw.get("fov_rad")
+            return 0
+
+        original = pose_relay.run
+        pose_relay.run = fake_run
+        buf = io.StringIO()
+        try:
+            with contextlib.redirect_stderr(buf):
+                pose_relay.main(argv)
+        finally:
+            pose_relay.run = original
+            # Written to the caller's sink before any SystemExit propagates, or the
+            # assertion would read an unbound name instead of a message.
+            if sink is not None:
+                sink["stderr"] = buf.getvalue()
+        return seen
+
+    def test_a_declared_fov_arrives_as_half_angle_radians(self) -> None:
+        seen = self._capture(
+            ["--state", "/nonexistent/s.json", "--fov-h-deg", "110", "--fov-v-deg", "78"]
+        )
+        half_h, half_v = seen["fov_rad"]
+        self.assertAlmostEqual(half_h, math.radians(55.0), places=9)
+        self.assertAlmostEqual(half_v, math.radians(39.0), places=9)
+
+    def test_undeclared_stays_undeclared(self) -> None:
+        # None, not (0, 0): a zero angle would be a declared FOV of nothing.
+        self.assertIsNone(self._capture(["--state", "/nonexistent/s.json"])["fov_rad"])
+
+    def test_half_a_field_of_view_is_refused(self) -> None:
+        # One angle alone would need an invented aspect ratio, and this module's whole
+        # discipline is not inventing numbers.
+        sink: dict = {}
+        with self.assertRaises(SystemExit) as caught:
+            self._capture(["--state", "/nonexistent/s.json", "--fov-h-deg", "110"], sink=sink)
+        self.assertNotEqual(caught.exception.code, 0)
+        self.assertIn("both", sink["stderr"])
+
+    def test_an_impossible_angle_is_refused(self) -> None:
+        sink: dict = {}
+        with self.assertRaises(SystemExit) as caught:
+            self._capture(
+                ["--state", "/nonexistent/s.json",
+                 "--fov-h-deg", "200", "--fov-v-deg", "78"], sink=sink
+            )
+        self.assertNotEqual(caught.exception.code, 0)
+        self.assertIn("between 0 and 180", sink["stderr"])
+
+    def test_a_negative_angle_is_refused(self) -> None:
+        sink: dict = {}
+        with self.assertRaises(SystemExit) as caught:
+            self._capture(
+                ["--state", "/nonexistent/s.json",
+                 "--fov-h-deg", "-110", "--fov-v-deg", "78"], sink=sink
+            )
+        self.assertNotEqual(caught.exception.code, 0)
+        self.assertIn("between 0 and 180", sink["stderr"])

@@ -1958,6 +1958,21 @@ class OrchestratorTests(unittest.TestCase):
         # operator reading the session log can see which heading was in force.
         self.assertIn("--yaw-offset-deg", argv)
         self.assertEqual(float(argv[argv.index("--yaw-offset-deg") + 1]), 0.0)
+        # Undeclared by default: the driver's own field of view stays in force, which
+        # is the behaviour every earlier measurement was taken under.
+        self.assertNotIn("--fov-h-deg", argv)
+        self.assertNotIn("--fov-v-deg", argv)
+
+    def test_body_mode_declares_the_configured_field_of_view(self) -> None:
+        self.manager.cfg = replace(
+            self.cfg,
+            body=replace(self.cfg.body, fov_h_deg=110.0, fov_v_deg=78.0),
+        )
+        self.start()
+        self.manager.set_mode("body")
+        argv = self.runner.starts[-1][1]
+        self.assertEqual(float(argv[argv.index("--fov-h-deg") + 1]), 110.0)
+        self.assertEqual(float(argv[argv.index("--fov-v-deg") + 1]), 78.0)
 
     def test_manual_input_requires_manual_mode(self) -> None:
         self.start()

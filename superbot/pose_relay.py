@@ -255,7 +255,8 @@ LOG_HEADER = ["t", "hx", "hy", "hz", "hqx", "hqy", "hqz", "hqw",
 def run(host: str, port: int, state_path: Path, log_path: Path | None,
         duration: float, hz: float, force_grab: str = "none",
         force_trigger: str = "none", grab_mode: str = "squeeze",
-        yaw_offset_rad: float = 0.0) -> int:
+        yaw_offset_rad: float = 0.0,
+        fov_rad: tuple[float, float] | None = None) -> int:
     wire.assert_layout()
     source = PacketSource(StateSource(state_path), yaw_offset_rad=yaw_offset_rad)
     sock = connect(host, port)
@@ -265,9 +266,19 @@ def run(host: str, port: int, state_path: Path, log_path: Path | None,
     if yaw_offset_rad:
         # Printed because a capture is only interpretable if you know which heading
         # the poses were emitted under.
+            print(
+                f"pose_relay: robot heading offset {math.degrees(yaw_offset_rad):+.1f} deg "
+                "(declared, not walked)",
+                flush=True,
+            )
+    if fov_rad is not None:
+        # Printed because the field of view is the thing under test: a capture is only
+        # interpretable if you know which one was declared when it was taken.
+        half_h, half_v = fov_rad
         print(
-            f"pose_relay: robot heading offset {math.degrees(yaw_offset_rad):+.1f} deg "
-            "(declared, not walked)",
+            f"pose_relay: declaring fov {2 * math.degrees(half_h):.1f} x "
+            f"{2 * math.degrees(half_v):.1f} deg full "
+            f"({math.degrees(half_h):.1f}/{math.degrees(half_v):.1f} half)",
             flush=True,
         )
 
@@ -315,6 +326,7 @@ def run(host: str, port: int, state_path: Path, log_path: Path | None,
                 curl=curl_field,
                 trigger=fire,
                 trigger_click=click,
+                fov=fov_rad,
             )
             stream.write(bytes(packet))
             stream.flush()
@@ -362,16 +374,35 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--yaw-offset-deg", type=float, default=0.0, dest="yaw_offset_deg",
                     help="the robot's heading in the virtual room, degrees, positive "
                          "toward its left; chooses the facing rather than walking it")
+    ap.add_argument("--fov-h-deg", type=float, default=None, dest="fov_h_deg",
+                    help="full horizontal field of view to declare, degrees")
+    ap.add_argument("--fov-v-deg", type=float, default=None, dest="fov_v_deg",
+                    help="full vertical field of view to declare, degrees")
     args = ap.parse_args(argv)
     log_path = Path(args.log) if args.log else None
     if not math.isfinite(args.yaw_offset_deg):
         # Refused here so the operator gets a named flag rather than a traceback out
         # of the packet builder.
         ap.error("--yaw-offset-deg must be a finite number")
+    fov_rad = None
+    if args.fov_h_deg is not None or args.fov_v_deg is not None:
+        if args.fov_h_deg is None or args.fov_v_deg is None:
+            # One angle alone would need an invented aspect ratio.
+            ap.error("give both --fov-h-deg and --fov-v-deg, or neither")
+        angles = (("--fov-h-deg", args.fov_h_deg), ("--fov-v-deg", args.fov_v_deg))
+        for flag, value in angles:
+            if not 0.0 < value < 180.0:
+                ap.error(
+                    f"{flag} must be between 0 and 180 degrees (exclusive), got {value}"
+                )
+        # Halved exactly once, here: `wire.fill` takes half-angles, operators speak
+        # in full ones.
+        fov_rad = (math.radians(args.fov_h_deg / 2.0), math.radians(args.fov_v_deg / 2.0))
     return run(args.host, args.port, Path(args.state), log_path, args.duration, args.hz,
                force_grab=args.force_grab, force_trigger=args.force_trigger,
                grab_mode=args.grab_mode,
-               yaw_offset_rad=math.radians(args.yaw_offset_deg))
+               yaw_offset_rad=math.radians(args.yaw_offset_deg),
+               fov_rad=fov_rad)
 
 
 if __name__ == "__main__":

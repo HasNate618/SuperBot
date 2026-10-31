@@ -71,6 +71,13 @@ class BodyConfig:
     #: (a commanded left look reaches -28.6 deg), so the heading is chosen rather
     #: than walked. 0.0 changes nothing.
     yaw_offset_deg: float = 0.0
+    #: The headset's field of view we DECLARE to the runtime, full angles in degrees.
+    #: Undeclared by default, so the remote driver falls back to its own default and
+    #: the view looks narrow. Both or neither; 0.0 means undeclared. This is a claim
+    #: about a headset that does not exist - the value is ours to choose, which is the
+    #: point of emulating one.
+    fov_h_deg: float = 0.0
+    fov_v_deg: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -145,6 +152,10 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         # twist (measured: -28.6 deg left, +54.3 right), so the heading is chosen
         # rather than walked. 0.0 leaves every earlier measurement untouched.
         "yaw_offset_deg": 0.0,
+        # Field of view declared to the runtime, full angles in degrees. 0.0 = declare
+        # nothing, leaving the remote driver's own default in force.
+        "fov_h_deg": 0.0,
+        "fov_v_deg": 0.0,
     },
     "preview": {
         "width": 1280,
@@ -241,6 +252,21 @@ def _validate(cfg: Config) -> None:
         raise ConfigError("dashboard.host must be a specific address, not a wildcard")
     if not 0 <= cfg.dashboard.port <= 65535:
         raise ConfigError("dashboard.port must be between 0 and 65535")
+    for name, angle in (("fov_h_deg", cfg.body.fov_h_deg),
+                        ("fov_v_deg", cfg.body.fov_v_deg)):
+        # 0.0 means "declare nothing", which is the documented default. Any other value
+        # has to be a real angle: 180 deg is a hemisphere, not a headset.
+        if angle and not 0.0 < angle < 180.0:
+            raise ConfigError(
+                f"body.{name} must be between 0 and 180 degrees, "
+                "or 0 to leave the field of view undeclared"
+            )
+    if bool(cfg.body.fov_h_deg) != bool(cfg.body.fov_v_deg):
+        # Refused here rather than at body-mode start, so the session never opens
+        # with a field of view nobody intended.
+        raise ConfigError(
+            "body.fov_h_deg and body.fov_v_deg must be given together, or both 0"
+        )
     for field_name in (
         "steam_settle_sec",
         "steam_ready_timeout_sec",

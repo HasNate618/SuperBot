@@ -879,6 +879,18 @@ class SessionManager:
                 str(self._session_dir / "body_pose.csv"),
                 "--yaw-offset-deg",
                 f"{self.cfg.body.yaw_offset_deg:g}",
+                # Omitted rather than passed as 0: an undeclared field of view is the
+                # existing behaviour, and 0 deg is not a valid declaration.
+                *(
+                    [
+                        "--fov-h-deg",
+                        f"{self.cfg.body.fov_h_deg:g}",
+                        "--fov-v-deg",
+                        f"{self.cfg.body.fov_v_deg:g}",
+                    ]
+                    if self.cfg.body.fov_h_deg and self.cfg.body.fov_v_deg
+                    else []
+                ),
             ]
             needle = "handshake ok"
         else:

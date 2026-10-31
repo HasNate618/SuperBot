@@ -105,6 +105,13 @@ reel = true
 # commanded left look reaches only -28.6 deg (measured), against +54.3 right.
 # So the heading is chosen rather than walked. 0.0 leaves everything unchanged.
 yaw_offset_deg = 0.0
+# The headset's field of view to DECLARE to the runtime, full angles in degrees.
+# Nothing is declared by default, so the remote driver falls back to its own default
+# and the game looks narrow. Give both or neither; 0/0 leaves it undeclared.
+# Whether this build honours the declaration is still unmeasured - see
+# research/fov-declaration.md.
+fov_h_deg = 0.0
+fov_v_deg = 0.0
 # false = physics and verb buttons only, with no third-person image. Use it when
 # the graphics stack is unavailable; the body stays drivable and observable.
 render = true
