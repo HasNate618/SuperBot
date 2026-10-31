@@ -359,11 +359,19 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--grab-mode", choices=GRAB_MODES, default="squeeze",
                     help="which wire field a closure drives; squeeze is the controller "
                          "button (curl only feeds Monado's hand-tracking skeleton)")
+    ap.add_argument("--yaw-offset-deg", type=float, default=0.0, dest="yaw_offset_deg",
+                    help="the robot's heading in the virtual room, degrees, positive "
+                         "toward its left; chooses the facing rather than walking it")
     args = ap.parse_args(argv)
     log_path = Path(args.log) if args.log else None
+    if not math.isfinite(args.yaw_offset_deg):
+        # Refused here so the operator gets a named flag rather than a traceback out
+        # of the packet builder.
+        ap.error("--yaw-offset-deg must be a finite number")
     return run(args.host, args.port, Path(args.state), log_path, args.duration, args.hz,
                force_grab=args.force_grab, force_trigger=args.force_trigger,
-               grab_mode=args.grab_mode)
+               grab_mode=args.grab_mode,
+               yaw_offset_rad=math.radians(args.yaw_offset_deg))
 
 
 if __name__ == "__main__":

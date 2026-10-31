@@ -27,7 +27,15 @@ from typing import Any
 # restated because a second copy of "which way is forward" is precisely how
 # `hand_target` came to disagree with `dodge_target`. There is no cycle:
 # projection -> body, and body imports nothing from here.
-from .projection import rotate_z
+#
+# Both import shapes have to work. The pose relay is launched as a FILE
+# (`python superbot/pose_relay.py`), so its own `from . import wire` falls back to a
+# bare `import wire`, and a bare module has no package to be relative to. Importing
+# this relatively broke body mode the moment it was added.
+try:
+    from .projection import rotate_z
+except ImportError:  # pragma: no cover - only when executed as a script
+    from projection import rotate_z  # type: ignore[no-redef]
 
 # ---------------------------------------------------------------- wire format
 

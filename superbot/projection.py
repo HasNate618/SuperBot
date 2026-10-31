@@ -27,8 +27,12 @@ from __future__ import annotations
 import math
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-from .body import Pose
+if TYPE_CHECKING:  # annotation only; `from __future__` makes it a string at runtime.
+    # Kept out of the runtime import graph so this module can also be imported
+    # bare - `wire.py` reaches it that way when the pose relay runs as a script.
+    from .body import Pose
 
 #: Head-frame axes. ASSUMPTION: the derived head pose is the clip's head body
 #: orientation, whose forward axis is MuJoCo's conventional +X. If the live

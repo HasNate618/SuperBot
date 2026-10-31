@@ -415,3 +415,52 @@ class YawOffsetTests(unittest.TestCase):
         # A nan heading would emit nan poses and look like a body fault.
         with self.assertRaises(ValueError):
             self._source(yaw_offset_rad=float("nan"))
+
+
+class YawOffsetCli(unittest.TestCase):
+    """`--yaw-offset-deg` from the command line to `run`.
+
+    This exists because the flag was once added to the orchestrator's argv but not to
+    the relay's parser - an edit that replaced a line with itself and looked applied.
+    Tests passed; body mode would have failed to start in the field. So the check here
+    is that the flag is *parsed and forwarded*, not merely that argv mentions it.
+    """
+
+    def _capture(self, argv: list[str]) -> dict:
+        from superbot import pose_relay
+
+        seen: dict = {}
+
+        def fake_run(host, port, state, log, duration, hz, **kw):
+            seen["yaw_offset_rad"] = kw.get("yaw_offset_rad")
+            return 0
+
+        original = pose_relay.run
+        pose_relay.run = fake_run
+        try:
+            pose_relay.main(argv)
+        finally:
+            pose_relay.run = original
+        return seen
+
+    def test_the_orchestrators_argv_is_accepted_and_converted(self) -> None:
+        # The exact shape the orchestrator builds, so the two sides cannot drift again.
+        seen = self._capture(
+            ["--state", "/nonexistent/body_state.json", "--duration", "3600",
+             "--log", "/nonexistent/body_pose.csv", "--yaw-offset-deg", "90.0"]
+        )
+        self.assertAlmostEqual(seen["yaw_offset_rad"], math.pi / 2, places=9)
+
+    def test_ninety_degrees_is_the_robots_left(self) -> None:
+        # Sign convention: positive is the robot's left, matching every other yaw here.
+        seen = self._capture(["--state", "/nonexistent/s.json", "--yaw-offset-deg", "-45"])
+        self.assertAlmostEqual(seen["yaw_offset_rad"], -math.pi / 4, places=9)
+
+    def test_the_default_is_zero(self) -> None:
+        seen = self._capture(["--state", "/nonexistent/s.json"])
+        self.assertEqual(seen["yaw_offset_rad"], 0.0)
+
+    def test_a_non_finite_offset_is_refused_by_name(self) -> None:
+        with self.assertRaises(SystemExit) as caught:
+            self._capture(["--state", "/nonexistent/s.json", "--yaw-offset-deg", "nan"])
+        self.assertNotEqual(caught.exception.code, 0)
