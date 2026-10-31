@@ -64,16 +64,15 @@ class ConfigTests(unittest.TestCase):
     def test_dashboard_port_conflicts_are_rejected(self) -> None:
         cfg = load_config(None, env={})
         for key in ("vnc_port", "proxy_port"):
-            with self.subTest(key=key):
-                with self.assertRaises(ConfigError):
-                    validate_config(
-                        replace(
-                            cfg,
-                            preview=replace(
-                                cfg.preview, **{key: cfg.dashboard.port}
-                            ),
-                        )
+            with self.subTest(key=key), self.assertRaises(ConfigError):
+                validate_config(
+                    replace(
+                        cfg,
+                        preview=replace(
+                            cfg.preview, **{key: cfg.dashboard.port}
+                        ),
                     )
+                )
         validate_config(
             replace(
                 cfg,
@@ -198,20 +197,20 @@ class ConfigTests(unittest.TestCase):
     def test_empty_dashboard_host_is_rejected(self) -> None:
         cfg = load_config(None, env={})
         for host in ("", "   "):
-            with self.subTest(host=host):
-                with self.assertRaises(ConfigError):
-                    validate_config(
-                        replace(cfg, dashboard=replace(cfg.dashboard, host=host))
-                    )
+            with self.subTest(host=host), self.assertRaises(ConfigError):
+                validate_config(
+                    replace(cfg, dashboard=replace(cfg.dashboard, host=host))
+                )
 
     def test_wildcard_dashboard_host_is_rejected(self) -> None:
         cfg = load_config(None, env={})
-        for host in ("0.0.0.0", "::", "[::]"):
-            with self.subTest(host=host):
-                with self.assertRaises(ConfigError):
-                    validate_config(
-                        replace(cfg, dashboard=replace(cfg.dashboard, host=host))
-                    )
+        # S104: the wildcard literals are this test's INPUTS - it asserts they are
+        # refused - so the noqa is for the linter, not a real binding.
+        for host in ("0.0.0.0", "::", "[::]"):  # noqa: S104
+            with self.subTest(host=host), self.assertRaises(ConfigError):
+                validate_config(
+                    replace(cfg, dashboard=replace(cfg.dashboard, host=host))
+                )
 
     def test_specific_dashboard_host_is_accepted(self) -> None:
         cfg = load_config(None, env={})
@@ -236,9 +235,11 @@ class ConfigTests(unittest.TestCase):
         ]
         for env_key in float_env_keys:
             for raw in ("nan", "inf", "-inf"):
-                with self.subTest(env_key=env_key, raw=raw):
-                    with self.assertRaises(ConfigError):
-                        load_config(None, env={env_key: raw})
+                with (
+                    self.subTest(env_key=env_key, raw=raw),
+                    self.assertRaises(ConfigError),
+                ):
+                    load_config(None, env={env_key: raw})
 
     def test_weston_siblings_are_derived(self) -> None:
         cfg = load_config(
@@ -317,3 +318,30 @@ class ConfigTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class YawOffsetConfig(unittest.TestCase):
+    """The robot's heading in the virtual room, as a config knob.
+
+    The desk needs a 90 deg left turn and this body cannot twist that far (measured:
+    -28.6 deg left, +54.3 right), so the heading is chosen rather than walked. It lives
+    in config so a session is reproducible from a file rather than from shell history.
+    """
+
+    def test_the_default_is_zero_and_changes_nothing(self) -> None:
+        self.assertEqual(load_config(None, env={}).body.yaw_offset_deg, 0.0)
+
+    def test_it_reads_from_the_file(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "config.toml"
+            path.write_text("[body]\nyaw_offset_deg = 90.0\n", encoding="utf-8")
+            self.assertEqual(load_config(path, env={}).body.yaw_offset_deg, 90.0)
+
+    def test_a_misspelt_key_is_still_refused(self) -> None:
+        # The knob is only reproducible if a typo is loud. `yaw_offset_deg` and
+        # `yaw_offset` differing silently would send 0 deg and look like a body fault.
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "config.toml"
+            path.write_text("[body]\nyaw_offset = 90.0\n", encoding="utf-8")
+            with self.assertRaises(ConfigError):
+                load_config(path, env={})

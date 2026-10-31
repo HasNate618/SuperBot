@@ -877,6 +877,8 @@ class SessionManager:
                 "3600",
                 "--log",
                 str(self._session_dir / "body_pose.csv"),
+                "--yaw-offset-deg",
+                f"{self.cfg.body.yaw_offset_deg:g}",
             ]
             needle = "handshake ok"
         else:

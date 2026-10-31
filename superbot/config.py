@@ -4,9 +4,10 @@ import math
 import os
 import shutil
 import tomllib
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 
 class ConfigError(ValueError):
@@ -65,6 +66,11 @@ class BodyConfig:
     reel: bool
     render: bool
     views: tuple
+    #: The robot's heading in the virtual room, in degrees, positive toward its
+    #: left. The desk needs a 90 deg left turn and this body cannot twist that far
+    #: (a commanded left look reaches -28.6 deg), so the heading is chosen rather
+    #: than walked. 0.0 changes nothing.
+    yaw_offset_deg: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -134,6 +140,11 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         "render": True,
         # Camera angles rendered together, first is the primary tile.
         "views": ("three_quarter", "side"),
+        # The robot's heading in the virtual room, degrees, positive toward its left.
+        # The desk needs a 90 deg left turn, which is far outside what this body can
+        # twist (measured: -28.6 deg left, +54.3 right), so the heading is chosen
+        # rather than walked. 0.0 leaves every earlier measurement untouched.
+        "yaw_offset_deg": 0.0,
     },
     "preview": {
         "width": 1280,
@@ -224,7 +235,9 @@ def _validate(cfg: Config) -> None:
     host = cfg.dashboard.host.strip()
     if not host:
         raise ConfigError("dashboard.host must not be empty")
-    if host in {"0.0.0.0", "::", "[::]"}:
+    # S104 flags the wildcard literals, but this line is the guard that REFUSES them -
+    # it raises rather than binding. The noqa is for the linter, not for the intent.
+    if host in {"0.0.0.0", "::", "[::]"}:  # noqa: S104
         raise ConfigError("dashboard.host must be a specific address, not a wildcard")
     if not 0 <= cfg.dashboard.port <= 65535:
         raise ConfigError("dashboard.port must be between 0 and 65535")
@@ -353,6 +366,19 @@ def _resolve_executable(value: str) -> Path | None:
     return Path(found) if found else None
 
 
+def _accessible(path: Path, mode: int) -> bool:
+    """`os.access`, but a hostile or malformed path answers False instead of raising.
+
+    A path with an embedded NUL raises ValueError, and a namespace-isolated mount can
+    raise OSError. `missing_requirements` exists to *report* what is missing, so it
+    must not be the thing that crashes on the way.
+    """
+    try:
+        return os.access(path, mode)
+    except (OSError, ValueError):
+        return False
+
+
 def missing_requirements(cfg: Config) -> list[str]:
     checks = [
         ("monado", cfg.paths.monado_bin, os.X_OK),
@@ -368,10 +394,10 @@ def missing_requirements(cfg: Config) -> list[str]:
     missing: list[str] = []
     for label, value, mode in checks:
         resolved = _resolve_executable(value)
-        if resolved is None or not os.access(resolved, mode):
+        if resolved is None or not _accessible(resolved, mode):
             missing.append(f"{label} ({value})")
     web_root = cfg.paths.novnc_web_root
     rfb = Path(web_root) / "core" / "rfb.js" if web_root else None
-    if rfb is None or not os.access(rfb, os.R_OK):
+    if rfb is None or not _accessible(rfb, os.R_OK):
         missing.append(f"noVNC assets ({web_root or 'not found'})")
     return missing

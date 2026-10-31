@@ -1954,6 +1954,10 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(state.name, "body_state.json")
         self.assertEqual(state.parent.name, "body")
         self.assertIn("--log", argv)
+        # The heading offset must reach the relay even when it is zero, so an
+        # operator reading the session log can see which heading was in force.
+        self.assertIn("--yaw-offset-deg", argv)
+        self.assertEqual(float(argv[argv.index("--yaw-offset-deg") + 1]), 0.0)
 
     def test_manual_input_requires_manual_mode(self) -> None:
         self.start()

@@ -207,3 +207,77 @@ class DeclaredFov(unittest.TestCase):
         self.assertEqual(plain.head.center.position.y, fovved.head.center.position.y)
         self.assertEqual(plain.head.center.position.z, fovved.head.center.position.z)
         self.assertEqual(plain.head.center.orientation.w, fovved.head.center.orientation.w)
+
+
+class YawOffset(unittest.TestCase):
+    """Choosing the robot's heading in the virtual room.
+
+    The desk needs a 90 deg left turn (operator, 2026-10-30) and the body cannot twist
+    that far: a commanded left look reaches only -28.6 deg from a -86.79 baseline
+    (measured at the join), against +54.3 right. Torso yaw saturates long before 90.
+
+    So instead of turning the robot, we place it in the room already facing the desk:
+    a fixed yaw applied to every emitted pose. This is NOT the same as rotating the
+    camera alone - that would leave the hands 90 deg off the view. Rotating the camera
+    and both hands together preserves the geometry the camera sees, while the desk's
+    bearing relative to the robot changes. The state below pins exactly that: the
+    hand's position *in the head's own frame* must not move.
+    """
+
+    @staticmethod
+    def state(**kw) -> dict:
+        return BodyStateConversionTests.state(**kw)
+
+    def test_zero_offset_is_bit_identical(self) -> None:
+        # Every earlier measurement was taken at zero offset, so this must be exact.
+        plain = wire.body_state_to_xr(self.state())
+        offset = wire.body_state_to_xr(self.state(), yaw_offset_rad=0.0)
+        self.assertEqual(plain, offset)
+
+    def test_ninety_degrees_left_sends_the_gaze_to_the_robots_left(self) -> None:
+        # Head 1 m along the robot's forward (+X in the MJ frame). Turning the robot
+        # 90 deg left about Z puts it along +Y, which maps to XR -X.
+        poses = wire.body_state_to_xr(
+            self.state(head_p=(1.0, 0.0, 0.0)), yaw_offset_rad=math.radians(90.0)
+        )
+        p = poses["head"][0]
+        self.assertAlmostEqual(p[0], -1.0, places=6)
+        self.assertAlmostEqual(p[1], 0.8, places=6)
+        self.assertAlmostEqual(p[2], 0.0, places=6)
+
+    def test_the_hand_stays_where_the_camera_sees_it(self) -> None:
+        # THE invariant. If this moves, the arms no longer point where the view looks
+        # and the whole approach is worthless.
+        def hand_in_head_frame(yaw_rad: float) -> tuple[float, float, float]:
+            poses = wire.body_state_to_xr(
+                self.state(root_p=(0.0, 0.0, 0.0), head_p=(0.0, 0.0, 0.0)),
+                yaw_offset_rad=yaw_rad,
+            )
+            head_p, head_q_xyzw = poses["head"]
+            hand_p = poses["right"][0]
+            # Poses come back in XR order; the quaternion is (x, y, z, w).
+            q_wxyz = (head_q_xyzw[3], head_q_xyzw[0], head_q_xyzw[1], head_q_xyzw[2])
+            delta = tuple(h - g for h, g in zip(hand_p, head_p, strict=True))
+            return wire.quat_rotate(wire.quat_conj(q_wxyz), delta)
+
+        base = hand_in_head_frame(0.0)
+        for yaw in (math.radians(90.0), math.radians(-45.0), math.radians(180.0)):
+            for got, want in zip(hand_in_head_frame(yaw), base, strict=True):
+                self.assertAlmostEqual(got, want, places=6)
+
+    def test_the_head_orientation_is_rotated_too(self) -> None:
+        # Rotating the position but not the orientation would make the camera face the
+        # old way while standing somewhere else.
+        plain = wire.body_state_to_xr(self.state(), yaw_offset_rad=0.0)
+        turned = wire.body_state_to_xr(self.state(), yaw_offset_rad=math.radians(90.0))
+        self.assertNotEqual(plain["head"][1], turned["head"][1])
+        # A quarter turn of the orientation must still be a unit quaternion.
+        norm = math.sqrt(sum(c * c for c in turned["head"][1]))
+        self.assertAlmostEqual(norm, 1.0, places=6)
+
+    def test_a_full_turn_is_the_identity(self) -> None:
+        plain = wire.body_state_to_xr(self.state())
+        full = wire.body_state_to_xr(self.state(), yaw_offset_rad=2.0 * math.pi)
+        for key in ("head", "left", "right"):
+            for got, want in zip(full[key][0], plain[key][0], strict=True):
+                self.assertAlmostEqual(got, want, places=6)

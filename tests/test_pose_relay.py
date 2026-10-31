@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import json
+import math
 import socket
 import tempfile
 import threading
@@ -284,7 +285,8 @@ class RelayRunTests(unittest.TestCase):
     def test_log_records_the_masked_field_not_the_request(self) -> None:
         # Under --grab-mode curl the wire carries squeeze 0, so logging the raw
         # request would claim a grip the game never saw.
-        driver = RecordingDriver(); driver.start()
+        driver = RecordingDriver()
+        driver.start()
         with tempfile.TemporaryDirectory() as raw:
             state_path = Path(raw) / "body_state.json"
             state_path.write_text(json.dumps(sample_state()), encoding="utf-8")
@@ -358,3 +360,58 @@ class RelayRunTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class YawOffsetTests(unittest.TestCase):
+    """The robot's heading in the virtual room, at the relay's boundary.
+
+    The desk needs a 90 deg left turn and the body cannot twist that far, so the
+    heading is chosen rather than walked. What matters here is that the relay is the
+    *only* place it is applied - applying it twice, or to the head alone, would put
+    the hands somewhere no camera can see them.
+    """
+
+    def _source(self, **kw):
+        from superbot.pose_relay import PacketSource, StateSource
+
+        return PacketSource(StateSource(Path("/nonexistent/state.json")), **kw)
+
+    def _state_file(self) -> Path:
+        import json
+        import tempfile
+
+        payload = {
+            "root_p": [0.0, 0.0, 0.8],
+            "root_q": [1.0, 0.0, 0.0, 0.0],
+            "head": {"p": [0.0, 0.0, 0.4], "q_xyzw": [0.0, 0.0, 0.0, 1.0]},
+            "left_hand": {"p": [0.0, 0.2, -0.2], "q_xyzw": [0.0, 0.0, 0.0, 1.0]},
+            "right_hand": {"p": [0.0, -0.2, -0.2], "q_xyzw": [0.0, 0.0, 0.0, 1.0]},
+        }
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as handle:
+            json.dump(payload, handle)
+        return Path(handle.name)
+
+    def test_the_default_offset_leaves_poses_untouched(self) -> None:
+        from superbot.pose_relay import PacketSource, StateSource
+
+        path = self._state_file()
+        plain = PacketSource(StateSource(path)).poses(0.0)[0]
+        zero = PacketSource(StateSource(path), yaw_offset_rad=0.0).poses(0.0)[0]
+        self.assertEqual(plain, zero)
+
+    def test_a_turned_relay_reports_a_different_heading(self) -> None:
+        from superbot.pose_relay import PacketSource, StateSource
+
+        path = self._state_file()
+        plain = PacketSource(StateSource(path)).poses(0.0)[0]
+        turned = PacketSource(
+            StateSource(path), yaw_offset_rad=math.radians(90.0)
+        ).poses(0.0)[0]
+        self.assertNotEqual(plain["head"], turned["head"])
+        # The hand must move with the head, or the view and the arms disagree.
+        self.assertNotEqual(plain["right"], turned["right"])
+
+    def test_a_non_finite_offset_is_refused(self) -> None:
+        # A nan heading would emit nan poses and look like a body fault.
+        with self.assertRaises(ValueError):
+            self._source(yaw_offset_rad=float("nan"))

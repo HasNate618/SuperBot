@@ -25,6 +25,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import math
 import socket
 import struct
 import time
@@ -148,9 +149,20 @@ class StateSource:
 class PacketSource:
     """Turns body states into XR poses, holding through gaps."""
 
-    def __init__(self, source: StateSource, stale_after: float = STALE_AFTER_SEC) -> None:
+    def __init__(
+        self,
+        source: StateSource,
+        stale_after: float = STALE_AFTER_SEC,
+        yaw_offset_rad: float = 0.0,
+    ) -> None:
         self.source = source
         self.stale_after = stale_after
+        # The robot's heading in the virtual room. Rejected here rather than
+        # silently producing NaN poses downstream: a nan position would take the
+        # compositor somewhere undefined and look like a body fault.
+        if not math.isfinite(yaw_offset_rad):
+            raise ValueError("yaw_offset_rad must be finite")
+        self.yaw_offset_rad = yaw_offset_rad
         self._last = wire.REST_POSES
         self._last_note = "rest"
         #: The most recent state that parsed, so buttons can be forwarded even
@@ -164,7 +176,7 @@ class PacketSource:
         if state is None:
             return self._last, self._last_note if self._last_note != "live" else "stale", age
         try:
-            poses = wire.body_state_to_xr(state)
+            poses = wire.body_state_to_xr(state, yaw_offset_rad=self.yaw_offset_rad)
         except (KeyError, TypeError, ValueError):
             # A half-written or shape-changed file must not kill the pipe.
             return self._last, "malformed", age
@@ -242,13 +254,22 @@ LOG_HEADER = ["t", "hx", "hy", "hz", "hqx", "hqy", "hqz", "hqw",
 
 def run(host: str, port: int, state_path: Path, log_path: Path | None,
         duration: float, hz: float, force_grab: str = "none",
-        force_trigger: str = "none", grab_mode: str = "squeeze") -> int:
+        force_trigger: str = "none", grab_mode: str = "squeeze",
+        yaw_offset_rad: float = 0.0) -> int:
     wire.assert_layout()
-    source = PacketSource(StateSource(state_path))
+    source = PacketSource(StateSource(state_path), yaw_offset_rad=yaw_offset_rad)
     sock = connect(host, port)
     print(f"pose_relay: connected {host}:{port}", flush=True)
     print("pose_relay: handshake ok", flush=True)
     print(f"pose_relay: state {state_path} at {hz:g} Hz", flush=True)
+    if yaw_offset_rad:
+        # Printed because a capture is only interpretable if you know which heading
+        # the poses were emitted under.
+        print(
+            f"pose_relay: robot heading offset {math.degrees(yaw_offset_rad):+.1f} deg "
+            "(declared, not walked)",
+            flush=True,
+        )
 
     period = 1.0 / max(hz, 1.0)
     started = time.monotonic()

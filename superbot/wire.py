@@ -23,6 +23,12 @@ import struct
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
+# The axis convention has exactly one owner. `rotate_z` is imported rather than
+# restated because a second copy of "which way is forward" is precisely how
+# `hand_target` came to disagree with `dodge_target`. There is no cycle:
+# projection -> body, and body imports nothing from here.
+from .projection import rotate_z
+
 # ---------------------------------------------------------------- wire format
 
 
@@ -211,6 +217,8 @@ def _xyzw_to_wxyz(q: Iterable[float]) -> tuple[float, float, float, float]:
 
 def body_state_to_xr(
     state: Mapping[str, Any],
+    *,
+    yaw_offset_rad: float = 0.0,
 ) -> dict[str, tuple[tuple[float, float, float], tuple[float, float, float, float]]]:
     """BodyState dict -> absolute OpenXR poses for head and both hands.
 
@@ -218,6 +226,18 @@ def body_state_to_xr(
     (the hold clip starts near -90 deg about Z), so composing the root first is
     not optional: skipping it leaves the heading wrong while the position looks
     plausible, which is exactly the mistake that once hid a working turn.
+
+    `yaw_offset_rad` chooses the robot's **heading in the virtual room**: every pose
+    is rotated by it about the world up axis. The desk needs a 90 deg left turn
+    (operator, 2026-10-30) and this body cannot twist that far - a commanded left
+    look reaches -28.6 deg against +54.3 right, measured at the join - so rather
+    than turn the robot we place it in the room already facing the desk.
+
+    Rotating the camera *and* both hands together is the whole point: the hand's
+    position in the head's own frame is unchanged, so the arms still point where the
+    view looks, while the desk's bearing relative to the robot changes. Rotating the
+    head alone would have left the hands 90 deg off the view and no reach would have
+    been possible. Declared caveat: the facing is chosen, not walked.
     """
     root_p = tuple(float(c) for c in state["root_p"])
     # BodyState.root_q is (w, x, y, z). It is NOT the same order as Pose.q_xyzw,
@@ -231,6 +251,16 @@ def body_state_to_xr(
         rotated = quat_rotate(root_q, p_rel)
         p_world = (root_p[0] + rotated[0], root_p[1] + rotated[1], root_p[2] + rotated[2])
         q_world = quat_mul(root_q, q_rel)
+        if yaw_offset_rad != 0.0:
+            # Rotate about world up. `rotate_z` is borrowed from projection rather
+            # than restated, because a second copy of an axis convention is how
+            # hand_target came to disagree with dodge_target about which way is
+            # forward. Pre-multiplying turns the orientation in the world frame.
+            p_world = rotate_z(p_world, yaw_offset_rad)
+            half = yaw_offset_rad / 2.0
+            q_world = quat_mul(
+                (math.cos(half), 0.0, 0.0, math.sin(half)), q_world
+            )
         return mj_to_xr_vec(p_world), mj_to_xr_quat(q_world)
 
     return {
