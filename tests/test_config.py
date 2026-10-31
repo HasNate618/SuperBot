@@ -5,7 +5,13 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 
-from superbot.config import ConfigError, load_config, missing_requirements, validate_config
+from superbot.config import (
+    ConfigError,
+    body_pose_flags,
+    load_config,
+    missing_requirements,
+    validate_config,
+)
 
 
 class ConfigTests(unittest.TestCase):
@@ -373,3 +379,16 @@ class FieldOfViewConfig(unittest.TestCase):
             path.write_text("[body]\nfov_h_deg = 110.0\n", encoding="utf-8")
             with self.assertRaises(ConfigError):
                 load_config(path, env={})
+
+
+class BodyPoseFlags(unittest.TestCase):
+    """The relay argv the config derives, so "0 means undeclared" has one owner."""
+
+    def test_undeclared_produces_no_flags(self) -> None:
+        self.assertEqual(body_pose_flags(load_config(None, env={}).body), [])
+
+    def test_declared_produces_both_flags(self) -> None:
+        body = replace(load_config(None, env={}).body, fov_h_deg=110.0, fov_v_deg=78.0)
+        self.assertEqual(
+            body_pose_flags(body), ["--fov-h-deg", "110", "--fov-v-deg", "78"]
+        )

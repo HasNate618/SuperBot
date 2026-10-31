@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
 
-from .config import Config, missing_requirements
+from .config import Config, body_pose_flags, missing_requirements
 from .manual_input import ManualInputBridge
 from .processes import Aborted, ProcessHandle, ProcessRunner
 
@@ -879,18 +879,9 @@ class SessionManager:
                 str(self._session_dir / "body_pose.csv"),
                 "--yaw-offset-deg",
                 f"{self.cfg.body.yaw_offset_deg:g}",
-                # Omitted rather than passed as 0: an undeclared field of view is the
-                # existing behaviour, and 0 deg is not a valid declaration.
-                *(
-                    [
-                        "--fov-h-deg",
-                        f"{self.cfg.body.fov_h_deg:g}",
-                        "--fov-v-deg",
-                        f"{self.cfg.body.fov_v_deg:g}",
-                    ]
-                    if self.cfg.body.fov_h_deg and self.cfg.body.fov_v_deg
-                    else []
-                ),
+                # Omitted rather than passed as 0: undeclared is the existing
+                # behaviour, and 0 deg is not a valid declaration.
+                *body_pose_flags(self.cfg.body),
             ]
             needle = "handshake ok"
         else:

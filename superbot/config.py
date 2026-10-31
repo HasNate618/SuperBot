@@ -392,6 +392,23 @@ def _resolve_executable(value: str) -> Path | None:
     return Path(found) if found else None
 
 
+def body_pose_flags(body: BodyConfig) -> list[str]:
+    """The pose-relay argv that declares the field of view, or nothing if undeclared.
+
+    This lives beside the fields rather than in the orchestrator, so the "0.0 means
+    undeclared" rule has exactly one owner: the same rule `validate_config` enforces.
+    Two places deciding what zero means is how a knob ends up half-applied.
+    """
+    if not (body.fov_h_deg and body.fov_v_deg):
+        return []
+    return [
+        "--fov-h-deg",
+        f"{body.fov_h_deg:g}",
+        "--fov-v-deg",
+        f"{body.fov_v_deg:g}",
+    ]
+
+
 def _accessible(path: Path, mode: int) -> bool:
     """`os.access`, but a hostile or malformed path answers False instead of raising.
 
