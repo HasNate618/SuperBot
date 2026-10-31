@@ -281,3 +281,62 @@ class YawOffset(unittest.TestCase):
         for key in ("head", "left", "right"):
             for got, want in zip(full[key][0], plain[key][0], strict=True):
                 self.assertAlmostEqual(got, want, places=6)
+
+
+class DeclaredViewPoses(unittest.TestCase):
+    """Declaring a FOV also validates the per-view POSE block, not just the frustum.
+
+    `per_view_data_valid` is documented as "Is the per view data valid and should be
+    used?" - the whole `views[]` entry, which is `{fov, pose, _pad}`. While the flag was
+    False those poses were zeroed and ignored, so it did not matter. Turning the flag on
+    made them authoritative: both eyes at the origin, and an orientation quaternion of
+    (0, 0, 0, 0) - norm zero, which is not a rotation at all.
+
+    That is a plausible cause of the client dying the moment the wider view appeared: a
+    wider FOV is visible immediately, and degenerate transforms propagate right after.
+    """
+
+    def _packet(self, **kw):
+        return wire.fill(wire.blank_packet(), wire.REST_POSES, **kw)
+
+    def _fov(self):
+        return (math.radians(55.0), math.radians(39.0))
+
+    def test_each_eye_gets_a_unit_rotation(self) -> None:
+        # A zero quaternion is not identity. Anything that normalises it divides by zero.
+        d = self._packet(fov=self._fov())
+        for view in d.head.views:
+            q = view.pose.orientation
+            norm = math.sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w)
+            self.assertAlmostEqual(norm, 1.0, places=6)
+
+    def test_the_eyes_are_separated_by_the_interpupillary_distance(self) -> None:
+        d = self._packet(fov=self._fov(), ipd_m=0.063)
+        left, right = d.head.views
+        # OpenXR eye space: +X is the viewer's right.
+        self.assertAlmostEqual(left.pose.position.x, -0.0315, places=6)
+        self.assertAlmostEqual(right.pose.position.x, 0.0315, places=6)
+        self.assertAlmostEqual(
+            right.pose.position.x - left.pose.position.x, 0.063, places=6
+        )
+
+    def test_the_eye_poses_do_not_drift_vertically_or_forward(self) -> None:
+        # Symmetric eyes, level with the head centre: no toe-in, no elevation.
+        d = self._packet(fov=self._fov())
+        for view in d.head.views:
+            self.assertEqual(view.pose.position.y, 0.0)
+            self.assertEqual(view.pose.position.z, 0.0)
+
+    def test_an_implausible_ipd_is_refused(self) -> None:
+        for bad in (0.0, -0.063, float("nan"), float("inf"), 0.5):
+            with self.subTest(ipd=bad), self.assertRaises(ValueError):
+                self._packet(fov=self._fov(), ipd_m=bad)
+
+    def test_undeclared_leaves_the_view_poses_alone(self) -> None:
+        # The flag is False, so the driver uses its own eyes; writing ours would be
+        # inventing data nobody asked for.
+        d = self._packet()
+        self.assertFalse(d.head.per_view_data_valid)
+        for view in d.head.views:
+            self.assertEqual(view.pose.position.x, 0.0)
+            self.assertEqual(view.pose.orientation.w, 0.0)

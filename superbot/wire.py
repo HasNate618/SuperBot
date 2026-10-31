@@ -309,6 +309,7 @@ def fill(
     trigger: tuple[float, float] = (0.0, 0.0),
     trigger_click: tuple[bool, bool] = (False, False),
     fov: tuple[float, float] | None = None,
+    ipd_m: float = 0.063,
 ) -> RemoteData:
     """Write `{"head"|"left"|"right": (position, quaternion_xyzw)}` into a packet.
 
@@ -322,15 +323,18 @@ def fill(
     the caller now owns the rising edge.
 
     `fov` is `(horizontal_half_angle, vertical_half_angle)` in radians and declares
-    a symmetric frustum via `head.views[].fov` + `head.per_view_data_valid`. We are
-    the ones emitting the HMD data, so the field of view can be a stated number
-    rather than something inferred from images. Default `None` leaves the
-    compositor's own value in charge, which is the behaviour every earlier
-    measurement was taken under. ASSUMPTION: that this build's driver honours the
-    flag - the struct documents it (upstream `drivers/remote/r_interface.h`:
-    "Is the per view data valid and should be used?") but the consuming code path
-    was not readable from the installed store, so it is measured, not assumed, by
-    the two-FOV experiment in the plan.
+    a symmetric frustum via `head.views[].fov` + `head.per_view_data_valid`.
+
+    MEASURED 2026-10-31: this build does act on it - the view visibly widened the
+    moment the relay declared 110 x 78. That same run then died, and the reason is
+    the rest of this paragraph.
+
+    `per_view_data_valid` covers the whole per-view entry, `{fov, pose, _pad}` - not
+    just the frustum. While the flag is False those poses are zeroed and the driver
+    ignores them, which is why it did not matter before. Setting it True makes them
+    AUTHORITATIVE, so a caller declaring a FOV must also state the eyes: both at the
+    origin with an orientation of (0, 0, 0, 0) is a zero-norm quaternion, not a
+    rotation, and it gives a client degenerate transforms. Hence `ipd_m`.
     """
     if fov is not None:
         half_h, half_v = float(fov[0]), float(fov[1])
@@ -338,11 +342,25 @@ def fill(
             raise ValueError("fov angles must be finite")
         if half_h <= 0.0 or half_v <= 0.0:
             raise ValueError("fov half-angles must be positive")
-        for view in d.head.views:
+        ipd = float(ipd_m)
+        if not math.isfinite(ipd) or not 0.0 < ipd < 0.2:
+            raise ValueError("ipd_m must be a plausible finite eye separation in metres")
+        for i, side in enumerate((-1.0, 1.0)):
+            view = d.head.views[i]
             view.fov.angle_left = half_h
             view.fov.angle_right = half_h
             view.fov.angle_up = half_v
             view.fov.angle_down = half_v
+            # Eye pose relative to the head centre. OpenXR eye space: +X is the
+            # viewer's right, +Y up, -Z forward. Level and symmetric - no toe-in,
+            # since this body's eyes are a choice, not a lens design.
+            view.pose.position.x = side * ipd / 2.0
+            view.pose.position.y = 0.0
+            view.pose.position.z = 0.0
+            view.pose.orientation.x = 0.0
+            view.pose.orientation.y = 0.0
+            view.pose.orientation.z = 0.0
+            view.pose.orientation.w = 1.0
         d.head.per_view_data_valid = True
 
     p, q = poses["head"]
