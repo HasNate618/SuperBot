@@ -52,7 +52,7 @@ The project exists as a hiring artifact for **real-time controls and systems int
 | Capability | Measurement |
 | --- | --- |
 | **Walk** | **39.79 m path / 37.82 m net in 60 s**, 0.663 / 0.631 m/s, yaw drift **−2.10°**, path error mean 0.230 / max 0.554 m, tilt 9.48°, no fall |
-| **Hold** | **RMS velocity 1.3×10⁻⁴ m/s settled — 0.02% of walking speed; p95 2×10⁻⁴.** Pins Superhot's clock at its 0.005 floor |
+| **Hold** | **RMS velocity 1.3×10⁻⁴ m/s settled — 0.02% of walking speed; p95 2×10⁻⁴.** (Under Superhot this pinned its 0.005 clock; the game changed, the number survives) |
 | **Walk → hold → walk** | **5/5 cycles, 100 s, no fall**, worst tilt 9.5°, cumulative hold 0.478 m, **walk resumes within ~0.2 m** of reference, re-lock 4.14–4.94 s |
 | **Dodge** | **0.15–0.18 m in < 0.5 s** |
 | **Aim while walking, ahead** | **3.51 cm / 7.22°** (p95 5.63 cm) |
@@ -149,7 +149,7 @@ The pass bars. `research/wbc-*.md` proposals are still judged against these.
 | # | Requirement | Pass bar | **Status 2026-10-24** |
 | --- | --- | --- | --- |
 | R1 | **Arms and head independently commandable** | wrist residual **≤ 3 cm** while walking and holding; orientation error measured | **PARTIAL** — 3.51 cm / 7.22° **ahead** (just over), **8.63 cm / 28.33° at 30° off-axis** (fails). Orientation now measured: 7.22° → 5.08° with wrist-orient override. Head y only, no pitch/roll |
-| R2 | **Holds still enough to freeze time** | ≤ ~5 cm net over a 20 s think | **MET with a stated caveat** — RMS **1.3×10⁻⁴ m/s**, but a one-time **8–12 cm settle** and a **0.13–0.18 m/s transient for 3–5 s** on entry. A think costs **~0.7 s of game time** |
+| R2 | **Holds still enough that a slow think does not disturb what it touches** | ≤ ~5 cm net over a 20 s think | **MET with a stated caveat** — RMS **1.3×10⁻⁴ m/s**, but a one-time **8–12 cm settle** and a **0.13–0.18 m/s transient for 3–5 s** on entry. A think costs **20 s of wall-clock**; there is no game clock to pay, because Job Simulator does not scale time |
 | R3 | **Walks** | ≥ 5 m, ≥ 0.3 m/s, 60 s no fall | **MET** — 39.79 m / 60 s at 0.663 m/s, yaw −2.10°, no fall. Push recovery untested |
 | R4 | **Transitions do not fall** | 5 consecutive walk→hold→walk | **MET** — 5/5, no fall, resumes within 0.2 m |
 | R5 | **Dodges** | head displacement 10–25 cm in < 500 ms, upright | **MET on displacement** — 0.15–0.18 m in < 0.5 s. What the *game* requires is unmeasured |
@@ -165,20 +165,24 @@ The pass bars. `research/wbc-*.md` proposals are still judged against these.
 
 ## 5. The game side — what is known
 
-From `research/wbc-game-proposal.md`, read from serialized assets of levels 0–5 `MEASURED`:
+**Job Simulator: nothing is measured yet.** The target changed on 2026-10-31. Everything below is `[OPERATOR]` description plus one wiki citation, not measurement:
 
-- **Clock floor `TimeControl.minTimescale = 0.005`** — 0.5% speed, **not a pause**. `maxTimescale = 1.0`, `tickThreshold = 0.1`, `movementTick = (0.1, 0.1)`, `rotation = 0.05`. A 20 s think therefore costs ≈ 0.1 s of game time *if* the body is genuinely still. `MINIMAL_TIMESCALE_HIGHER` must **not** be enabled.
-- **First target is The Fall** (`CezaryVR_ReverseFall`): first enemy **1.41 m** ahead at eye level; **pistol and exit pyramid 0.70 m forward at eye level**. Scene order: The Fall → Cage Fight → Corridor → Dojo → Airport. Corridor needs 12.31 m of traversal (not a first target); Cage Fight's opening enemy is 0.90 m.
-- `Bullet.COLLISION_RADIUS` 0.03 m, `distanceCheckTimeTreshold` 2.5 m (sic — the game's own spelling), `maxHandsDistance` 2.0 m.
+- JobBot speaks instructions in the museum hub and inside each job `[CITED: https://jobsimulator.fandom.com/wiki/JobBot]`.
+- Level select is a museum hub: take a business card, take a cartridge from a tray, insert it into the machine, pull the lever.
+- Store Clerk opens with spoken chores: take a ticket, clear the counter, turn on the security camera.
+- There is **no time dilation and no combat**, so a think costs wall-clock.
+- **No state API exists.** That negative search result now matters more, not less (`RESEARCH.md` §12.5): occupancy can only come from the latched grip and pixels, never from telemetry.
 
-**The open question that decides the demo:** the pistol and exit are at **0.70 m**, and the reliable reach envelope is **~0.20 m** (§2.3). Either the body walks closer before reaching — which makes the walk load-bearing inside a level — or the level is not playable by a standing body. This is a C0 measurement, not an assumption.
+**Superhot, kept as provenance and retired as a premise.** These values were read from that game's serialized assets; they are not premises of this design: `TimeControl.minTimescale = 0.005` (0.5% speed, not a pause), `maxTimescale = 1.0`, `tickThreshold = 0.1`, `movementTick = (0.1, 0.1)`, `rotation = 0.05`; `Bullet.COLLISION_RADIUS` 0.03 m, `distanceCheckTimeTreshold` 2.5 m (sic — the game's own spelling), `maxHandsDistance` 2.0 m; The Fall's 1.41 m enemy and 0.70 m pistol/exit pyramid; scene order The Fall → Cage Fight → Corridor → Dojo → Airport. Detail in `research/wbc-game-proposal.md`. **Do not re-inherit any of it as a requirement.**
+
+**The open question that decides the demo is now a measurement, not a gamble:** how far is Job Simulator's counter from the body's spawn, and where does each chore object sit relative to the reachable set? Nobody has measured this. The 0.70 m pedestal that made walking load-bearing under Superhot does not exist here.
 
 ---
 
 ## 6. Decisions locked
 
 - **Monado `remote` driver** is the injection path. No custom OpenVR driver; SteamVR avoided.
-- **Superhot VR** is the first game and the first adapter. Its frozen clock legalises a 5–20 s brain.
+- **Job Simulator** is the first game and the first adapter (changed 2026-10-31; Superhot VR is a possible second). The slow brain is licensed by the absence of combat and by the world not threatening the body, **not** by a frozen clock — an assumption, not a measurement (`docs/superpowers/specs/2026-10-31-brain.md` §3.3).
 - **Native interface = `BodyCommand` / `BodyState`**, masked task-space with authority bitmask, TTL, termination. Game verbs are adapters, not the interface.
 - **Three loops, one socket**: body 50 Hz packets / 500 Hz PD; skills 10–30 Hz; brain 5–20 s. The VLM never writes joints or poses.
 - **`hold` is load-bearing and active**, never "send zero".
@@ -195,7 +199,7 @@ Ordered by what blocks what. Each has a concrete next action.
 | # | Open item | Next action | Notes |
 | --- | --- | --- | --- |
 | 1 | **C0-3: trigger reaches the game** | `c0_client.py --mode trigger` with a pistol in hand | needs the tutorial cleared |
-| 2 | **C0-5: clock floor in practice** | hold vs walk, pixel-only clock-ratio protocol (`spike/c0/README.md`) | the 0.005 floor is read from assets; behaviour needs pixels |
+| 2 | ~~**C0-5: clock floor in practice**~~ **RETIRED 2026-10-31** — it measured Superhot time dilation; Job Simulator has none. The 0.005 floor stays as provenance only | hold vs walk, pixel-only clock-ratio protocol (`spike/c0/README.md`) | only if Superhot returns as a second adapter |
 | 3 | **C0-6: The Fall's 0.70 m pistol/exit** | stand still in level 1 and ask what is visible and reachable | **biggest design risk** — 0.70 m vs 0.20 m envelope |
 | 4 | **R6: live co-residency** | SONIC + Monado + Superhot + grim resident, measure dropped ticks | 6.8 ms/tick and 0.9× realtime headless |
 | 5 | **R1 off-axis aiming** | plan movement so the body faces its target; measure at 0°, 15°, 30° after turning | do not attempt arm-authority fixes |

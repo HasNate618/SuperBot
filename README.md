@@ -111,7 +111,7 @@ All values below are read from this repository. `research/` holds the per-spike 
 | Aim, 30° off-axis | **8.63 cm** / **28.33°** — the weak axis | same | `research/sonic-gate-results.md` |
 | Dodge, as shipped | **0.106–0.134 m** head shift for a 0.14 m command, base moves **≤0.008 m** — a lean, not a step | two trials each way, live body | this session |
 | Head yaw → torso yaw | **~0.83 gain**, saturating at **27–31°** | SONIC's native coupling; aim is not turn | `research/wbc-policy-proposal.md` |
-| Reach envelope | **~0.20 m**; a 0.70 m target leaves a **27.3 cm** wrist residual | classical WBC probe, standing | `research/wbc-game-proposal.md` |
+| Forward reach: travel vs precision | wrist travels **0.41 m** at `forward_m=0.35` (residual **0.20 m**); **0.51 m** when raised to `up_m=+0.30` (residual **0.096 m**) | SONIC, offline, correct forward axis | `research/strike-results.md` §Addendum |
 | Control cost, 1 thread | **17.66 ms** per 20 ms tick: encoder 7.54, decoder 5.42, physics 4.71 — 32 % of one core | onnxruntime pinned to 1 thread (the default) | `research/wbc-policy-proposal.md` |
 | Control cost, all cores | **6.8 ms** per tick at **1876 %** CPU, 47 threads, load average 21 | onnxruntime defaults — this is the cost the pinning removes | `research/wbc-policy-proposal.md` |
 | Render + encode | **0.86 ms** per 560×420 frame + 1.65 ms JPEG on the RTX 4060 | EGL headless, 10 fps tile | `research/wbc-policy-proposal.md` |
@@ -159,8 +159,8 @@ The obvious shortcut was a standalone pose client that runs its own `SonicExecut
 **9. Write the join's pose feed every control tick, not every rendered frame.**
 `body_state.json` is what the relay reads, so gating it on the render cadence made the game's pose rate a side effect of the tile's frame rate: at `--fps 10` the body still stepped at 45 Hz but the game received 100 ms pose steps. Someone dropping the frame rate for CPU headroom would have degraded the join without touching it. Measured after the fix: state updates 45.8/s while frames render at 4.5/s.
 
-**10. Trust the measured envelope, and let it shape the demo.**
-The reliable reach is ~0.20 m, so a standing body cannot touch The Fall's 0.70 m pistol pedestal — measured, 27.3 cm short. The consequence is a design rule, not a rounding error: the body must *walk closer* to what it wants, and must *turn to face* a target rather than aim sideways, because at 30° off-axis the arm error grows from 3.51 cm to 8.63 cm and from 7.22° to 28.33°.
+**10. Trust the measured reach, and read travel and precision as separate numbers.**
+The wrist travels **0.41 m** forward at `forward_m=0.35`, and **0.51 m** when the target is raised to `up_m=+0.30`. What it does *not* do is arrive precisely: the residual at those two points is **0.20 m** and **0.096 m**, and it does not improve as the command gets smaller. Every earlier “~0.20 m envelope” figure came from sweeping `forward_m` while the harness moved the wrist **across the body** — the axis the policy is worst on — and is retired (`research/strike-results.md` §Addendum). The consequence is still a design rule, not a rounding error: the body *turns to face* a target rather than aiming sideways, because at 30° off-axis the arm error grows from 3.51 cm to 8.63 cm and from 7.22° to 28.33°. Under Job Simulator nothing sits at 0.70 m, so whether a step is needed is unmeasured.
 
 ---
 
@@ -317,7 +317,7 @@ The sharpest limitations, stated as facts rather than caveats:
 - **The body cannot walk under command.** It is clip-anchored: `AUTH_ROOT_VEL` is not honoured in a hold session, so it leans and reaches on the spot. "Dodge" is a 12 cm lean, measured, not a sidestep.
 - **It runs 11% slow beside the game.** 44.2–44.5 Hz against a 50 Hz design point, and each tick advances exactly 20 ms of simulated time, so the game sees 0.89× real time. Idle it hits 49.6–49.9 Hz. Superhot scales its own clock with player motion, which absorbs most of this, but it is a real number and it varies with load.
 - **Off-axis aiming fails.** At 30° the body points 28.3° off, so it must turn rather than aim sideways.
-- **Reach is ~0.20 m.** A standing body cannot touch a 0.70 m pedestal; the pistol sits 27.3 cm out of reach.
+- **Reach travels 0.41–0.51 m but lands 0.10–0.20 m off.** Travel rises monotonically with the command; precision does not improve when the command is shorter. Job Simulator's object distances are unmeasured.
 - **Controller orientation is unverified.** Positions are exact, but the robot's wrist frame is not an OpenXR controller grip, so the in-game aim ray may be rotated by a fixed offset. Untested.
 - **`hold` has a settle transient.** The 1.3×10⁻⁴ m/s figure is the settled hold; entering it from a walk costs about 0.05 m/s RMS for the first seconds.
 - **A static ~0.156 m offset between the model and the clip reference is unexplained.** Commanding the clip's exact f0 wrist target still leaves a **0.1557 m** left-wrist residual (0.1208 m right, median over 1000 frames of `spike/wbc/logs/c3m_H3_squat_f0_from_squat.jsonl`). In a settled hold the same comparison reads 0.0609 / 0.0324 m, so the offset is specific to the clip-anchored case and inflates every residual measured there.

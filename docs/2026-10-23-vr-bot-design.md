@@ -10,9 +10,9 @@ Related research (not this document): `RESEARCH.md`, `research/e1-spike-results.
 
 ## 1. Intent
 
-A hiring artifact for real-time controls and systems integration on a humanoid: Apptronik / Figure / Agility / NVIDIA-shaped internships. The claim that has to be true on camera is **balance-constrained whole-body control with an OpenXR runtime as the task interface**. Superhot can look clumsy. Fake poses cannot.
+A hiring artifact for real-time controls and systems integration on a humanoid: Apptronik / Figure / Agility / NVIDIA-shaped internships. The claim that has to be true on camera is **balance-constrained whole-body control with an OpenXR runtime as the task interface**. The demo can look clumsy. Fake poses cannot.
 
-The project is not “a robot plays Superhot.” Superhot is the first *adapter* over a general body command. The body must still make sense for another VR title or a non-game reach.
+The project is not “a robot plays a video game.” **Job Simulator is the first *adapter*** over a general body command, and the body must still make sense for another VR title or a non-game reach. Superhot VR was the first title chosen; since 2026-10-31 it is at most a *second* adapter, because the brain it was chosen to service was replaced (`docs/superpowers/specs/2026-10-31-brain.md`).
 
 ---
 
@@ -169,7 +169,7 @@ v1 System 1 is **two measured controllers and no training**: a learned whole-bod
 | Subsystem | v1 | Status |
 | --- | --- | --- |
 | **Locomotion + balance** | **GEAR-SONIC default** (`nvidia/GEAR-SONIC`; encoder 1762→64, decoder 994→29; 50 Hz policy, 500 Hz PD). **60 s walk: 39.79 m at 0.663 m/s, yaw drift −2.1°, tilt 9.5°, no fall, path error 0.23 m mean over 40 m.** 10 s walk: 6.36 m at 0.64 m/s. Dodge **0.15–0.18 m in < 0.5 s**. **6.8 ms per tick CPU**, ~0.9× realtime. **Hold is motion-dependent — see the next row.** | **MEASURED** (C3i + 3-variant sweep; default recommended) |
-| **Hold** | **RMS velocity 1.3×10⁻⁴ m/s once settled — 0.02% of walking speed**, so Superhot's clock should sit at its 0.005 floor. Recipe: **switch the reference to a standing clip (`squat_001__A359` frame 0) and hold the anchor index there** — an *anchor-only* freeze on a standing clip (1.9×10⁻⁴), **not** a flat horizon (2.3×10⁻²). A one-time settle of 8–12 cm that RMS does not capture, and entering from a walk costs a **~3–5 s transient at 0.13–0.18 m/s**. | **MEASURED** (C3m) |
+| **Hold** | **RMS velocity 1.3×10⁻⁴ m/s once settled — 0.02% of walking speed.** Recipe: **switch the reference to a standing clip (`squat_001__A359` frame 0) and hold the anchor index there** — an *anchor-only* freeze on a standing clip (1.9×10⁻⁴), **not** a flat horizon (2.3×10⁻²). A one-time settle of 8–12 cm that RMS does not capture, and entering from a walk costs a **~3–5 s transient at 0.13–0.18 m/s**. | **MEASURED** (C3m) |
 | **Upper-body precision** | **mink floating-base QP** (`spike/wbc_classical/wbc_spike.py`; 50 Hz, 10×2 ms substeps, `daqp`). Hold **0.22 mm base / 20 s** (head 1.4 mm). Look **±35°** with **0.63°** yaw error and **3.3 mm** base. Reach single-arm **2.2–12.9 mm**, both arms **17.5–28.8 mm**. Aim pointing **0.18–2.34°** single, 1.05–6.26° both. Punch **9.5 mm / 3.6°** (E3's DLS punch was 13.5 cm). Dodge **12.1–14.7 cm** but **0.62–0.86 s** to peak. Solve **0.51–1.08 ms** mean, 2.44 ms p95 | **MEASURED** |
 | Waist / look | SONIC couples head yaw → torso yaw at **~0.83 gain, saturating ~27–31°** — the virtual neck works natively. The QP instead commands waist yaw directly (±2.618 rad available; roll/pitch ±0.52 rad). E3 demonstrated ±35° | MEASURED |
 | **Arms while walking** | **SONIC's own arms, and they are the answer — the QP override failed.** Walking at a fixed aim point: **3.51 cm / 7.22°** straight ahead (max 7.19 cm), degrading to **8.63 cm / 28.3°** at 30° off-axis. Holding: 1.14 cm / 7.33°. A hard QP override made it **4× worse** (14.40 cm holding, 12.84 cm walking) and integral correction **tips the robot** (65–75° tilt). Only a **wrist-orientation-only override** helps: 7.22° → **5.08°** pointing, position unchanged. | **MEASURED** (C3j, 16 variants) |
@@ -190,7 +190,7 @@ v1 System 1 is **two measured controllers and no training**: a learned whole-bod
 
 **`hold` (load-bearing, v1) = policy at zero velocity with station-keeping.** Not a frozen pose. C3d proved a static pose cannot be entered from walking; C3b/C3e proved zero command still walks. With the P-only heading loop engaged at zero command: **1.344 m creep / 20 s (0.067 m/s), heading held to 2.49°** on the Playground model. That is **9% of walking speed** (0.743 m/s).
 
-Consequence for the freeze: if Superhot scales its clock with player motion — the stated mechanic, **unmeasured** — a 20 s think would advance the world ≈**1.8 s**, not 20 s. Without the loop it is 16% (~3.2 s). So the design target is no longer "drift < 2 cm"; it is **"creep low enough that a think does not kill us"**, and C0 measures whether Superhot tolerates it. Keep the < 2 cm figure as the stretch target for C3g's integral action. Superhot clocks on tracked HMD *and* controllers, so wrist sway also counts.
+Consequence for the freeze: **a think costs wall-clock, and only wall-clock.** Job Simulator does not scale time with player motion, so the arithmetic that used to sit here (a 20 s think at a 0.005 floor costs ≈0.1 s of game time) is deleted with the game. The body bar is unchanged: creep must be low enough that a 20 s think does not move a held object out of place or drift the wrists out of the reach cone. Keep the < 2 cm figure as the stretch target for C3g's integral action. Whether a slow turn is *safe* in Job Simulator is `[ASSUMPTION: genre; unmeasured]`; the cheap test is two stills 20 s apart in freeze-hold, diffed.
 
 **`look`.** Clamp `waist_yaw` to **±0.6 rad**. Request the remainder as `yaw_rate`. If `AUTH_ROOT_VEL` is unsupported, drop the remainder, set `SATURATED`, and accept a **±35° v1 look arc**. That is allowed for Superhot v1. Do not pretend a 180° turn.
 
@@ -250,16 +250,19 @@ The brain gets **stills during hold**, not a 30 Hz video into the VLM. The track
 
 ---
 
-## 12. Superhot milestone (E4)
+## 12. Job Simulator milestone (E4)
 
-- Title: Superhot VR, Proton, offline.
-- **First target: The Fall** (story level 1, scene `CezaryVR_ReverseFall`). First enemy **1.41 m** ahead at eye level; pistol and exit pyramid **0.70 m** forward at eye level. Combat is authored at conversational distance, so it sits inside the measured skill set. Scene order from the build: The Fall → Cage Fight → Corridor → Dojo → Airport.
-- **The clock is our ally, and it is measured.** `TimeControl.minTimescale = **0.005**`, `maxTimescale = 1.0`, read from the serialized assets of levels 0–5. The floor is **0.5% speed, not a pause**, so a 20 s think at the floor costs ≈**0.1 s** of game time. The QP's 0.22 mm hold is far below the **0.1** movement tick, so the clock should sit at the floor while holding. Run the VLM only in `hold`, never during `look`/`reach`. Do not enable the `MINIMAL_TIMESCALE_HIGHER` mod.
-- **Pass (bonus):** any in-game objective. **Demo 1 bar:** the stage clears, the game view and the sim body are both on video, the CSV proves packets == achieved `mjData`, and the trigger is logged as an input.
-- **Allowed fail:** robot in the level, flailing. That is still the video if honesty holds. Also allowed: the shot misses from a miscalibrated aim transform; the enemy kills the body; the body falls.
-- **Hard fail:** fake poses; using a game API or game memory in the motor path; a mouse/keyboard hack; claiming a clear when the level did not transition; substituting VRChat/Resonite for this milestone.
-- **Switch game only if Superhot will not take the synthetic HMD.**
-- **Open game-side unknowns** (protocol in `research/wbc-game-proposal.md` §5): whether the pistol is handed over or must be picked up, and whether the exit pyramid must be touched. If either needs contact at 0.70 m, the standing body is **19.7–27.3 cm short** and a step is required — switch to Cage Fight (opening enemy **0.90 m**) or make walking the next milestone. Do not teleport and do not fake the hand.
+Rewritten 2026-10-31. What survives from the Superhot version of this section is its measurement discipline, which is game-agnostic: packets == achieved `mjData`, grip logged as an input, no fake poses.
+
+- Title: Job Simulator (Steam 448280), Proton, offline. **Nothing in this section is measured yet.** Every Job Simulator fact below is `[OPERATOR]` or `[CITED]`, and the milestone re-earns them with a C0-JS run.
+- **First target: the museum hub.** JobBot speaks; take the business card; take a cartridge from the tray; take the **store clerk** cartridge; insert it; pull the lever labelled *pull to job* `[CITED: https://jobsimulator.fandom.com/wiki/JobBot]`. The brain spec treats this as the first proof (`docs/superpowers/specs/2026-10-31-brain.md` §16).
+- **Second target: Store Clerk, opening chores only.** Take a ticket; clear the counter (two cans); turn on the security camera by moving a hand near its power button `[OPERATOR]`.
+- **There is no clock to be an ally.** Job Simulator does not scale time with player motion, so a 20 s think costs 20 s of wall-clock and nothing else. Superhot's `minTimescale = 0.005` is kept as **provenance only** (`research/wbc-game-proposal.md`), not as a licence for this design. Run the brain only in freeze-hold — because a slow call must not let the wrists drift, not because time is stopped.
+- **Walking is not on the v1 critical path.** Demoted to v2 on 2026-10-31; Job Simulator needs a turn to face a counter and a reach across it, not a dodge (§18.2). `move` stays implemented and measured; it is simply not required here.
+- **Pass:** any spoken chore completed on video, the game view and the sim body both visible, the CSV proves packets == achieved `mjData`, and grip is logged as an input.
+- **Allowed fail:** robot in the level, flailing. That is still the video if honesty holds. Also allowed: reaching the wrong object; dropping the cartridge; never finding the camera button; hearing the instruction and doing nothing.
+- **Hard fail:** fake poses; using a game API or game memory in the motor path; a mouse/keyboard hack; claiming a chore completed when the transcript and pixels do not show it; substituting a scripted chore sequence for a brain decision.
+- **Open game-side unknowns, all unmeasured:** does JobBot's speech reach a capturable audio stream; is the instruction board legible at 1.19 m eye height; does the store require locomotion between stations; how far is the counter from spawn, and is the cartridge slot inside the reachable set; which controller channel is *grab* on this build. Protocol: a C0-JS run before E4, in the shape of `spike/c0/`.
 
 ---
 
@@ -359,9 +362,9 @@ Builder-check items 1, 3, 4, 5 (item 2 became §18.2):
 - **Q4 — height / space.** Raw `head_link` ~1.221 m in `stand`, STAGE, floor = sim ground, documented `hmd_z_offset` default 0. Re-measured after C3a because the policy's rest pose is `knees_bent`.
 - **Q5 — VLM is a skill classifier.** Skill+side only; adapter owns `p` via E3 offsets.
 
-**18.2 Closed 2026-10-23 — legs are on the v1 critical path.** Decision: keep Superhot and add the walking policy rather than switching to a stationary game.
+**18.2 Reopened and re-closed 2026-10-31 — legs are off the v1 critical path.** The 2026-10-23 decision was: keep Superhot and add the walking policy rather than switching to a stationary game. Its entire rationale was “Superhot forces lateral movement — dodge bullets, reach cover, close distance.” **The game changed, so the rationale is gone.** Job Simulator needs a turn to face a counter and a reach across it, not a dodge.
 
-Rationale: Superhot forces lateral movement — dodge bullets, reach cover, close distance. Waist twist displaces the head only ~10–15 cm (the head sits almost above the waist axis), so any stage with incoming fire is unsurvivable without a base that moves. A fixed turret demo would undercut the whole-body claim on inspection.
+Decision 2026-10-31: **walking is demoted to v2.** It is not needed for the Job Simulator milestone and it is not on the critical path. This is a scope reduction, not a capability retraction — the walk stays measured (§18.5; `research/sonic-gate-results.md`: 39.79 m in 60 s, 0.663 m/s, yaw −2.10°, no fall). `move` remains implemented and reachable; it is simply not required to complete the milestone. A fixed turret is still the thing to avoid, so the body turns and leans; it does not stand rigid.
 
 Three consequences accepted, all measured-or-measured-later rather than assumed:
 
@@ -401,7 +404,7 @@ Differences that matter: 6 foot/leg colliders vs 25 box colliders; actuator damp
 
 **C3d FAIL — the two-mode body is abandoned.** `park → walk` is safe (initial park settles in 0.04 s at 0.1° tilt; a 2 s walk segment holds 5–6°). **Every `walk → park` falls** in 0.64–1.49 s: ramps 0.05–2.0 s, a 2 s brake (still moved 1.72 m), a 3 s brake (2.15 m), a slow 0.05 m/s approach (0.98 m), and a `knees_bent` static pose (0.64 s). Root cause: **the policy has no stop**, and a static `stand` ctrl has **no balance feedback** — it is only stable from its exact initial condition. Not a ramp bug.
 
-**What replaces it.** The policy is always running; the outer loop is gain-scheduled (off while moving, on at zero command). Because a static pose is gone, “hold” means **zero velocity command plus station-keeping with measured creep**, not zero motion. Creep is 9% of walking speed; if Superhot scales its clock with player motion, a 20 s think advances the world ≈1.8 s, and **C0 decides whether the game tolerates that** — a game question, now decoupled from the controller.
+**What replaces it.** The policy is always running; the outer loop is gain-scheduled (off while moving, on at zero command). Because a static pose is gone, “hold” means **zero velocity command plus station-keeping with measured creep**, not zero motion. Creep is 9% of walking speed; **what that costs is a wall-clock cost, not a game-clock cost** — Job Simulator does not scale time with player motion, so a 20 s think takes 20 s, and the open question is whether a held object visibly drifts.
 
 **Open after C3d/C3e:** C3f (arms while walking, re-tested on the right XML — the old failure is void), C3g (integral action on station-keeping; the C3e-2 loop was P-only), C3h (gain scheduling). Also unresolved: C3c’s waist numbers were taken on the wrong model and need a re-test before "no independent look while walking" is treated as final. Honesty caveat carried forward: C3d’s reach-after-transition was never exercised, because the transition fell first — moot for now, since transitions are gone.
 
@@ -413,7 +416,7 @@ Three agents ran against `docs/2026-10-23-SuperBot-state-of-findings.md` with de
 
 **Route B — the precision half is classical, and it is excellent.** A mink floating-base QP: **hold 0.22 mm / 20 s**, look **±35°** at **0.63°** yaw error and **3.3 mm** base, reach single-arm **2.2–12.9 mm**, both arms **17.5–28.8 mm**, aim **0.18–2.34°** single, punch **9.5 mm / 3.6°** against E3's **13.5 cm**, solve **0.51–1.08 ms** mean. It cannot walk and the reason is structural, not tuning: sustained lateral weight shift is limited to **0.10 m** (0.12 m tips) and single support tips in **1.3–1.6 s**, because the formulation has no contact-force or CoP variable. A new probe also establishes the **reach envelope: 0.70 m forward at eye level leaves the wrist 19.7–27.3 cm short.**
 
-**Route C — the game-side contract is measured, and it is favourable.** `TimeControl.minTimescale = **0.005**` in levels 0–5, so the floor is **0.5% speed, not a pause**; a 20 s think costs ≈**0.1 s** of game time. The Fall is mapped: first enemy **1.41 m**, pistol and exit pyramid **0.70 m** at eye level. `Bullet.COLLISION_RADIUS` is **0.03 m**, `distanceCheckTimeTreshold` **2.5 m**, `maxHandsDistance` **2.0 m**. Corridor needs **12.31 m** of traversal and is not a first target.
+**Route C — the game-side contract was measured, and it is now provenance.** These are Superhot's serialized-asset values, retained because the *method* was the cheapest good measurement in the project (read the game's own constants where they are readable), not because they constrain this design: `TimeControl.minTimescale = **0.005**` in levels 0–5, so that game's floor was **0.5% speed, not a pause**; The Fall's first enemy **1.41 m**, pistol and exit pyramid **0.70 m** at eye level; `Bullet.COLLISION_RADIUS` **0.03 m**, `distanceCheckTimeTreshold` **2.5 m**, `maxHandsDistance` **2.0 m**; Corridor needs **12.31 m** of traversal. Job Simulator has no time scaling and none of these are re-inherited as requirements.
 
 **What changed in this document.** §7 was rewritten: the executor is **SONIC for locomotion/balance + the QP for upper-body precision**, with no training on the critical path. §12 now carries The Fall's geometry and the clock floor. The Playground `g1_policy.onnx` is off the critical path entirely.
 
@@ -450,11 +453,11 @@ Detail in `research/c3m-results.md`; script `spike/wbc/hold_c3m.py`; data `spike
 
 36× less drift, 24× less motion, one mode change. Nothing about clip choice was involved, so §18.6's "the hold is motion-dependent, we were quoting the flattering clip" was the wrong diagnosis and is superseded.
 
-**The freeze is real, and the correct recipe is the opposite of the obvious one.** Best measured hold: **RMS 1.3×10⁻⁴ m/s settled — 0.02% of walking speed**, p95 2×10⁻⁴, which pins the clock at its 0.005 floor. The shipping form is **a switch to a standing clip (`squat_001__A359` frame 0) with an anchor-index freeze** (1.9×10⁻⁴), **not** a flat horizon (2.3×10⁻²). A flat horizon *rescues* a walking clip (0.2005 → 0.0085) and *degrades* a standing one (0.00019 → 0.0233), apparently by stripping the velocity/phase information the policy expects. The deciding factor is **whether the lookahead contains walking motion** — not which freeze mode you pick. Use a flat horizon only as a repair when you must freeze a walking clip in place.
+**The freeze is real, and the correct recipe is the opposite of the obvious one.** Best measured hold: **RMS 1.3×10⁻⁴ m/s settled — 0.02% of walking speed**, p95 2×10⁻⁴. The Superhot inference that this “pins the clock at its 0.005 floor” is retired with the game; the number is a body fact and survives. The shipping form is **a switch to a standing clip (`squat_001__A359` frame 0) with an anchor-index freeze** (1.9×10⁻⁴), **not** a flat horizon (2.3×10⁻²). A flat horizon *rescues* a walking clip (0.2005 → 0.0085) and *degrades* a standing one (0.00019 → 0.0233), apparently by stripping the velocity/phase information the policy expects. The deciding factor is **whether the lookahead contains walking motion** — not which freeze mode you pick. Use a flat horizon only as a repair when you must freeze a walking clip in place.
 
 **Entered from a walk it survives and resumes.** Five walk→hold→walk cycles, 100 s: no fall, worst tilt **9.5°**, cumulative hold **0.478 m**, walk resumes within **~0.2 m** of reference every cycle, largest switch-edge tilt **5.5°**. That is the transition C3d could not do (fell 0.64–1.49 s) and C3h could not do (fell 3.11–4.24 s).
 
-**What a think costs.** Immediately after the switch the body is still moving at **0.13–0.18 m/s** for ~3–5 s; the per-cycle hold RMS of 0.050 is that transient averaged over a 10 s hold, not drift. So a 20 s think costs ≈**0.6–0.8 s of game time, dominated by the settle** — plus 0.1 s for the think itself at the clock floor. Think after the settle, or budget for it.
+**What a think costs.** Immediately after the switch the body is still moving at **0.13–0.18 m/s** for ~3–5 s; the per-cycle hold RMS of 0.050 is that transient averaged over a 10 s hold, not drift. So a 20 s think **begins with a 3–5 s settle** and only then is the body still. Think after the settle, or budget for it. (Superhot priced this in game time because the clock scaled with motion; Job Simulator makes it wall-clock, which downgrades the settle from a safety problem to a spectator one.)
 
 **R2 status: met, with a stated caveat.** The <5 cm bar is missed only by a **one-time settle of 8–12 cm** while RMS falls to 10⁻⁴; it is not creep. Whether an 8 cm shift on stopping matters in game is a C0 observation.
 
