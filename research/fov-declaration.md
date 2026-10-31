@@ -67,3 +67,65 @@ separate assumption this task does not make.
 Five tests in `tests/test_wire.py:DeclaredFov` pin our side, including that declaring
 a FOV does not move the head pose (otherwise a changed image could not be attributed
 to the field of view).
+
+## MEASURED 2026-10-31 — the declaration is honoured, and changing it live is not safe
+
+First run where the declaration actually reached the driver. Three earlier "looks the
+same" reports were not measurements: `config.toml` had no `fov` key, so nothing was
+declared, and one of them was `mode=hold`, which runs the *scripted* `c0` client and
+never passes FOV flags at all. The relay's own log is the admission ticket:
+
+```
+pose_relay: declaring fov 110.0 x 78.0 deg full (55.0/39.0 half)
+```
+
+Operator observation, immediately after that line appeared: **the view briefly
+widened.** So `r_head_data::per_view_data_valid` + the per-view `fov` block are acted
+on by this build - the ASSUMPTION above is now MEASURED, at least qualitatively
+(eyeball, one frame, no capture; see the gap at the end).
+
+And then Superhot died, taking Steam with it. The dashboard afterwards:
+
+```
+mode: body | monado True | weston True | steam False | game False
+```
+
+Monado and Weston survived; the OpenXR client did not. Monado's last words are a
+client tearing down its space:
+
+```
+ERROR [ipc_server_objects_destroy_xspc] Client tried to destroy non-existent space!
+ERROR [ipc_handle_space_destroy] ipc_server_objects_destroy_xspc failed:
+      XRT_ERROR_IPC_FAILURE
+ INFO [client_disconnected] Client 4 disconnected
+```
+
+### What this does and does not establish
+
+MEASURED: the driver honours a declared field of view.
+
+ASSUMPTION, the leading explanation: the change was applied to a *live* session. The
+game and SteamVR had already created swapchains against the previous view
+configuration, then the relay restarted mid-session and Monado began reporting a
+different one. OpenXR clients are expected to react to
+`XR_TYPE_EVENT_DATA_VIEW_CONFIGURATION_CHANGED` by recreating swapchains; SteamVR on
+Proton evidently does not do that gracefully. The predicted consequence is exactly
+what happened: a moment of correct wide rendering, then the client dies.
+
+NOT established: that 110 deg is itself too wide. Nothing here tests a session
+started with the declaration in place, which is the next run. If a from-start session
+is stable at 110, the live-change hypothesis stands; if it also dies, the value or the
+aspect (110x78 = 1.41, not 16:9) is implicated.
+
+### Separate defect found in the same log
+
+`monado.log` reached 33.5 MB in 45 minutes, from ~200,000 repetitions of
+
+```
+ERROR [u_device_ni_set_output] Function set_output is not implemented for 'Remote <side> Controller'
+```
+
+That is ~74/s, i.e. per controller per frame: the packet drives something that makes
+Monado attempt a haptic output call every frame. Body mode only. Harmless to the
+render, but it is 44 MB/hour of disk and CPU per session, and it buries real errors.
+Not yet diagnosed; not the crash.
