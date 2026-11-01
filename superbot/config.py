@@ -145,9 +145,10 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         # the "application_name: '...'" line. Job Simulator through the OpenComposite
         # shim reports OpenComposite_wine64-preloader, so "OpenComposite" matches.
         "openxr_client_name": "OpenComposite",
-        # Monado's remote HMD reports 960x1080 per eye (a 1920x1080 display split
-        # side by side) and scales it by OXR_VIEWPORT_SCALE_PERCENTAGE. At 100 the
-        # mirror is too soft to read text in; 200 renders 1920x2160 per eye.
+        # The remote HMD reports 1920x1080 per eye (r_hmd.c in the flake widens its
+        # display to 3840x1080) and the OpenXR runtime scales each view by
+        # OXR_VIEWPORT_SCALE_PERCENTAGE. 100 is that native 1080p; 200 supersamples
+        # to 3840x2160, which keeps the 1920x1080 mirror crisp.
         "viewport_scale_percentage": 200.0,
         # xdotool --name pattern used to fullscreen the game window. Empty disables.
         "game_window": "Job Simulator",

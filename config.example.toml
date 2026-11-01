@@ -73,10 +73,11 @@ proton_app_id = "0000000000"
 # OpenComposite_wine64-preloader, so "OpenComposite" matches it.
 openxr_client_name = "OpenComposite"
 
-# Per-eye render scale, in percent. Monado's remote HMD reports 960x1080 per eye
-# (a 1920x1080 display split side by side) and scales that by
-# OXR_VIEWPORT_SCALE_PERCENTAGE. 100 is Monado's own default and too soft to read
-# text from; 200 renders 1920x2160 per eye. 0 is refused; the ceiling is 400.
+# Per-eye render scale, in percent. The remote HMD reports 1920x1080 per eye
+# (r_hmd.c in the flake widens the display to 3840x1080) and the OpenXR runtime
+# scales each view by OXR_VIEWPORT_SCALE_PERCENTAGE. 100 is that native 1080p;
+# 200 supersamples to 3840x2160, which keeps the 1920x1080 mirror crisp. 0 is
+# refused; the ceiling is 400.
 viewport_scale_percentage = 200
 
 # xdotool --name pattern for the game window, used to fullscreen it. Empty

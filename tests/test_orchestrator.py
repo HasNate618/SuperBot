@@ -240,8 +240,12 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(initial_mode(self.cfg), "hold")
 
     def test_steam_env_carries_the_viewport_scale(self) -> None:
+        self.manager.cfg = replace(
+            self.cfg,
+            launch=replace(self.cfg.launch, viewport_scale_percentage=150.0),
+        )
         self.assertEqual(
-            self.manager._steam_env()["OXR_VIEWPORT_SCALE_PERCENTAGE"], "200"
+            self.manager._steam_env()["OXR_VIEWPORT_SCALE_PERCENTAGE"], "150"
         )
 
     def test_steam_env_omits_a_native_scale(self) -> None:
@@ -252,6 +256,16 @@ class OrchestratorTests(unittest.TestCase):
         self.assertNotIn(
             "OXR_VIEWPORT_SCALE_PERCENTAGE", self.manager._steam_env()
         )
+
+    def test_steam_env_imports_the_host_openxr_runtime(self) -> None:
+        self.manager.cfg = replace(
+            self.cfg, paths=replace(self.cfg.paths, vr_override="/shim")
+        )
+        env = self.manager._steam_env()
+        self.assertEqual(env["PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES"], "1")
+        # Pinning the client with XR_RUNTIME_JSON makes OpenComposite fail to
+        # enumerate extensions, so the host's registered runtime must be imported.
+        self.assertNotIn("XR_RUNTIME_JSON", env)
 
     def test_launch_asks_the_game_window_to_fullscreen(self) -> None:
         self.start()

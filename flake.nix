@@ -18,8 +18,58 @@
         "aarch64-linux"
       ];
       forAllSystems = nixpkgs.lib.genAttrs systems;
+
+      # Beyley's Monado fork (PSVR2 HMD + 6DOF controllers), built from the compat
+      # pin for the same reason as opencomposite: a library built against a newer
+      # glibc cannot be loaded inside the Steam Linux Runtime. The patched remote
+      # HMD geometry lives in the service this repo runs; keeping it here instead
+      # of /etc/nixos puts the VR stack in one place.
+      monadoFor =
+        system:
+        let
+          pkgsCompat = nixpkgs-compat.legacyPackages.${system};
+        in
+        pkgsCompat.monado.overrideAttrs (old: {
+          pname = "monado-psvr2";
+          version = "psvr2-work-steamvr-2026-06-04";
+          src = pkgsCompat.fetchFromGitLab {
+            domain = "gitlab.freedesktop.org";
+            owner = "Beyley";
+            repo = "monado";
+            rev = "47f9d39e686d6bbd7dad914b4dbe21f784c41911";
+            hash = "sha256-APEA1ivUGTrchePh1XJXycxB9/IRze7ltCPH0qkvAE4=";
+          };
+          buildInputs = (old.buildInputs or [ ]) ++ (with pkgsCompat; [
+            hidapi
+            libuvc
+            libjpeg
+          ]);
+          # Upstream nixpkgs patches do not apply to this fork.
+          patches = [ ];
+          postPatch = (old.postPatch or "") + ''
+            # The dashboard previews at 30 fps while the game runs at 60 Hz, but
+            # Monado's null compositor hardcodes 20 Hz.
+            substituteInPlace src/xrt/compositor/null/null_compositor.c \
+              --replace-fail 'U_TIME_1S_IN_NS / 20' 'U_TIME_1S_IN_NS / 60'
+            # The remote HMD's display geometry and per-eye FOV are hardcoded here.
+            # A 1920x1080 display split side by side gives a portrait 960x1080 eye,
+            # so a 1080p view is impossible and the mirror is upscaled; 3840x1080
+            # splits into two true 1920x1080 eyes. 85 degrees per eye is narrow.
+            substituteInPlace src/xrt/drivers/remote/r_hmd.c \
+              --replace-fail 'info.display.w_pixels = 1920;' 'info.display.w_pixels = 3840;' \
+              --replace-fail 'info.fov[0] = 85.0f * (M_PI / 180.0f);' 'info.fov[0] = 110.0f * (M_PI / 180.0f);' \
+              --replace-fail 'info.fov[1] = 85.0f * (M_PI / 180.0f);' 'info.fov[1] = 110.0f * (M_PI / 180.0f);'
+          '';
+          cmakeFlags = nixpkgs.lib.remove "-DXRT_HAVE_STEAM:BOOL=TRUE" (old.cmakeFlags or [ ]);
+        });
+
     in
     {
+      packages = forAllSystems (system: {
+        monado = monadoFor system;
+        default = monadoFor system;
+      });
+
       # The app itself is standard-library-only Python; what this shell pins is
       # the host tooling the launch path needs (nested Weston VNC, websockify
       # and noVNC, plus optional magick and mpv for --preview-smoke).
@@ -29,6 +79,7 @@
           pkgs = nixpkgs.legacyPackages.${system};
           # Only opencomposite comes from the older pin; everything else stays current.
           pkgsCompat = nixpkgs-compat.legacyPackages.${system};
+          monado = monadoFor system;
         in
         {
           default = pkgs.mkShell {
@@ -46,11 +97,19 @@
               # bin/linux64/vrclient.so when VR_OVERRIDE points here. xrizer panics
               # on Job Simulator's action manifest; OpenComposite does not.
               pkgsCompat.opencomposite
+              # The patched Monado this repo runs; its path reaches the app through
+              # SUPERBOT_PATHS_MONADO_BIN below.
+              monado
             ];
             shellHook = ''
               # Hand the shim path to the app through its documented env override,
               # so config.toml need not hard-code a /nix/store path.
               export SUPERBOT_PATHS_VR_OVERRIDE="''${SUPERBOT_PATHS_VR_OVERRIDE:-${pkgsCompat.opencomposite}/lib/opencomposite}"
+              # Run the repo-built Monado (patched remote HMD, Steam-runtime
+              # compatible) instead of the NixOS wrapper. Only the service needs
+              # patching: the display geometry and FOV live there, and the host's
+              # client library is the same Monado version.
+              export SUPERBOT_PATHS_MONADO_BIN="''${SUPERBOT_PATHS_MONADO_BIN:-${monado}/bin/monado-service}"
             '';
           };
         }

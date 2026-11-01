@@ -597,14 +597,21 @@ class SessionManager:
             # whatever ~/.config/openvr/openvrpaths.vrpath names. Job Simulator's
             # action manifest panics xrizer, so the launcher uses OpenComposite.
             env["VR_OVERRIDE"] = self.cfg.paths.vr_override
-            # pressure-vessel hides the host's OpenXR runtimes unless asked to import.
+            # pressure-vessel hides the host's OpenXR runtimes unless asked to
+            # import them. Importing is also how the game's client library gets
+            # chosen: pointing XR_RUNTIME_JSON at the build ourselves makes
+            # OpenComposite fail with "Failed to enumerate XR extensions" (-13).
+            # Importing is safe because r_hmd's display geometry and FOV live in
+            # the service (libmonado), not the client, and the repo build is the
+            # same Monado version as the host's.
             env["PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES"] = "1"
         scale = self.cfg.launch.viewport_scale_percentage
         if scale != 100.0:
             # The OpenXR runtime scales the HMD's per-view image by this percentage,
             # and that runtime runs inside the game, so the value has to be in the
-            # environment Steam hands down. 100 is Monado's own default, which is
-            # 960x1080 per eye for the remote HMD and too soft to read text from.
+            # environment Steam hands down. The remote HMD reports 1920x1080 per eye
+            # (r_hmd.c in the flake widens its display to 3840x1080); 200 renders
+            # 3840x2160 per eye, which keeps the 1920x1080 mirror crisp.
             env["OXR_VIEWPORT_SCALE_PERCENTAGE"] = f"{scale:g}"
         return env
 
