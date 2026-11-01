@@ -337,22 +337,15 @@ def hold(
     the last state it achieved. With no state at all, the channels are claimed
     but carry no pose, and `channel_pose` answers with the clip.
     """
-    poses = (
-        {}
-        if state is None
-        else {
-            "head": state.head,
-            "left_hand": state.left_hand,
-            "right_hand": state.right_hand,
-        }
-    )
     return BodyCommand(
         seq=seq,
         t_mono_ns=now_ns,
         ttl_ms=ttl_ms,
         authority=FREEZE_HOLD_AUTH,
         source="script",
-        **poses,
+        head=None if state is None else state.head,
+        left_hand=None if state is None else state.left_hand,
+        right_hand=None if state is None else state.right_hand,
     )
 
 
