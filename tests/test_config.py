@@ -22,7 +22,9 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(cfg.preview.panel_height, 32)
         self.assertEqual(cfg.preview.fps, 30.0)
         self.assertEqual(cfg.dashboard.port, 8765)
-        self.assertEqual(cfg.launch.shortcut_id, "18251483899710406656")
+        self.assertEqual(cfg.launch.shortcut_id, "14670405696621641728")
+        self.assertEqual(cfg.launch.openxr_client_name, "OpenComposite")
+        self.assertTrue(cfg.paths.game_player_log.endswith("output_log.txt"))
         self.assertTrue(cfg.paths.pose_client.endswith("spike/c0/c0_client.py"))
 
     def test_vnc_defaults(self) -> None:

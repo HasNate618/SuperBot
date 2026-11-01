@@ -315,7 +315,7 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(snapshot["openxr_client"], "Unity Application")
         self.assertTrue(snapshot["processes"]["game"]["alive"])
         self.assertEqual(snapshot["preview"]["width"], 1280)
-        self.assertTrue(snapshot["player_log"].endswith("Player.log"))
+        self.assertTrue(snapshot["player_log"].endswith("output_log.txt"))
 
     def test_snapshot_keeps_openxr_client_across_log_growth(self) -> None:
         self.start()

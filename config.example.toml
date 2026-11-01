@@ -29,7 +29,18 @@ websockify_bin = "websockify"
 # steam_bin: the steam *client* launcher, not the runtime's steam binary.
 # game_exe:  the .exe itself; it is launched through Steam, not directly.
 steam_bin = "/home/YOUR_USER/.local/bin/steam"
-game_exe = "/home/YOUR_USER/Games/SUPERHOT VR/SUPERHOT_VR.exe"
+game_exe = "/home/YOUR_USER/Games/Job Simulator/JobSimulator.exe"
+
+# Unity log, relative to the Proton prefix's pfx/drive_c/users/steamuser.
+# The dashboard links it. Job Simulator writes output_log.txt; most Unity
+# titles write Player.log.
+game_player_log = "AppData/LocalLow/Owlchemy Labs/Job Simulator/output_log.txt"
+
+# Directory whose bin/linux64/vrclient.so implements OpenVR on top of OpenXR,
+# exported to Proton as VR_OVERRIDE. Empty means "use whatever
+# ~/.config/openvr/openvrpaths.vrpath names". Job Simulator's action manifest
+# panics xrizer, so point this at OpenComposite (the devShell sets it for you).
+vr_override = ""
 
 # The pose client that feeds fabricated HMD/controller poses to Monado.
 pose_client = "spike/c0/c0_client.py"
@@ -51,6 +62,11 @@ shortcut_id = "0000000000000000000"
 # Proton app id used for the compatibility prefix. For a non-Steam shortcut
 # this is the same numeric id Steam reports as AppId.
 proton_app_id = "0000000000"
+
+# The Monado application_name the game connects as, matched as a prefix of the
+# "application_name: '...'" line. Job Simulator through OpenComposite reports
+# OpenComposite_wine64-preloader, so "OpenComposite" matches it.
+openxr_client_name = "OpenComposite"
 
 # Extra args passed to Steam. -cef-disable-gpu keeps the Steam UI from
 # fighting the game for the GPU on small cards.

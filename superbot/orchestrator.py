@@ -460,7 +460,8 @@ class SessionManager:
             Path.home()
             / ".local/share/Steam/steamapps/compatdata"
             / self.cfg.launch.proton_app_id
-            / "pfx/drive_c/users/steamuser/AppData/LocalLow/SUPERHOT_Team/SUPERHOT_VR/Player.log"
+            / "pfx/drive_c/users/steamuser"
+            / self.cfg.paths.game_player_log
         )
         return {
             "state": state,
@@ -582,6 +583,13 @@ class SessionManager:
             env["DISPLAY"] = self._display
         if self._socket_name:
             env["WAYLAND_DISPLAY"] = self._socket_name
+        if self.cfg.paths.vr_override:
+            # Point Proton's C:\vrclient bridge at a specific OpenVR shim instead of
+            # whatever ~/.config/openvr/openvrpaths.vrpath names. Job Simulator's
+            # action manifest panics xrizer, so the launcher uses OpenComposite.
+            env["VR_OVERRIDE"] = self.cfg.paths.vr_override
+            # pressure-vessel hides the host's OpenXR runtimes unless asked to import.
+            env["PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES"] = "1"
         return env
 
     def _log(self, name: str) -> Path:
@@ -962,7 +970,7 @@ class SessionManager:
         self.runner.write_pointer(self._pointer)
         self.runner.wait_log(
             self._log("monado"),
-            "application_name: 'Unity Application'",
+            f"application_name: '{self.cfg.launch.openxr_client_name}",
             self._startup_timeout(self.cfg.launch.openxr_client_timeout_sec),
             self._stop_event,
         )

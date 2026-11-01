@@ -1,5 +1,5 @@
 {
-  description = "SuperBot — a simulated Unitree G1 plays Superhot VR with no headset";
+  description = "SuperBot — a simulated Unitree G1 plays Job Simulator VR with no headset";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
@@ -30,7 +30,16 @@
               pkgs.mpv
               pkgs.novnc
               pkgs.python3Packages.websockify
+              # OpenVR -> OpenXR shim. Proton's C:\vrclient bridge loads its
+              # bin/linux64/vrclient.so when VR_OVERRIDE points here. xrizer panics
+              # on Job Simulator's action manifest; OpenComposite does not.
+              pkgs.opencomposite
             ];
+            shellHook = ''
+              # Hand the shim path to the app through its documented env override,
+              # so config.toml need not hard-code a /nix/store path.
+              export SUPERBOT_PATHS_VR_OVERRIDE="''${SUPERBOT_PATHS_VR_OVERRIDE:-${pkgs.opencomposite}/lib/opencomposite}"
+            '';
           };
         }
       );

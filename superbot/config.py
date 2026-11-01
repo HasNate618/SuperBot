@@ -25,6 +25,8 @@ class PathsConfig:
     websockify_bin: str
     novnc_web_root: str
     game_exe: str
+    game_player_log: str
+    vr_override: str
     pose_client: str
     openxr_active_runtime: str
     session_root: str
@@ -39,6 +41,7 @@ class LaunchConfig:
     steam_ready_timeout_sec: float
     game_process_timeout_sec: float
     openxr_client_timeout_sec: float
+    openxr_client_name: str
     startup_timeout_sec: float
 
 
@@ -114,19 +117,30 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         "novnc_bin": "novnc",
         "websockify_bin": "websockify",
         "novnc_web_root": "",
-        "game_exe": "SUPERHOT_VR.exe",
+        "game_exe": "JobSimulator.exe",
+        # Unity log relative to .../pfx/drive_c/users/steamuser. The dashboard links
+        # it. Job Simulator writes output_log.txt; most Unity titles write Player.log.
+        "game_player_log": "AppData/LocalLow/Owlchemy Labs/Job Simulator/output_log.txt",
+        # Directory holding the OpenVR shim's bin/linux64/vrclient.so, exported to
+        # Proton as VR_OVERRIDE. Empty leaves ~/.config/openvr/openvrpaths.vrpath in
+        # charge. The devShell points this at nixpkgs' opencomposite.
+        "vr_override": "",
         "pose_client": "spike/c0/c0_client.py",
         "openxr_active_runtime": os.path.expanduser("~/.config/openxr/1/active_runtime.json"),
         "session_root": os.path.expanduser("~/.local/state/SuperBot/sessions"),
     },
     "launch": {
-        "shortcut_id": "18251483899710406656",
-        "proton_app_id": "4249504744",
+        "shortcut_id": "14670405696621641728",
+        "proton_app_id": "3415720001",
         "steam_extra_args": ("-cef-disable-gpu",),
         "steam_settle_sec": 60.0,
         "steam_ready_timeout_sec": 120.0,
         "game_process_timeout_sec": 60.0,
         "openxr_client_timeout_sec": 60.0,
+        # The Monado application_name the game connects as, matched as a prefix of
+        # the "application_name: '...'" line. Job Simulator through the OpenComposite
+        # shim reports OpenComposite_wine64-preloader, so "OpenComposite" matches.
+        "openxr_client_name": "OpenComposite",
         "startup_timeout_sec": 300.0,
     },
     "body": {
@@ -434,6 +448,8 @@ def missing_requirements(cfg: Config) -> list[str]:
         ("openxr runtime", cfg.paths.openxr_active_runtime, os.R_OK),
         ("pose client", cfg.paths.pose_client, os.R_OK),
     ]
+    if cfg.paths.vr_override:
+        checks.append(("vr shim", cfg.paths.vr_override, os.R_OK))
     missing: list[str] = []
     for label, value, mode in checks:
         resolved = _resolve_executable(value)
