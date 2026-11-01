@@ -607,11 +607,11 @@ class SessionManager:
             env["PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES"] = "1"
         scale = self.cfg.launch.viewport_scale_percentage
         if scale != 100.0:
-            # The OpenXR runtime scales the HMD's per-view image by this percentage,
-            # and that runtime runs inside the game, so the value has to be in the
-            # environment Steam hands down. The remote HMD reports 1920x1080 per eye
-            # (r_hmd.c in the flake widens its display to 3840x1080); 200 renders
-            # 3840x2160 per eye, which keeps the 1920x1080 mirror crisp.
+            # The OpenXR runtime scales each view's recommended size by this
+            # percentage, and that runtime runs inside the game, so the value has
+            # to be in the environment Steam hands down. The recommended size is
+            # the null compositor's (the flake raises it from 320x240 to
+            # 1920x1080), so 100 is true 1080p per eye and 200 is 3840x2160.
             env["OXR_VIEWPORT_SCALE_PERCENTAGE"] = f"{scale:g}"
         return env
 

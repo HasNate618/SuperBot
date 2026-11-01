@@ -24,7 +24,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(cfg.dashboard.port, 8765)
         self.assertEqual(cfg.launch.shortcut_id, "14670405696621641728")
         self.assertEqual(cfg.launch.openxr_client_name, "OpenComposite")
-        self.assertEqual(cfg.launch.viewport_scale_percentage, 200.0)
+        self.assertEqual(cfg.launch.viewport_scale_percentage, 100.0)
         self.assertEqual(cfg.launch.game_window, "Job Simulator")
         self.assertEqual(cfg.paths.xdotool_bin, "xdotool")
         self.assertTrue(cfg.paths.game_player_log.endswith("output_log.txt"))

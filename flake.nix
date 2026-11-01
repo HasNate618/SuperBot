@@ -49,16 +49,34 @@
           postPatch = (old.postPatch or "") + ''
             # The dashboard previews at 30 fps while the game runs at 60 Hz, but
             # Monado's null compositor hardcodes 20 Hz.
+            #
+            # The compositor, not the remote HMD, is what the app asks for its
+            # recommended view size, and it ships a 320x240 recommendation capped
+            # at 1920x1080. OXR_VIEWPORT_SCALE_PERCENTAGE multiplies the 320x240,
+            # so even 200% was a 640x480 render upscaled into a 1080p window. A
+            # 320x240 buffer also has a 4:3 aspect against a 16:9 frustum, which
+            # stretches the image. Recommend true 1080p per eye and raise the cap
+            # so supersampling is possible.
             substituteInPlace src/xrt/compositor/null/null_compositor.c \
-              --replace-fail 'U_TIME_1S_IN_NS / 20' 'U_TIME_1S_IN_NS / 60'
+              --replace-fail 'U_TIME_1S_IN_NS / 20' 'U_TIME_1S_IN_NS / 60' \
+              --replace-fail 'static const uint64_t RECOMMENDED_VIEW_WIDTH = 320;' 'static const uint64_t RECOMMENDED_VIEW_WIDTH = 1920;' \
+              --replace-fail 'static const uint64_t RECOMMENDED_VIEW_HEIGHT = 240;' 'static const uint64_t RECOMMENDED_VIEW_HEIGHT = 1080;' \
+              --replace-fail 'static const uint64_t MAX_VIEW_WIDTH = 1920;' 'static const uint64_t MAX_VIEW_WIDTH = 3840;' \
+              --replace-fail 'static const uint64_t MAX_VIEW_HEIGHT = 1080;' 'static const uint64_t MAX_VIEW_HEIGHT = 2160;'
             # The remote HMD's display geometry and per-eye FOV are hardcoded here.
             # A 1920x1080 display split side by side gives a portrait 960x1080 eye,
             # so a 1080p view is impossible and the mirror is upscaled; 3840x1080
-            # splits into two true 1920x1080 eyes. 85 degrees per eye is narrow.
+            # splits into two true 1920x1080 eyes. The vertical FOV is derived from
+            # the physical display, and 0.13 x 0.07 is a portrait 0.93 per-eye
+            # aspect against a 16:9 buffer, so the frustum does not match the image
+            # and the view is distorted. 0.0366 keeps 16:9 per eye; 140 degrees is
+            # then ~114.3 degrees vertically, which is deliberately very wide.
             substituteInPlace src/xrt/drivers/remote/r_hmd.c \
               --replace-fail 'info.display.w_pixels = 1920;' 'info.display.w_pixels = 3840;' \
-              --replace-fail 'info.fov[0] = 85.0f * (M_PI / 180.0f);' 'info.fov[0] = 110.0f * (M_PI / 180.0f);' \
-              --replace-fail 'info.fov[1] = 85.0f * (M_PI / 180.0f);' 'info.fov[1] = 110.0f * (M_PI / 180.0f);'
+              --replace-fail 'info.display.h_meters = 0.07f;' 'info.display.h_meters = 0.0366f;' \
+              --replace-fail 'info.lens_vertical_position_meters = 0.07f / 2.0f;' 'info.lens_vertical_position_meters = 0.0366f / 2.0f;' \
+              --replace-fail 'info.fov[0] = 85.0f * (M_PI / 180.0f);' 'info.fov[0] = 140.0f * (M_PI / 180.0f);' \
+              --replace-fail 'info.fov[1] = 85.0f * (M_PI / 180.0f);' 'info.fov[1] = 140.0f * (M_PI / 180.0f);'
           '';
           cmakeFlags = nixpkgs.lib.remove "-DXRT_HAVE_STEAM:BOOL=TRUE" (old.cmakeFlags or [ ]);
         });

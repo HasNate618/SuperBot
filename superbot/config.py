@@ -149,7 +149,7 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         # display to 3840x1080) and the OpenXR runtime scales each view by
         # OXR_VIEWPORT_SCALE_PERCENTAGE. 100 is that native 1080p; 200 supersamples
         # to 3840x2160, which keeps the 1920x1080 mirror crisp.
-        "viewport_scale_percentage": 200.0,
+        "viewport_scale_percentage": 100.0,
         # xdotool --name pattern used to fullscreen the game window. Empty disables.
         "game_window": "Job Simulator",
         "startup_timeout_sec": 300.0,
