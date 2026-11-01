@@ -135,8 +135,8 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         "steam_extra_args": ("-cef-disable-gpu",),
         "steam_settle_sec": 60.0,
         "steam_ready_timeout_sec": 120.0,
-        "game_process_timeout_sec": 60.0,
-        "openxr_client_timeout_sec": 60.0,
+        "game_process_timeout_sec": 180.0,
+        "openxr_client_timeout_sec": 120.0,
         # The Monado application_name the game connects as, matched as a prefix of
         # the "application_name: '...'" line. Job Simulator through the OpenComposite
         # shim reports OpenComposite_wine64-preloader, so "OpenComposite" matches.

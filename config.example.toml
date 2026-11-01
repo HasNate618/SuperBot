@@ -75,8 +75,8 @@ steam_extra_args = ["-cef-disable-gpu"]
 # Timings, in seconds. Generous by default; tighten once you know your machine.
 steam_settle_sec = 60
 steam_ready_timeout_sec = 120
-game_process_timeout_sec = 60
-openxr_client_timeout_sec = 60
+game_process_timeout_sec = 180
+openxr_client_timeout_sec = 120
 startup_timeout_sec = 300
 
 [preview]

@@ -2,9 +2,16 @@
   description = "SuperBot — a simulated Unitree G1 plays Job Simulator VR with no headset";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  # OpenComposite is a C++ .so that Proton's vrclient bridge dlopen()s inside the
+  # Steam runtime. A build from a nixpkgs whose glibc is newer than the runtime's
+  # references GLIBC_2.43 symbols the runtime cannot satisfy, so the bridge falls
+  # back to wineopenxr and every OpenVR title fails with VRInitError 105 (as Job
+  # Simulator did). Build just that package from a nixpkgs whose glibc is at or
+  # below the runtime's (this rev is 2.42, matching Steam Linux Runtime 4).
+  inputs.nixpkgs-compat.url = "github:NixOS/nixpkgs/0954f7ee2f6bb3dc7d4e3d0d8bcb8fd4bde4cfc5";
 
   outputs =
-    { nixpkgs, ... }:
+    { nixpkgs, nixpkgs-compat, ... }:
     let
       systems = [
         "x86_64-linux"
@@ -20,6 +27,8 @@
         system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
+          # Only opencomposite comes from the older pin; everything else stays current.
+          pkgsCompat = nixpkgs-compat.legacyPackages.${system};
         in
         {
           default = pkgs.mkShell {
@@ -33,12 +42,12 @@
               # OpenVR -> OpenXR shim. Proton's C:\vrclient bridge loads its
               # bin/linux64/vrclient.so when VR_OVERRIDE points here. xrizer panics
               # on Job Simulator's action manifest; OpenComposite does not.
-              pkgs.opencomposite
+              pkgsCompat.opencomposite
             ];
             shellHook = ''
               # Hand the shim path to the app through its documented env override,
               # so config.toml need not hard-code a /nix/store path.
-              export SUPERBOT_PATHS_VR_OVERRIDE="''${SUPERBOT_PATHS_VR_OVERRIDE:-${pkgs.opencomposite}/lib/opencomposite}"
+              export SUPERBOT_PATHS_VR_OVERRIDE="''${SUPERBOT_PATHS_VR_OVERRIDE:-${pkgsCompat.opencomposite}/lib/opencomposite}"
             '';
           };
         }
