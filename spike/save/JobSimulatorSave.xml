@@ -1,0 +1,88 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<SaveData xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <HasSeenGameComplete>1</HasSeenGameComplete>
+  <JobsData>
+    <JobSaveData id="Office">
+      <Tasks>
+        <TaskSaveData id="TASK_MakeCoffee" wasCompleted="true" />
+        <TaskSaveData id="TASK_BootComputer" wasCompleted="true" />
+        <TaskSaveData id="TASK_LookBusy" wasCompleted="true" />
+        <TaskSaveData id="TASK_HiringEmployees" wasCompleted="true" />
+        <TaskSaveData id="TASK_CookingTheBooks" wasCompleted="true" />
+        <TaskSaveData id="TASK_VendingMachine" wasCompleted="true" />
+        <TaskSaveData id="TASK_InternetPics" wasCompleted="true" />
+        <TaskSaveData id="TASK_PowerDot" wasCompleted="true" />
+        <TaskSaveData id="TASK_RetirementParty" wasCompleted="true" />
+        <TaskSaveData id="TASK_FiringEmployees" wasCompleted="true" />
+        <TaskSaveData id="TASK_WaterCooler" wasCompleted="true" />
+        <TaskSaveData id="TASK_ShredTheEvidence" wasCompleted="true" />
+        <TaskSaveData id="TASK_PromotionParty" wasCompleted="true" />
+      </Tasks>
+      <HighestStreak>0</HighestStreak>
+    </JobSaveData>
+    <JobSaveData id="Kitchen">
+      <Tasks>
+        <TaskSaveData id="TASK_BreakfastBaconEggs" wasCompleted="true" />
+        <TaskSaveData id="TASK_Smoothie" wasCompleted="true" />
+        <TaskSaveData id="TASK_TeaAndCrumpets" wasCompleted="true" />
+        <TaskSaveData id="TASK_LunchSoup" wasCompleted="true" />
+        <TaskSaveData id="TASK_Sandwich" wasCompleted="true" />
+        <TaskSaveData id="TASK_FoodCritic" wasCompleted="true" />
+        <TaskSaveData id="TASK_PizzaParty" wasCompleted="true" />
+        <TaskSaveData id="TASK_PizzaAllergies" wasCompleted="true" />
+        <TaskSaveData id="TASK_Proposal" wasCompleted="true" />
+        <TaskSaveData id="TASK_BirthdayCake" wasCompleted="true" />
+        <TaskSaveData id="TASK_DoingDishes" wasCompleted="true" />
+        <TaskSaveData id="TASK_HealthInspector" wasCompleted="true" />
+        <TaskSaveData id="TASK_FlavourCubeCommercial" wasCompleted="true" />
+        <TaskSaveData id="TASK_PrepareHotPepper" wasCompleted="true" />
+        <TaskSaveData id="TASK_TheSpecial" wasCompleted="true" />
+        <TaskSaveData id="TASK_CustomerOnFire" wasCompleted="true" />
+        <TaskSaveData id="TASK_RealityShow" wasCompleted="true" />
+      </Tasks>
+      <HighestStreak>0</HighestStreak>
+    </JobSaveData>
+    <JobSaveData id="ConvenienceStore">
+      <Tasks>
+        <TaskSaveData id="TASK_OpenStore" wasCompleted="true" />
+        <TaskSaveData id="TASK_ChipsAndDog" wasCompleted="true" />
+        <TaskSaveData id="TASK_CandyAndSlushee" wasCompleted="true" />
+        <TaskSaveData id="TASK_GrannyPlaysTheLottery" wasCompleted="true" />
+        <TaskSaveData id="TASK_AreYouTalkingToMe" wasCompleted="true" />
+        <TaskSaveData id="TASK_SugarRush" wasCompleted="true" />
+        <TaskSaveData id="TASK_EnergyCanDisplay" wasCompleted="true" />
+        <TaskSaveData id="TASK_Energize" wasCompleted="true" />
+        <TaskSaveData id="TASK_RetailTherapy" wasCompleted="true" />
+        <TaskSaveData id="TASK_SpecialDelivery" wasCompleted="true" />
+        <TaskSaveData id="TASK_Bartering" wasCompleted="true" />
+        <TaskSaveData id="TASK_StickEmUp" wasCompleted="true" />
+        <TaskSaveData id="TASK_DrunkBot" wasCompleted="true" />
+        <TaskSaveData id="TASK_DeployTheCleaningBot" wasCompleted="true" />
+        <TaskSaveData id="TASK_JustYourAverageAdultBot" wasCompleted="true" />
+        <TaskSaveData id="TASK_WhoDunnit" wasCompleted="true" />
+      </Tasks>
+      <HighestStreak>0</HighestStreak>
+    </JobSaveData>
+    <JobSaveData id="AutoMechanic">
+      <Tasks>
+        <TaskSaveData id="TASK_TuneUp" wasCompleted="true" />
+        <TaskSaveData id="TASK_SlzBotSpecial" wasCompleted="true" />
+        <TaskSaveData id="TASK_RustBucket" wasCompleted="true" />
+        <TaskSaveData id="TASK_SafetyFirst" wasCompleted="true" />
+        <TaskSaveData id="TASK_WorstDayEver" wasCompleted="true" />
+        <TaskSaveData id="TASK_OnTheLam" wasCompleted="true" />
+        <TaskSaveData id="TASK_CarShow" wasCompleted="true" />
+        <TaskSaveData id="TASK_TheBigRace" wasCompleted="true" />
+        <TaskSaveData id="TASK_GottaGoFast" wasCompleted="true" />
+        <TaskSaveData id="TASK_FlowerPower" wasCompleted="true" />
+        <TaskSaveData id="TASK_ChopShop" wasCompleted="true" />
+        <TaskSaveData id="TASK_TooManyMiles" wasCompleted="true" />
+        <TaskSaveData id="TASK_SickNewRide" wasCompleted="true" />
+        <TaskSaveData id="TASK_ParadeFloat" wasCompleted="true" />
+        <TaskSaveData id="TASK_LemonLaw" wasCompleted="true" />
+        <TaskSaveData id="TASK_JustMarried" wasCompleted="true" />
+      </Tasks>
+      <HighestStreak>0</HighestStreak>
+    </JobSaveData>
+  </JobsData>
+</SaveData>
