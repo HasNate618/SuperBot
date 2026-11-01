@@ -8,7 +8,7 @@ import time
 import unittest
 from pathlib import Path
 
-from superbot.preview import PreviewCapture, atomic_replace, newest_png
+from clank.preview import PreviewCapture, atomic_replace, newest_png
 
 
 class FakeRun:

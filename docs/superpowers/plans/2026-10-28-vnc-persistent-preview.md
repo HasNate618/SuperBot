@@ -13,7 +13,7 @@
 ## Current tree notes
 
 - `flake.nix` is staged/new in the main checkout; `README.md` and `run.sh` are modified but unstaged.
-- The package directory is `superbot/`, not `vrbot/`; earlier notes using `vrbot` are stale.
+- The package directory is `clank/`, not `vrbot/`; earlier notes using `vrbot` are stale.
 - Do not discard the existing `flake.nix`, `run.sh`, or `README.md` changes.
 - Do not commit unless explicitly requested.
 
@@ -25,14 +25,14 @@
 
 - [ ] Record `git status --short` and confirm the existing changes.
 - [ ] Run `python3 -m unittest discover -s tests -t .`.
-- [ ] Confirm the live tree has no preview refactor yet with `rg -n "PreviewCapture|fps_actual|/api/frame.png|/preview.png" superbot tests`.
+- [ ] Confirm the live tree has no preview refactor yet with `rg -n "PreviewCapture|fps_actual|/api/frame.png|/preview.png" clank tests`.
 
 ---
 
 ### Task 1: Config fields and validation
 
 **Files:**
-- Modify: `superbot/config.py`
+- Modify: `clank/config.py`
 - Modify: `config.example.toml`
 - Test: `tests/test_config.py`
 
@@ -76,7 +76,7 @@ def test_novnc_web_root_is_derived(self) -> None:
         tool = bin_dir / "novnc"
         tool.write_text("")
         tool.chmod(0o755)
-        cfg = load_config(None, env={"SUPERBOT_PATHS_NOVNC_BIN": str(tool)})
+        cfg = load_config(None, env={"CLANK_PATHS_NOVNC_BIN": str(tool)})
         self.assertEqual(cfg.paths.novnc_web_root, str(web))
 ```
 
@@ -121,7 +121,7 @@ python3 -m unittest tests.test_config -v
 ### Task 2: Weston VNC and websockify lifecycle
 
 **Files:**
-- Modify: `superbot/orchestrator.py`
+- Modify: `clank/orchestrator.py`
 - Test: `tests/test_orchestrator.py`
 
 - [ ] **Step 1: Write failing tests**
@@ -180,7 +180,7 @@ python3 -m unittest tests.test_orchestrator -v
 ### Task 3: Dashboard noVNC routes
 
 **Files:**
-- Modify: `superbot/dashboard.py`
+- Modify: `clank/dashboard.py`
 - Test: `tests/test_dashboard.py`
 
 - [ ] **Step 1: Write failing tests**
@@ -208,9 +208,9 @@ python3 -m unittest tests.test_dashboard -v
 ### Task 4: Browser noVNC client
 
 **Files:**
-- Modify: `superbot/static/index.html`
-- Modify: `superbot/static/app.js`
-- Modify: `superbot/static/style.css`
+- Modify: `clank/static/index.html`
+- Modify: `clank/static/app.js`
+- Modify: `clank/static/style.css`
 
 - [ ] **Step 1: HTML**
 
@@ -227,7 +227,7 @@ Remove the vertical image flip. Add canvas positioning and auth-form styles.
 - [ ] **Step 4: Verify syntax**
 
 ```bash
-node --check superbot/static/app.js
+node --check clank/static/app.js
 ```
 
 ---
@@ -299,7 +299,7 @@ sudo nixos-rebuild switch
 
 ```bash
 python3 -m unittest discover -s tests -t .
-node --check superbot/static/app.js
+node --check clank/static/app.js
 nix flake check
 git diff --check
 ```

@@ -29,7 +29,7 @@ from typing import Any
 # projection -> body, and body imports nothing from here.
 #
 # Both import shapes have to work. The pose relay is launched as a FILE
-# (`python superbot/pose_relay.py`), so its own `from . import wire` falls back to a
+# (`python clank/pose_relay.py`), so its own `from . import wire` falls back to a
 # bare `import wire`, and a bare module has no package to be relative to. Importing
 # this relatively broke body mode the moment it was added.
 try:

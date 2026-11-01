@@ -1,8 +1,8 @@
-# SuperBot
+# Clank
 
 **A Unitree G1 humanoid simulated in MuJoCo, a released NVIDIA whole-body controller, and a commercial VR game that renders from head and hand poses we send through Monado. No headset, no controllers, no game files touched.**
 
-SuperBot is a real-time controls and systems-integration project that uses a commercial VR game as an adversarial task interface. The game is the framing device. The work is a 29-DoF humanoid at 50 Hz behind an undocumented socket, where every claim is measured and every failure is written down.
+Clank is a real-time controls and systems-integration project that uses a commercial VR game as an adversarial task interface. The game is the framing device. The work is a 29-DoF humanoid at 50 Hz behind an undocumented socket, where every claim is measured and every failure is written down.
 
 > **The scoreboard, up front.** A commercial VR game accepts a headset that does not exist, and one simulated humanoid now drives both the headset and the two controllers. A G1 in MuJoCo walks 39.79 m in 60 s without falling and holds to RMS 1.3×10⁻⁴ m/s; the same body's achieved poses are relayed into Superhot at 50 Hz, where commanding `look_left` rotates the game's view by **28.6°**.
 >
@@ -10,7 +10,7 @@ SuperBot is a real-time controls and systems-integration project that uses a com
 >
 > **Still not true: nobody has played it.** The trigger has never reached the game, the body has never walked in-game (it is clip-anchored, so it leans and reaches but does not step), and no level has been cleared. With the game running the simulation advances at **0.89× real time**. Everything below is labelled with what is proven, what is not, and where the number came from.
 
-<!-- ![superbot dashboard](docs/dashboard.png) -->
+<!-- ![clank dashboard](docs/dashboard.png) -->
 
 ---
 
@@ -46,7 +46,7 @@ GAME PIPE — live
     └─ VNC → websockify → noVNC dashboard view, operator-only
 ```
 
-The relay (`superbot/pose_relay.py`) speaks Monado's `remote` driver wire format: a 376-byte `r_remote_data` packet, header `mndrmt3`, at 50 Hz over TCP 4242. It reads the state file the body view already writes, so the game and the operator's tile are driven by the same `mjData` — there is no second simulator to drift.
+The relay (`clank/pose_relay.py`) speaks Monado's `remote` driver wire format: a 376-byte `r_remote_data` packet, header `mndrmt3`, at 50 Hz over TCP 4242. It reads the state file the body view already writes, so the game and the operator's tile are driven by the same `mjData` — there is no second simulator to drift.
 
 The frame change is measured, not chosen: MuJoCo is Z-up with +X forward and the driver wants Y-up with −Z forward, so `xr_x = -mj_y`, `xr_y = mj_z`, `xr_z = -mj_x`. Positions are root-composed first, because `BodyState` poses are root-relative and the hold clip stands at about −90° about Z.
 
@@ -82,10 +82,10 @@ This is the table a technical interviewer should check first. Nothing in the "no
 | Body aims straight ahead | **proven** — 3.51 cm / 7.22° | `research/sonic-gate-results.md` |
 | Body aims off-axis | **fails** — 8.63 cm / 28.33° at 30°, so the body must turn to face a target | `research/sonic-gate-results.md` |
 | Sim pose → wire packet is exact | **proven** — 1001 packets / 20.02 s, max position and quaternion error 0.0 | `research/e3-spike-results.md` |
-| `BodyCommand` bus (TTL, sequencing, validation) | **implemented and tested** | `superbot/body.py`, `superbot/bus.py`, `superbot/validate.py`, `tests/` |
+| `BodyCommand` bus (TTL, sequencing, validation) | **implemented and tested** | `clank/body.py`, `clank/bus.py`, `clank/validate.py`, `tests/` |
 | Executor honours `BodyCommand` | **implemented in the spike**; runs the third-person body view | `spike/wbc/sonic_executor.py` |
 | **Body drives the game** | **proven** — the game's HMD yaw follows the body's head: `look_left` −28.6°, `look_right` +54.3°, `hold` returns to baseline | `research/r6-co-residency.md` |
-| Body and operator tile show the same robot | **proven by construction** — one `mjData`, one relay, no retargeting | `superbot/pose_relay.py` |
+| Body and operator tile show the same robot | **proven by construction** — one `mjData`, one relay, no retargeting | `clank/pose_relay.py` |
 | Live co-residency on the 8 GB card | **proven** — 44.2 Hz beside the game vs 44.5 Hz alone, +177 MiB, GPU util 31.5→31.7% | `research/r6-co-residency.md` |
 | Dodge moves the body sideways | **a lean, not a step** — 0.106–0.134 m head shift for a 0.14 m command, base moves ≤0.008 m | `spike/wbc/sonic_executor.py` |
 | Controller *orientation* convention | **unverified** — positions are exact, but the wrist frame is not an OpenXR grip, so in-game aim may be rotated by a fixed offset | — |
@@ -93,7 +93,7 @@ This is the table a technical interviewer should check first. Nothing in the "no
 | Clock floor behaviour in play | **not measured** — the 0.005 value is read from serialized assets | `research/wbc-game-proposal.md` |
 | The Fall's 0.70 m pistol and exit | **not reachable standing** — 27.3 cm wrist residual on the pistol | `spike/wbc_game/logs/reach_far_test.txt` |
 | Walking under command | **not built** — the body is clip-anchored, so `AUTH_ROOT_VEL` is not honoured in a hold session | `spike/wbc/sonic_executor.py` |
-| A brain / VLM in the loop | **not built** — the dashboard buttons are the only live `BodyCommand` writer | `superbot/scripted.py` |
+| A brain / VLM in the loop | **not built** — the dashboard buttons are the only live `BodyCommand` writer | `clank/scripted.py` |
 | **Level cleared** | **no** | — |
 
 ---
@@ -179,7 +179,7 @@ The wrist travels **0.41 m** forward at `forward_m=0.35`, and **0.51 m** when th
 ## Setup
 
 ```bash
-git clone <this repo> && cd SuperBot
+git clone <this repo> && cd Clank
 cp config.example.toml config.toml        # edit paths, Steam shortcut id, Proton app id
 ./run.sh                                  # serves http://127.0.0.1:8765
 # run.sh reuses a dashboard already on that port; run.sh --replace stops it first.
@@ -195,7 +195,7 @@ In `config.toml`, the values you almost certainly must change:
 | `paths.session_root` | where session logs go |
 | `launch.shortcut_id`, `launch.proton_app_id` | your Steam shortcut's AppId |
 
-**The OpenXR runtime pointer is required, and superbot only reads it.** Under Wine the game resolves its runtime through the Proton prefix registry → `wineopenxr.dll` → the host OpenXR loader, which looks for `~/.config/openxr/1/active_runtime.json`. Note that `/etc/xdg` is invisible inside the Proton container and `~/.local/share/openxr/1/` is *not* a searched path. Create it from your Monado install:
+**The OpenXR runtime pointer is required, and clank only reads it.** Under Wine the game resolves its runtime through the Proton prefix registry → `wineopenxr.dll` → the host OpenXR loader, which looks for `~/.config/openxr/1/active_runtime.json`. Note that `/etc/xdg` is invisible inside the Proton container and `~/.local/share/openxr/1/` is *not* a searched path. Create it from your Monado install:
 
 ```bash
 mkdir -p ~/.config/openxr/1
@@ -213,7 +213,7 @@ nix flake check                               # same suite, sandboxed
 ./run.sh --preview-smoke                      # headless Weston screenshot-tool check, without launching Steam
 ```
 
-**The controller, headless.** The simulator spikes use their own venv because they need MuJoCo, NumPy and ONNX Runtime while `superbot/` stays standard-library only:
+**The controller, headless.** The simulator spikes use their own venv because they need MuJoCo, NumPy and ONNX Runtime while `clank/` stays standard-library only:
 
 ```bash
 cd spike/e3
@@ -239,7 +239,7 @@ spike/e3/.venv/bin/python spike/wbc/body_view.py --out /tmp/body --reel --second
 # the join, by hand: body view publishing state, relay feeding Monado
 spike/e3/.venv/bin/python spike/wbc/body_view.py --out /tmp/body \
   --fps 50 --views three_quarter,side --control /tmp/body/control.sock &
-python3 -m superbot.pose_relay --state /tmp/body/body_state.json \
+python3 -m clank.pose_relay --state /tmp/body/body_state.json \
   --log /tmp/pose.csv --duration 60
 ```
 
@@ -295,7 +295,7 @@ VNC TLS is disabled: the stream has no confidentiality or server authentication,
 
 | Path | What it is |
 | --- | --- |
-| `superbot/` | **The app.** Config validation, process-group supervision, session orchestrator, VNC preview transport, dashboard HTTP API and UI, the `BodyCommand`/`BodyState` bus and its validator, manual input bridge. Standard library only. |
+| `clank/` | **The app.** Config validation, process-group supervision, session orchestrator, VNC preview transport, dashboard HTTP API and UI, the `BodyCommand`/`BodyState` bus and its validator, manual input bridge. Standard library only. |
 | `tests/` | Unit tests: config, process groups, orchestrator concurrency guards, dashboard API, VNC preview lifecycle, command bus, validation. |
 | `spike/c0/` | **Pose client and launchers.** The `remote`-driver client (`hold`, `yaw`, `trigger`, `dodge`, `walk`, `clock`), the manual client, the runtime launcher. |
 | `spike/e1/`–`spike/e3/` | **Injection and evidence.** OpenXR pose injection, compositor capture and latency measurement, and the MuJoCo body → OpenXR bridge with its honesty CSV. |

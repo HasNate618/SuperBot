@@ -46,12 +46,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 # would move the local import after the third-party ones and break the renderer.
 import gl_boot  # pyright: ignore[reportMissingImports]  # noqa: E402,F401,I001
 
-# mujoco / PIL live in spike/e3/.venv only; `superbot/` stays stdlib-only.
+# mujoco / PIL live in spike/e3/.venv only; `clank/` stays stdlib-only.
 import mujoco  # pyright: ignore[reportMissingImports]  # noqa: E402
 from PIL import Image  # pyright: ignore[reportMissingImports]  # noqa: E402
 
 from sonic_executor import SonicExecutor  # pyright: ignore[reportMissingImports]  # noqa: E402
-from superbot.body import (  # noqa: E402
+from clank.body import (  # noqa: E402
     AUTH_CLOSURE,
     AUTH_HEAD,
     AUTH_L_HAND,
@@ -60,9 +60,9 @@ from superbot.body import (  # noqa: E402
     BodyCommand,
     hold,
 )
-from superbot.bus import CommandBus  # noqa: E402
-from superbot.camera import PRESETS, FollowCamera, yaw_from_quat  # noqa: E402
-from superbot.intent import Intent, validate_intent, verb_to_intent  # noqa: E402
+from clank.bus import CommandBus  # noqa: E402
+from clank.camera import PRESETS, FollowCamera, yaw_from_quat  # noqa: E402
+from clank.intent import Intent, validate_intent, verb_to_intent  # noqa: E402
 
 
 class BodyRenderer:

@@ -16,7 +16,7 @@ from pathlib import Path
 class CliTests(unittest.TestCase):
     def run_cli(self, *args: str, timeout: float = 10) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            [sys.executable, "-m", "superbot", *args],
+            [sys.executable, "-m", "clank", *args],
             cwd=Path(__file__).resolve().parent.parent,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -36,7 +36,7 @@ class CliTests(unittest.TestCase):
                 result = self.run_cli(*args)
                 self.assertEqual(result.returncode, 2)
                 self.assertNotIn("Traceback", result.stderr)
-                self.assertIn("superbot:", result.stderr)
+                self.assertIn("clank:", result.stderr)
 
     def test_invalid_overrides_fail_before_preview_smoke(self) -> None:
         cases = (("--port", "-1"), ("--port", "70000"), ("--host", ""))
@@ -45,13 +45,13 @@ class CliTests(unittest.TestCase):
                 result = self.run_cli(*args, "--preview-smoke")
                 self.assertEqual(result.returncode, 2)
                 self.assertNotIn("Traceback", result.stderr)
-                self.assertIn("superbot:", result.stderr)
+                self.assertIn("clank:", result.stderr)
 
     def test_launch_bind_failure_exits_2(self) -> None:
         result = self.run_cli("--host", "192.0.2.1", "--port", "0")
         self.assertEqual(result.returncode, 2)
         self.assertNotIn("Traceback", result.stderr)
-        self.assertIn("superbot:", result.stderr)
+        self.assertIn("clank:", result.stderr)
 
     def test_invalid_utf8_config_exits_2(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
@@ -60,7 +60,7 @@ class CliTests(unittest.TestCase):
             result = self.run_cli("--config", str(path))
             self.assertEqual(result.returncode, 2)
             self.assertNotIn("Traceback", result.stderr)
-            self.assertIn("superbot:", result.stderr)
+            self.assertIn("clank:", result.stderr)
 
 
     # ---- port already in use: reuse ours, never touch a stranger ----
@@ -132,7 +132,7 @@ class CliTests(unittest.TestCase):
             holder.close()
         self.assertEqual(result.returncode, 2)
         self.assertNotIn("Traceback", result.stderr)
-        self.assertIn("superbot:", result.stderr)
+        self.assertIn("clank:", result.stderr)
 
     def test_replace_ignores_stale_pidfile(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
@@ -145,7 +145,7 @@ class CliTests(unittest.TestCase):
                 self.run_cli("--config", str(cfg), "--port", str(port), "--replace", timeout=15)
             except subprocess.TimeoutExpired as exc:
                 out = exc.stdout.decode() if isinstance(exc.stdout, bytes) else (exc.stdout or "")
-                self.assertIn("superbot dashboard: http://", out)
+                self.assertIn("clank dashboard: http://", out)
             else:
                 self.fail("the replacement dashboard should still be serving")
 
@@ -154,7 +154,7 @@ class CliTests(unittest.TestCase):
             cfg = self.temp_config(raw)
             port = self.free_port()
             old = subprocess.Popen(
-                [sys.executable, "-m", "superbot", "--config", str(cfg), "--port", str(port)],
+                [sys.executable, "-m", "clank", "--config", str(cfg), "--port", str(port)],
                 cwd=Path(__file__).resolve().parent.parent,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -163,7 +163,7 @@ class CliTests(unittest.TestCase):
             try:
                 self.wait_state(port)
                 new = subprocess.Popen(
-                    [sys.executable, "-m", "superbot", "--config", str(cfg),
+                    [sys.executable, "-m", "clank", "--config", str(cfg),
                      "--port", str(port), "--replace"],
                     cwd=Path(__file__).resolve().parent.parent,
                     stdout=subprocess.PIPE,
@@ -186,7 +186,7 @@ class CliTests(unittest.TestCase):
                     old.wait(timeout=15)
 
     def test_read_own_pid_rejects_strangers(self) -> None:
-        from superbot.__main__ import read_own_pid
+        from clank.__main__ import read_own_pid
 
         with tempfile.TemporaryDirectory() as raw:
             pidfile = Path(raw) / "dashboard.pid"

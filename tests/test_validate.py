@@ -1,9 +1,9 @@
 # Re-indexed: AUTH_TRIGGER and the trigger range check live in
-# superbot/validate.py and superbot/body.py.
+# clank/validate.py and clank/body.py.
 import math
 import unittest
 
-from superbot.body import (
+from clank.body import (
     AUTH_CLOSURE,
     AUTH_GAIT,
     AUTH_L_HAND,
@@ -14,7 +14,7 @@ from superbot.body import (
     BodyCommand,
     Pose,
 )
-from superbot.validate import WAIST_LIMIT_RAD, validate_command
+from clank.validate import WAIST_LIMIT_RAD, validate_command
 
 NOW = 1_000_000_000
 
@@ -42,7 +42,7 @@ class ValidateTestCase(unittest.TestCase):
         self.assertEqual(accepted(result).authority, 0)
 
     def test_reject_bad_schema(self) -> None:
-        result = validate_command(cmd(schema="superbot.body/0"), NOW)
+        result = validate_command(cmd(schema="clank.body/0"), NOW)
         self.assertFalse(result.ok)
         self.assertIn("schema", result.reason)
 

@@ -1,4 +1,4 @@
-"""The `superbot.intent/1` contract: what a writer is allowed to ask for.
+"""The `clank.intent/1` contract: what a writer is allowed to ask for.
 
 This schema exists to keep one boundary honest. A writer - the hub script, an
 operator click, or a later model - names **a skill, a side, and optionally a
@@ -7,7 +7,7 @@ for the hand. Turning an intent into `BodyCommand`s is the adapter's job, and th
 body never learns that Superhot or a pixel exists.
 
 Why a separate schema instead of a field on `BodyCommand`: pixels are not
-robotics state. Every existing consumer of `superbot.body/1` (executor, relay,
+robotics state. Every existing consumer of `clank.body/1` (executor, relay,
 dashboard, tests) would have to learn about an image coordinate it can never use,
 and the contract's "authority is a bitmask, unset fields are ignored" would gain
 a field no authority bit can gate.
@@ -30,7 +30,7 @@ from typing import Any
 
 from .body import FRAMES
 
-SCHEMA = "superbot.intent/1"
+SCHEMA = "clank.intent/1"
 
 #: Skills the adapter knows. Closed on purpose: a writer that invents a skill is
 #: rejected rather than silently held, so a typo cannot look like "the body refused".

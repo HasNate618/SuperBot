@@ -285,7 +285,7 @@ class ProcessRunner:
         and match no systemd unit, so the unit-reclaim path never sees it while it
         keeps 4242. Refusing at that point is correct for a stranger's listener and
         wrong for our own leftover, so resolve the holder first (see
-        `superbot.portowner`), then decide.
+        `clank.portowner`), then decide.
         """
         decision = portowner.plan(
             expect, proc_root=self.proc_root, net_text=net_text, port=port

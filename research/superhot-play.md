@@ -37,7 +37,7 @@ step 1 was wrong for the hub. It exists, but for *other* grabbables in a level
 wait forever, and the insertion slot is the one high-contrast signal the hub
 actually offers.
 
-Until that sequence works, The Fall does not exist. The join currently cannot do it: `pose_relay` calls `wire.fill(packet, poses)` with the defaults `trigger=0, squeeze=0` `[MEASURED: superbot/pose_relay.py]`, and `BodyState` has no closure field to forward even if it wanted to `[MEASURED: superbot/body.py]`. `AUTH_CLOSURE` is listed as supported on the executor and then ignored `[MEASURED: spike/wbc/sonic_executor.py]`.
+Until that sequence works, The Fall does not exist. The join currently cannot do it: `pose_relay` calls `wire.fill(packet, poses)` with the defaults `trigger=0, squeeze=0` `[MEASURED: clank/pose_relay.py]`, and `BodyState` has no closure field to forward even if it wanted to `[MEASURED: clank/body.py]`. `AUTH_CLOSURE` is listed as supported on the executor and then ignored `[MEASURED: spike/wbc/sonic_executor.py]`.
 
 The G1 model has no fingers. "Close the gripper" cannot mean the game sees a closed hand. It has to become a controller button. The manual client already treats those as two different buttons: LMB/T → `trigger`, RMB/G → `squeeze` / `squeeze_force` / `hand_curl` `[MEASURED: spike/c0/c0_manual.py]`. Which of those Superhot uses for grab is `[ASSUMPTION]` until someone A/B's them against a glowing floppy.
 

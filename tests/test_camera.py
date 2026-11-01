@@ -8,7 +8,7 @@ does the camera lag or snap, and does a turn stay visible.
 import math
 import unittest
 
-from superbot.camera import PRESETS, FollowCamera, project, yaw_from_quat
+from clank.camera import PRESETS, FollowCamera, project, yaw_from_quat
 
 # A standing G1, measured on the hold pose: root 0.788, ankles ~0.03-0.05,
 # shoulder links ~1.07-1.09, head geoms top out at 1.217. There is no head or

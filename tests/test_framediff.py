@@ -3,7 +3,7 @@
 The adapter's only detector that needs no model: capture the same view twice with
 one thing changed, and the pixels that differ are the thing. This module is the
 arithmetic; `spike/wbc/frames.py` supplies the pixels through Pillow, which
-`superbot/` may not import.
+`clank/` may not import.
 
 Why a separate module from `glow`: `glow` answers "is something in range" from
 colour. This answers "what moved, and where", from a difference. They share a
@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import unittest
 
-from superbot import framediff
+from clank import framediff
 
 
 def blank(w: int = 8, h: int = 6, value: int = 0):

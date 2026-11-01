@@ -33,7 +33,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-try:  # both shapes work: `-m superbot.pose_relay` and a direct file run
+try:  # both shapes work: `-m clank.pose_relay` and a direct file run
     from . import wire
 except ImportError:  # pragma: no cover - only when executed as a script
     import wire  # type: ignore[no-redef]

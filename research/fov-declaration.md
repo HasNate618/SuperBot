@@ -1,6 +1,6 @@
 # Can we declare the field of view instead of measuring it?
 
-`superbot/projection.py` refuses to invent a FOV, and `wire.fill` wrote none
+`clank/projection.py` refuses to invent a FOV, and `wire.fill` wrote none
 (`per_view_data_valid = False`), so the compositor's field of view has been unknown.
 But we are the ones *emitting* the HMD data, so the FOV could be a stated number
 rather than something inferred from images. The question is whether this build's
@@ -30,7 +30,7 @@ struct r_head_data
 };
 ```
 
-This also independently corroborates `superbot/wire.py`: the same header, the same
+This also independently corroborates `clank/wire.py`: the same header, the same
 `views[2]` layout, the same controller struct (including `trigger_value`,
 `squeeze_value`, `hand_curl[5]` and the 16-byte click/touch block). The wire format
 is not our invention.

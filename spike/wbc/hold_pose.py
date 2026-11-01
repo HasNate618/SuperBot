@@ -23,7 +23,7 @@ supports. Only the target *values* are new; the stepping loop is untouched.
 
 Usage (venv python, because the executor needs MuJoCo and ONNX Runtime):
     spike/e3/.venv/bin/python spike/wbc/hold_pose.py \\
-        --control /home/nate/.local/state/SuperBot/sessions/body/control.sock \\
+        --control /home/nate/.local/state/Clank/sessions/body/control.sock \\
         --yaw-deg -40 --seconds 30
 """
 
@@ -40,7 +40,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from superbot.body import (  # noqa: E402
+from clank.body import (  # noqa: E402
     AUTH_HEAD,
     AUTH_L_HAND,
     AUTH_R_HAND,

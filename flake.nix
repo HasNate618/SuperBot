@@ -1,5 +1,5 @@
 {
-  description = "SuperBot — a simulated Unitree G1 plays Job Simulator VR with no headset";
+  description = "Clank — a simulated Unitree G1 plays Job Simulator VR with no headset";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
   # OpenComposite is a C++ .so that Proton's vrclient bridge dlopen()s inside the
@@ -116,24 +116,24 @@
               # on Job Simulator's action manifest; OpenComposite does not.
               pkgsCompat.opencomposite
               # The patched Monado this repo runs; its path reaches the app through
-              # SUPERBOT_PATHS_MONADO_BIN below.
+              # CLANK_PATHS_MONADO_BIN below.
               monado
             ];
             shellHook = ''
               # Hand the shim path to the app through its documented env override,
               # so config.toml need not hard-code a /nix/store path.
-              export SUPERBOT_PATHS_VR_OVERRIDE="''${SUPERBOT_PATHS_VR_OVERRIDE:-${pkgsCompat.opencomposite}/lib/opencomposite}"
+              export CLANK_PATHS_VR_OVERRIDE="''${CLANK_PATHS_VR_OVERRIDE:-${pkgsCompat.opencomposite}/lib/opencomposite}"
               # Run the repo-built Monado (patched remote HMD, Steam-runtime
               # compatible) instead of the NixOS wrapper. Only the service needs
               # patching: the display geometry and FOV live there, and the host's
               # client library is the same Monado version.
-              export SUPERBOT_PATHS_MONADO_BIN="''${SUPERBOT_PATHS_MONADO_BIN:-${monado}/bin/monado-service}"
+              export CLANK_PATHS_MONADO_BIN="''${CLANK_PATHS_MONADO_BIN:-${monado}/bin/monado-service}"
             '';
           };
         }
       );
 
-      # Only superbot/, tests/ and spike/c0/ are copied in: the rest of spike/
+      # Only clank/, tests/ and spike/c0/ are copied in: the rest of spike/
       # holds gigabytes of vendored upstreams and weights the tests never touch.
       checks = forAllSystems (
         system:
@@ -142,17 +142,17 @@
         in
         {
           default =
-            pkgs.runCommand "superbot-tests"
+            pkgs.runCommand "clank-tests"
               {
                 nativeBuildInputs = [ pkgs.python3 ];
               }
               ''
-                cp -r ${./superbot} superbot
+                cp -r ${./clank} clank
                 cp -r ${./tests} tests
                 # The manual-mode tests load the real pose client from here.
                 mkdir -p spike
                 cp -r ${./spike/c0} spike/c0
-                chmod -R u+w superbot tests spike
+                chmod -R u+w clank tests spike
                 # The orchestrator puts its Unix sockets under XDG_RUNTIME_DIR and
                 # the sandbox has none, so give it one that exists.
                 export XDG_RUNTIME_DIR=$PWD/.xdg-runtime

@@ -39,7 +39,7 @@ class Delta:
     `mean` is over every channel of every pixel, so a broad faint change is visible
     even when no single pixel crosses the threshold. `changed` and `fraction` are the
     area over the threshold. `centroid` is the centre of that area in normalised
-    coordinates with the origin top-left, matching `superbot.intent/1`'s pixel
+    coordinates with the origin top-left, matching `clank.intent/1`'s pixel
     convention, so a measured point and a projected point are directly comparable.
 
     `centroid` is `None` when nothing changed. It is never a fallback point: an

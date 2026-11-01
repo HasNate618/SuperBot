@@ -3,7 +3,7 @@
 **Spike:** C3a / C3b / C3c (sim only, headless, CPU)
 **Agent:** `c3-legs`
 **Date:** 2026-10-23
-**Model:** `/home/nate/Projects/SuperBot/spike/e3/vendor/mujoco_menagerie/unitree_g1/scene_mjx.xml`
+**Model:** `/home/nate/Projects/Clank/spike/e3/vendor/mujoco_menagerie/unitree_g1/scene_mjx.xml`
 **Policy:** official `mujoco_playground` ONNX, not a third-party substitute
 **Script:** `spike/c3/measure_c3.py` — run with `spike/e3/.venv/bin/python spike/c3/measure_c3.py --only all`
 
@@ -36,7 +36,7 @@ The ONNX was loaded with `onnxruntime` and confirms:
 - Python 3.12.13 in `spike/e3/.venv`
 - `mujoco 3.17.0`, `numpy 2.2.6`
 - `onnxruntime 1.31.0` installed with:
-  `uv pip install --python /home/nate/Projects/SuperBot/spike/e3/.venv/bin/python onnxruntime`
+  `uv pip install --python /home/nate/Projects/Clank/spike/e3/.venv/bin/python onnxruntime`
 - CPUExecutionProvider, no GPU/display, no Monado, no game
 
 **Control recipe [MEASURED, replicated from `bench/g1_policy_test.py` and the official loader]:**

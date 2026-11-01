@@ -11,7 +11,7 @@ import re
 import unittest
 from pathlib import Path
 
-STATIC = Path(__file__).resolve().parent.parent / "superbot" / "static"
+STATIC = Path(__file__).resolve().parent.parent / "clank" / "static"
 
 
 def _bound_ids(script: str) -> set[str]:

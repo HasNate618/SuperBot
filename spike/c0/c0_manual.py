@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Manual keyboard/mouse control for the C0 Superhot session.
 
-Receives browser input from the superbot dashboard over a Unix datagram socket,
+Receives browser input from the clank dashboard over a Unix datagram socket,
 turns it into an HMD pose plus two controller poses, and streams the same
 376-byte Monado `remote` packets as c0_client.py.
 

@@ -14,11 +14,11 @@ from pathlib import Path
 from typing import cast
 from unittest.mock import patch
 
-from superbot.body_preview import BodyPreview
-from superbot.config import load_config
-from superbot.dashboard import DashboardHandler, DashboardServer
-from superbot.manual_input import ManualInputError, ManualInputUnavailable
-from superbot.orchestrator import ConflictError, MODES, PreflightError, SessionManager
+from clank.body_preview import BodyPreview
+from clank.config import load_config
+from clank.dashboard import DashboardHandler, DashboardServer
+from clank.manual_input import ManualInputError, ManualInputUnavailable
+from clank.orchestrator import ConflictError, MODES, PreflightError, SessionManager
 
 
 class FakeManager:
@@ -508,7 +508,7 @@ class ShippedStaticAssetsTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.manager = FakeManager(Path(self.temp.name))
         self.cfg = load_config(None, env={})
-        static_dir = Path(__file__).resolve().parents[1] / "superbot" / "static"
+        static_dir = Path(__file__).resolve().parents[1] / "clank" / "static"
         self.server = DashboardServer(("127.0.0.1", 0), self.manager, self.cfg, static_dir)
         self.port = self.server.server_address[1]
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)

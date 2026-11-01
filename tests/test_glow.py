@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import unittest
 
-from superbot import glow
+from clank import glow
 
 
 def flat(width: int, height: int, value: int = 10) -> list[list[list[int]]]:

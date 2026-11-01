@@ -5,9 +5,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from superbot import body_preview, pose_relay
-from superbot.body_preview import BodyPreview
-from superbot.config import BodyConfig
+from clank import body_preview, pose_relay
+from clank.body_preview import BodyPreview
+from clank.config import BodyConfig
 
 
 def make_cfg(
@@ -138,7 +138,7 @@ class BodyPreviewTestCase(unittest.TestCase):
                 "VIRTUAL_ENV": "/polluted/venv",
             }
             with patch.dict(os.environ, polluted), patch(
-                "superbot.body_preview.subprocess.Popen", side_effect=fake_popen
+                "clank.body_preview.subprocess.Popen", side_effect=fake_popen
             ):
                 self.assertEqual(view.start(), "")
             env = seen["env"]
@@ -159,7 +159,7 @@ class BodyPreviewTestCase(unittest.TestCase):
                 def poll(self):
                     return 3
 
-            with patch("superbot.body_preview.subprocess.Popen", return_value=DeadProc()):
+            with patch("clank.body_preview.subprocess.Popen", return_value=DeadProc()):
                 self.assertEqual(view.start(), "")
             view.log_path.write_text("Traceback...\nboom: missing numpy\n")
             status = view.status()

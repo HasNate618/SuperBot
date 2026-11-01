@@ -1,5 +1,5 @@
 # Re-indexed: forced_pair, ClickEdge and buttons_from_state live in
-# superbot/pose_relay.py; run() takes force_grab/force_trigger/grab_mode.
+# clank/pose_relay.py; run() takes force_grab/force_trigger/grab_mode.
 from __future__ import annotations
 
 import contextlib
@@ -14,7 +14,7 @@ import time
 import unittest
 from pathlib import Path
 
-from superbot import pose_relay, wire
+from clank import pose_relay, wire
 
 
 def sample_state(root_p=(0.0, 0.0, 0.79), head_p=(-0.001, 0.02, 0.40)) -> dict:
@@ -374,7 +374,7 @@ class YawOffsetTests(unittest.TestCase):
     """
 
     def _source(self, **kw):
-        from superbot.pose_relay import PacketSource, StateSource
+        from clank.pose_relay import PacketSource, StateSource
 
         return PacketSource(StateSource(Path("/nonexistent/state.json")), **kw)
 
@@ -394,7 +394,7 @@ class YawOffsetTests(unittest.TestCase):
         return Path(handle.name)
 
     def test_the_default_offset_leaves_poses_untouched(self) -> None:
-        from superbot.pose_relay import PacketSource, StateSource
+        from clank.pose_relay import PacketSource, StateSource
 
         path = self._state_file()
         plain = PacketSource(StateSource(path)).poses(0.0)[0]
@@ -402,7 +402,7 @@ class YawOffsetTests(unittest.TestCase):
         self.assertEqual(plain, zero)
 
     def test_a_turned_relay_reports_a_different_heading(self) -> None:
-        from superbot.pose_relay import PacketSource, StateSource
+        from clank.pose_relay import PacketSource, StateSource
 
         path = self._state_file()
         plain = PacketSource(StateSource(path)).poses(0.0)[0]
@@ -429,7 +429,7 @@ class YawOffsetCli(unittest.TestCase):
     """
 
     def _capture(self, argv: list[str], *, stderr: bool = False) -> dict:
-        from superbot import pose_relay
+        from clank import pose_relay
 
         seen: dict = {}
 
@@ -483,7 +483,7 @@ class DeclaredFovCli(unittest.TestCase):
 
     def _capture(self, argv: list[str], *, sink: dict | None = None) -> dict:
         """Run main() with `run` stubbed out; never opens a socket or a file."""
-        from superbot import pose_relay
+        from clank import pose_relay
 
         seen: dict = {}
 

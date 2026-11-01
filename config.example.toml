@@ -1,4 +1,4 @@
-# superbot configuration — copy to config.toml and edit.
+# clank configuration — copy to config.toml and edit.
 #
 # Every value below is read at startup and validated; a bad path fails loudly
 # before anything is launched. `config.toml` is git-ignored because it holds
@@ -51,12 +51,12 @@ vr_override = ""
 pose_client = "spike/c0/c0_client.py"
 
 # OpenXR runtime pointer the game will resolve to.
-# READ-ONLY: superbot validates that this file exists and is readable; it never
+# READ-ONLY: clank validates that this file exists and is readable; it never
 # writes or replaces it. Create it yourself, see README "Requirements".
 openxr_active_runtime = "/home/YOUR_USER/.config/openxr/1/active_runtime.json"
 
 # Where session logs are written.
-session_root = "/home/YOUR_USER/.local/state/SuperBot/sessions"
+session_root = "/home/YOUR_USER/.local/state/Clank/sessions"
 
 [launch]
 # Steam shortcut ID of the non-Steam game entry. Find it in

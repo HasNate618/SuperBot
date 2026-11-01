@@ -51,7 +51,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
     # ours. This annotation narrows it for the checker and costs nothing at runtime.
     server: DashboardServer
 
-    server_version = "superbot/0.1"
+    server_version = "clank/0.1"
     timeout = 10
 
     def log_message(self, format, *args) -> None:
@@ -363,7 +363,7 @@ def run_dashboard(cfg: Config) -> None:
         if cfg.body.autostart:
             problem = body.start()
             if problem:
-                print(f"superbot dashboard: body view: {problem}", file=sys.stderr)
+                print(f"clank dashboard: body view: {problem}", file=sys.stderr)
     server = DashboardServer(
         (cfg.dashboard.host, cfg.dashboard.port), manager, cfg, static_dir, body=body
     )
@@ -377,18 +377,18 @@ def run_dashboard(cfg: Config) -> None:
     signal.signal(signal.SIGINT, request_shutdown)
     signal.signal(signal.SIGTERM, request_shutdown)
     host, port = server.server_address[:2]
-    print(f"superbot dashboard: http://{host}:{port}", flush=True)
+    print(f"clank dashboard: http://{host}:{port}", flush=True)
     try:
         server.serve_forever(poll_interval=0.5)
     finally:
-        print("superbot dashboard: shutting down", flush=True)
+        print("clank dashboard: shutting down", flush=True)
         if body is not None:
-            print(f"superbot dashboard: stopping body view (running={body.running()})", flush=True)
+            print(f"clank dashboard: stopping body view (running={body.running()})", flush=True)
             body.stop()
-            print(f"superbot dashboard: body view stopped (running={body.running()})", flush=True)
+            print(f"clank dashboard: body view stopped (running={body.running()})", flush=True)
         manager.stop()
         if not manager.wait_idle(70):
-            print("superbot dashboard: session did not stop within 70s", file=sys.stderr)
+            print("clank dashboard: session did not stop within 70s", file=sys.stderr)
         server.server_close()
         try:
             owned = pidfile.read_text(encoding="utf-8").strip() == str(os.getpid())

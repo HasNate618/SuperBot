@@ -192,7 +192,7 @@ This deserves to be the next experiment, ahead of any more arm work.
 ## 8. Reproduce
 
 ```bash
-cd /home/nate/Projects/SuperBot
+cd /home/nate/Projects/Clank
 # the gate (writes c3i_summary.json + per-run jsonl)
 spike/e3/.venv/bin/python spike/wbc/gate_c3i.py
 # the arm override matrix (writes c3j_summary.json)

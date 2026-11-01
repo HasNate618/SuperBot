@@ -52,7 +52,7 @@ if command -v weston >/dev/null 2>&1 \
   && command -v weston-debug >/dev/null 2>&1 \
   && command -v novnc >/dev/null 2>&1 \
   && command -v websockify >/dev/null 2>&1; then
-  exec python3 -m superbot "${args[@]}"
+  exec python3 -m clank "${args[@]}"
 fi
 
-exec nix develop "$SCRIPT_DIR" -c python3 -m superbot "${args[@]}"
+exec nix develop "$SCRIPT_DIR" -c python3 -m clank "${args[@]}"

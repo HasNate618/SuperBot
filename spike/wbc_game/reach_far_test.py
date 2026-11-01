@@ -7,7 +7,7 @@ wrist, so this probe tests the unmeasured 0.70 m case with the same controller,
 model and default weights.
 
 Run:
-  /home/nate/Projects/SuperBot/spike/e3/.venv/bin/python reach_far_test.py
+  /home/nate/Projects/Clank/spike/e3/.venv/bin/python reach_far_test.py
 
 Output is one line per (target, side).  "res" is the final wrist position
 residual, "margin" the 2D support margin, "fall" the controller's fall flag.

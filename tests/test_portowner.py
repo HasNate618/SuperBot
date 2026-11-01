@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from superbot import portowner
+from clank import portowner
 
 # One LISTEN (0A) socket on 4242 (0x1092) and one ESTABLISHED (01) on the same port.
 TCP_TEXT = """  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode

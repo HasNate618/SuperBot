@@ -1,7 +1,7 @@
 # Slot-green calibration
 
 **Date:** 2026-10-30
-**Status:** measured on one hub frame. Thresholds in `superbot/glow.py` now come from here.
+**Status:** measured on one hub frame. Thresholds in `clank/glow.py` now come from here.
 
 The hub's disk-insertion slot glows green when it is ready `[OPERATOR 2026-10-30]`.
 Frame: `/tmp/pi-clipboard-bafecc17-e9f7-4601-8b13-8cc5b272dd55.png` (1127x853),

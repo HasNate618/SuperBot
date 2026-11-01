@@ -1,6 +1,6 @@
-"""The `superbot.body/1` command and state contract.
+"""The `clank.body/1` command and state contract.
 
-Design: `docs/2026-10-23-vr-bot-design.md` §6, `research/humanoid-command-space.md` §4.
+Design: `docs/2026-10-23-clank-design.md` §6, `research/humanoid-command-space.md` §4.
 
 Two rules decide everything else in this module:
 
@@ -16,7 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-SCHEMA = "superbot.body/1"
+SCHEMA = "clank.body/1"
 
 # Authority bits. The only way to select behaviour.
 AUTH_ROOT_VEL = 1 << 0  # v_xy, yaw_rate

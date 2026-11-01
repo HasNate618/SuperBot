@@ -15,8 +15,8 @@ from __future__ import annotations
 import math
 import unittest
 
-import superbot.projection as projection
-from superbot.body import Pose
+import clank.projection as projection
+from clank.body import Pose
 
 IDENTITY = Pose((0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 1.0))
 HALF_45 = projection.Fov.from_degrees(45.0, 45.0, 45.0, 45.0)

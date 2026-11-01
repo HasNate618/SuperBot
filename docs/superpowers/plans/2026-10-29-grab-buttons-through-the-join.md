@@ -6,9 +6,9 @@
 
 **Architecture:** The contract gains one bit and two fields; the executor echoes what it was told because the G1 has no fingers and therefore no achieved closure; `wire.fill` grows per-hand button tuples; the relay forwards them and can force either button for an A/B. Nothing about pushing pixels, walking, or thinking is in scope.
 
-**Tech Stack:** Python 3.12 standard library for `superbot/`; the executor stays in `spike/wbc/` and keeps needing MuJoCo and ONNX Runtime.
+**Tech Stack:** Python 3.12 standard library for `clank/`; the executor stays in `spike/wbc/` and keeps needing MuJoCo and ONNX Runtime.
 
-**Spec:** `research/superhot-play.md` (operator briefing: hub sequence, glow-to-grab, two buttons) and `docs/2026-10-23-vr-bot-design.md` §9 (the brain names skills; the pretty pipe must work scripted first).
+**Spec:** `research/superhot-play.md` (operator briefing: hub sequence, glow-to-grab, two buttons) and `docs/2026-10-23-clank-design.md` §9 (the brain names skills; the pretty pipe must work scripted first).
 
 ## Not in this plan
 
@@ -21,7 +21,7 @@ Sequenced out on purpose, because none of them can be tested until a floppy lift
 
 ## Global Constraints
 
-- `superbot/` is **standard-library only**. No numpy, no mujoco, no onnxruntime, no new third-party packages anywhere in the test suite.
+- `clank/` is **standard-library only**. No numpy, no mujoco, no onnxruntime, no new third-party packages anywhere in the test suite.
 - Current suite is **323 tests**, all passing, no network and no GPU. Every task leaves it green.
 - `AUTH_CLOSURE` already exists at `1 << 5` and is already in the executor's `SUPPORTED_AUTH`. Do not renumber existing bits — `AUTH_GAIT`/`AUTH_POSTURE` are at `1 << 7`/`1 << 8` and are already flagged `UNSUPPORTED_IN_V1`.
 - Measured geometry that constrains the demo: standing reach **~0.20 m**, The Fall's pistol **0.70 m**, spawn radius **~1 m** `[OPERATOR]`. Grab must work from a stand.
@@ -41,8 +41,8 @@ Sequenced out on purpose, because none of them can be tested until a floppy lift
 ### Task 1: Contract — a trigger bit, and buttons on the state
 
 **Files:**
-- Modify: `superbot/body.py` (`AUTH_TRIGGER`, `KNOWN_AUTH`, `BodyCommand.trigger`, `BodyState.closure`, `BodyState.trigger`, `commanded_buttons()`)
-- Modify: `superbot/validate.py` (trigger range, gated on its own bit)
+- Modify: `clank/body.py` (`AUTH_TRIGGER`, `KNOWN_AUTH`, `BodyCommand.trigger`, `BodyState.closure`, `BodyState.trigger`, `commanded_buttons()`)
+- Modify: `clank/validate.py` (trigger range, gated on its own bit)
 - Test: `tests/test_body.py`, `tests/test_validate.py`
 
 **Interfaces:**
@@ -93,7 +93,7 @@ Expected: ImportError or `NameError: AUTH_TRIGGER`, and the validation tests fai
 
 - [ ] **Step 3: Implement the contract change**
 
-In `superbot/body.py`, next to the other bits:
+In `clank/body.py`, next to the other bits:
 
 ```python
 AUTH_CLOSURE = 1 << 5  # 0 open .. 1 closed; the adapter maps it to grip/squeeze
@@ -130,7 +130,7 @@ def commanded_buttons(
     return (float(grip[0]), float(grip[1])), (float(fire[0]), float(fire[1]))
 ```
 
-In `superbot/validate.py`, mirror the existing closure block:
+In `clank/validate.py`, mirror the existing closure block:
 
 ```python
 if cmd.trigger is not None and (cmd.authority & AUTH_TRIGGER):
@@ -147,7 +147,7 @@ Expected: PASS. Then `python3 -m unittest discover -s tests -t . -q` → OK.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add superbot/body.py superbot/validate.py tests/test_body.py tests/test_validate.py
+git add clank/body.py clank/validate.py tests/test_body.py tests/test_validate.py
 git commit -m "feat(contract): trigger is its own channel, not a meaning for closure"
 ```
 
@@ -156,7 +156,7 @@ git commit -m "feat(contract): trigger is its own channel, not a meaning for clo
 ### Task 2: Wire — per-hand grip, curl, trigger and edge-triggered clicks
 
 **Files:**
-- Modify: `superbot/wire.py` (`fill`)
+- Modify: `clank/wire.py` (`fill`)
 - Test: `tests/test_wire.py`
 
 **Interfaces:**
@@ -223,7 +223,7 @@ Expected: PASS. Existing `test_fill_writes_poses_and_buttons` must be updated fo
 - [ ] **Step 5: Commit**
 
 ```bash
-git add superbot/wire.py tests/test_wire.py
+git add clank/wire.py tests/test_wire.py
 git commit -m "feat(wire): per-hand grip, curl, trigger, and edge-triggered clicks"
 ```
 
@@ -276,7 +276,7 @@ git commit -m "feat(executor): echo commanded grip and trigger into BodyState"
 ### Task 4: Relay — forward the buttons, and force them for an A/B
 
 **Files:**
-- Modify: `superbot/pose_relay.py` (`main`, the packet build, `log_row`, `LOG_HEADER`)
+- Modify: `clank/pose_relay.py` (`main`, the packet build, `log_row`, `LOG_HEADER`)
 - Test: `tests/test_pose_relay.py`
 
 **Interfaces:**
@@ -313,7 +313,7 @@ def test_forced_grab_survives_a_missing_state_file(self) -> None:
 - [ ] **Step 2: Run the tests to verify they fail**
 
 Run: `python3 -m unittest tests.test_pose_relay -v`
-Expected: `AttributeError: module 'superbot.pose_relay' has no attribute 'forced_pair'`.
+Expected: `AttributeError: module 'clank.pose_relay' has no attribute 'forced_pair'`.
 
 - [ ] **Step 3: Implement the three helpers and thread them through**
 
@@ -374,7 +374,7 @@ Expected: PASS, including the existing handshake, staleness and malformed-state 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add superbot/pose_relay.py tests/test_pose_relay.py
+git add clank/pose_relay.py tests/test_pose_relay.py
 git commit -m "feat(relay): forward grip and trigger, and force either for an A/B"
 ```
 
@@ -384,8 +384,8 @@ git commit -m "feat(relay): forward grip and trigger, and force either for an A/
 
 **Files:**
 - Modify: `spike/wbc/body_view.py` (`verb_command`)
-- Modify: `superbot/body_preview.py` (`BODY_VERBS`)
-- Modify: `superbot/static/app.js`, `superbot/static/index.html` (buttons)
+- Modify: `clank/body_preview.py` (`BODY_VERBS`)
+- Modify: `clank/static/app.js`, `clank/static/index.html` (buttons)
 - Test: `tests/test_body_preview.py`
 
 **Interfaces:**
@@ -461,7 +461,7 @@ Expected: both verbs reply accepted, and `/tmp/btn/body_state.json` shows `closu
 - [ ] **Step 5: Commit**
 
 ```bash
-git add spike/wbc/body_view.py superbot/body_preview.py superbot/static/app.js superbot/static/index.html tests/test_body_preview.py
+git add spike/wbc/body_view.py clank/body_preview.py clank/static/app.js clank/static/index.html tests/test_body_preview.py
 git commit -m "feat(verbs): grab, release and fire as per-hand dashboard buttons"
 ```
 

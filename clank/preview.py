@@ -96,7 +96,7 @@ class PreviewCapture:
                 raise RuntimeError("preview capture already started")
             self.publish_path.parent.mkdir(parents=True, exist_ok=True)
             self._started_monotonic = time.monotonic()
-            thread = threading.Thread(target=self._run, name="superbot-preview", daemon=True)
+            thread = threading.Thread(target=self._run, name="clank-preview", daemon=True)
             try:
                 thread.start()
             except BaseException:
@@ -213,11 +213,11 @@ def preview_smoke(cfg: Config) -> int:
         return 0
 
     runtime = Path(os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}")
-    socket_name = f"superbot-smoke-{os.getpid()}"
+    socket_name = f"clank-smoke-{os.getpid()}"
     weston_proc: subprocess.Popen | None = None
     mpv_proc: subprocess.Popen | None = None
     try:
-        with tempfile.TemporaryDirectory(prefix="superbot-smoke-") as raw:
+        with tempfile.TemporaryDirectory(prefix="clank-smoke-") as raw:
             work = Path(raw)
             weston_log = work / "weston.log"
             env = os.environ.copy()

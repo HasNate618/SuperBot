@@ -1,7 +1,7 @@
 # R6 — does the body policy fit beside the game?
 
 Measured 2026-10-29 against a live C0 session: Monado `remote` driver, private
-Weston (VNC backend, socket `superbot-a36287`), Superhot VR under Proton bound as
+Weston (VNC backend, socket `clank-a36287`), Superhot VR under Proton bound as
 `Unity Application`. Nothing ran on the host desktop.
 
 R6 was the last open gate standing between the body spike and the join: the

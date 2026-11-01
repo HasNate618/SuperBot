@@ -36,7 +36,7 @@ All MEASURED 2026-10-30, offline in a fresh `SonicExecutor` (no game, no live se
   necessarily a geometry limit. Re-check after Task 1.
 - **Head yaw is asymmetric:** look_left −28.6°, look_right +54.3° from a −86.8° baseline. If the desk
   sits beyond the small side, yaw alone cannot reach it.
-- **`View` carries a per-view FOV and `per_view_data_valid`** (`superbot/wire.py`), and `wire.fill`
+- **`View` carries a per-view FOV and `per_view_data_valid`** (`clank/wire.py`), and `wire.fill`
   sets it `False`. The FOV is therefore *declarable*, not only measurable — see Task 3.
 
 ## Architecture
@@ -45,16 +45,16 @@ Three layers, one new one:
 
 1. **Builders** (`spike/wbc/sonic_executor.py`) — turn named offsets into absolute root-frame wrist
    poses. Task 1 fixes their axes; Task 2 adds head-frame composition.
-2. **Composition math** (`superbot/projection.py`, stdlib) — yaw extraction and Z-rotation as pure
+2. **Composition math** (`clank/projection.py`, stdlib) — yaw extraction and Z-rotation as pure
    functions, so the head-frame rule is testable without MuJoCo, numpy, or a body.
-3. **Camera truth** (`superbot/wire.py` + one experiment) — declare the FOV we want the game to use,
+3. **Camera truth** (`clank/wire.py` + one experiment) — declare the FOV we want the game to use,
    instead of inferring it from images.
 4. **Calibration** (`spike/wbc/calibrate_view.py`, venv) — sweep, capture, detect, fit. Writes a
    JSON file of measured numbers that later code reads; it never contains a guess.
 
 ## Tech stack
 
-`superbot/` standard library only. Image decoding and MuJoCo stay in `spike/wbc/` (venv:
+`clank/` standard library only. Image decoding and MuJoCo stay in `spike/wbc/` (venv:
 `spike/e3/.venv/bin/python`). Detection operates on nested lists of ints, which is what `glow.py`
 already takes.
 
@@ -65,7 +65,7 @@ Extends `docs/superpowers/specs/2026-10-30-targeting-adapter.md` §S3 (FOV / cro
 
 ## Global constraints
 
-- **`superbot/` stays standard-library only.** No NumPy, no PIL, no OpenCV.
+- **`clank/` stays standard-library only.** No NumPy, no PIL, no OpenCV.
 - **`BodyCommand` gains no image field.** Pixels remain the intent schema's business.
 - **A frame is never fitted with fewer than 3 distinct hand positions.** Two points fit any line;
   the second axis would be pure invention.
@@ -82,7 +82,7 @@ Extends `docs/superpowers/specs/2026-10-30-targeting-adapter.md` §S3 (FOV / cro
 **Why first:** every later task moves the hand and reads where it went. On a swapped axis those
 readings are garbage.
 
-- [x] Add a stdlib helper in `superbot/projection.py`:
+- [x] Add a stdlib helper in `clank/projection.py`:
       `root_offset(forward_m, up_m=0.0, lateral_m=0.0) -> tuple[float, float, float]` returning
       `(forward, lateral, up)` in the model's `(x, y, z)`. Reuse the existing `FORWARD`/`UP`/`LEFT`
       axis constants rather than restating them — the whole bug is one module stating a convention
@@ -114,16 +114,16 @@ and the new envelope is written down with residuals.
 **Why:** the game camera *is* the achieved head pose. A root-frame hand therefore swings out of view
 whenever the body turns, and no amount of aiming fixes that.
 
-- [x] `superbot/projection.py`: add `yaw_of(q_xyzw) -> float` (heading, robust at gimbal-ish poses —
+- [x] `clank/projection.py`: add `yaw_of(q_xyzw) -> float` (heading, robust at gimbal-ish poses —
       document the choice) and `rotate_z(vec, yaw_rad)`. Pure, no numpy.
 - [x] Tests: `yaw_of` identity → 0, +90° about Z → +π/2 (left, matching the yaw sign used by
       `look_target`), round-trips; `rotate_z` at 0 is identity to the bit (this is the compatibility
       guarantee below), at +90° sends +X to +Y.
-- [x] `superbot/body.py`: extend `FRAMES` to `("root", "head")` — `"world"` is currently accepted and
+- [x] `clank/body.py`: extend `FRAMES` to `("root", "head")` — `"world"` is currently accepted and
       silently ignored by the executor, which is a pre-existing hole; either implement or reject it,
       and say which in the commit message. Validate that `frame="head"` is meaningless for a head
       pose: reject `frame="head"` when `AUTH_HEAD` is set.
-- [x] `superbot/validate.py`: with `frame="head"`, treat the hand boxes as **offset magnitudes**
+- [x] `clank/validate.py`: with `frame="head"`, treat the hand boxes as **offset magnitudes**
       around the clip wrist rather than absolute workspace points, documented as the same kind of
       sanity cap the module already describes ("not a reach model").
 - [x] `SonicExecutor`: hold the clip's reference head yaw; when `cmd.frame == "head"`, rotate each
@@ -134,7 +134,7 @@ whenever the body turns, and no amount of aiming fixes that.
 - [x] **Compatibility guarantee:** `Δ = 0` must reproduce today's poses exactly. Test it by comparing
       the composed target against `hand_target`'s output at zero yaw, asserting exact equality, not
       approximate.
-- [x] Carry the flag through: `superbot/intent.py` gains nothing; the *verb* layer
+- [x] Carry the flag through: `clank/intent.py` gains nothing; the *verb* layer
       (`spike/wbc/body_view.py`) gains `frame` on `reach`, and `verb_to_intent` validates it.
       Pixels stay out of the body contract.
 - [x] Verify offline: with a commanded head yaw of +35° and `frame="head"`, the right wrist target
@@ -173,12 +173,12 @@ is closed with a recorded negative result and no code left half-enabled.
 **Why:** three captures this session silently returned Steam's UI. A calibration that fits Steam's
 window would look like success and be worthless.
 
-- [ ] Reuse `superbot/preview.py:PreviewCapture.capture_once` for capture; do not write a second
+- [ ] Reuse `clank/preview.py:PreviewCapture.capture_once` for capture; do not write a second
       screenshooter wrapper. Verify it returns the path it wrote (the tool ignores its argument and
       writes a timestamped name in the cwd).
 - [x] New `spike/wbc/frames.py` (venv): `load(path) -> Frame` where `Frame` holds `width`, `height`
       and `rows` (nested lists of `(r, g, b)` ints), plus `downscale(step)`. Decoding lives here
-      because `superbot/` may not import PIL.
+      because `clank/` may not import PIL.
 - [x] `spike/wbc/calibrate_view.py`: `liveness(captures)` — capture at head yaw 0 and +20°, and require
       the frames to differ substantially (reuse the earlier frame-diff statistics: a real turn moved
       15k–17k pixels at mean 3.3–4.3, a stale frame moved ~1k at 0.17). Return a verdict, not a bool

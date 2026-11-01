@@ -19,7 +19,7 @@ break later:
 
 Frame conventions. Positions are MuJoCo's Z-up frame with +X forward, so in the
 head's own frame the gaze is +X, up is +Z, and the robot's left is +Y. The output
-is normalised to the HMD view, origin top-left, matching `superbot.intent/1`.
+is normalised to the HMD view, origin top-left, matching `clank.intent/1`.
 """
 
 from __future__ import annotations

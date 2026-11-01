@@ -4,16 +4,16 @@
 
 **Goal:** Land the three stdlib-computable pieces of the targeting adapter — the intent schema, the wrist→camera projection, and the glow patch score — plus parameterised verbs, so the only thing left before a hub pickup is the live-session capture and the script.
 
-**Architecture:** A writer names `skill + side + optional pixel` as `superbot.intent/1`. Three new stdlib modules do the arithmetic that does not need the game: `intent.py` (schema, validation, verb→intent), `projection.py` (`BodyState` wrist → normalised `(u, v)` through a given FOV), `glow.py` (95th-percentile local brightness delta). `spike/wbc/body_view.py` gains parameterised verbs by calling the stdlib parser, so the mapping is testable without MuJoCo.
+**Architecture:** A writer names `skill + side + optional pixel` as `clank.intent/1`. Three new stdlib modules do the arithmetic that does not need the game: `intent.py` (schema, validation, verb→intent), `projection.py` (`BodyState` wrist → normalised `(u, v)` through a given FOV), `glow.py` (95th-percentile local brightness delta). `spike/wbc/body_view.py` gains parameterised verbs by calling the stdlib parser, so the mapping is testable without MuJoCo.
 
-**Tech Stack:** Python 3.12 standard library only for `superbot/`. The adapter's capture loop (VNC/RFB) and any image decoding stay in `spike/wbc/` in a later plan.
+**Tech Stack:** Python 3.12 standard library only for `clank/`. The adapter's capture loop (VNC/RFB) and any image decoding stay in `spike/wbc/` in a later plan.
 
-**Spec:** `docs/superpowers/specs/2026-10-30-targeting-adapter.md`. Parent design: `docs/2026-10-23-vr-bot-design.md` §§6, 8, 9. Play rules: `research/superhot-play.md`.
+**Spec:** `docs/superpowers/specs/2026-10-30-targeting-adapter.md`. Parent design: `docs/2026-10-23-clank-design.md` §§6, 8, 9. Play rules: `research/superhot-play.md`.
 
 ## Global Constraints
 
-- `superbot/` stays **standard-library only**. No NumPy, no PIL.
-- `BodyCommand` / `BodyState` (`superbot.body/1`) **must not** gain a pixel field. Pixels are the intent schema.
+- `clank/` stays **standard-library only**. No NumPy, no PIL.
+- `BodyCommand` / `BodyState` (`clank.body/1`) **must not** gain a pixel field. Pixels are the intent schema.
 - The adapter **never** closes a hand. Glow true means "in range"; `grab` is its own intent.
 - Projection is tested with a **fixture FOV**. The remote driver's default FOV is not written into the packet today (`wire.fill` sets `per_view_data_valid = False`), so live FOV is measured later and is never guessed in a test's favour.
 - Glow is a **baseline** delta, never `frame[t] − frame[t−1]`.
@@ -32,12 +32,12 @@
 ### Task 1: Intent schema
 
 **Files:**
-- Create: `superbot/intent.py`
+- Create: `clank/intent.py`
 - Test: `tests/test_intent.py`
 
 **Interfaces:**
 - Consumes: nothing from other tasks.
-- Produces: `SCHEMA = "superbot.intent/1"`; `SKILLS`, `SIDES`, `SIDE_SKILLS`; `Intent` (frozen dataclass with `schema, seq, t_mono_ns, ttl_ms, source, skill, side, pixel, yaw_rad`); `Intent.from_dict(raw) -> Intent`; `.to_dict() -> dict`; `validate_intent(intent) -> str` (empty string means valid); `verb_to_intent(name: str, raw: Mapping[str, Any]) -> Intent | None`.
+- Produces: `SCHEMA = "clank.intent/1"`; `SKILLS`, `SIDES`, `SIDE_SKILLS`; `Intent` (frozen dataclass with `schema, seq, t_mono_ns, ttl_ms, source, skill, side, pixel, yaw_rad`); `Intent.from_dict(raw) -> Intent`; `.to_dict() -> dict`; `validate_intent(intent) -> str` (empty string means valid); `verb_to_intent(name: str, raw: Mapping[str, Any]) -> Intent | None`.
 
 - [x] **Step 1: Write the failing tests**
 
@@ -67,7 +67,7 @@ def test_unknown_verb_is_none():
 
 Run: `python3 -m unittest tests.test_intent -v` — expects `ModuleNotFoundError`.
 
-- [x] **Step 3: Implement `superbot/intent.py`**
+- [x] **Step 3: Implement `clank/intent.py`**
 
 `SKILLS = ("hold", "look", "reach", "grab", "release", "fire", "strike", "dodge", "twitch")`; `SIDE_SKILLS = ("reach", "grab", "release", "fire", "strike", "dodge")`. `verb_to_intent` maps the existing verb names plus parameterised forms: `look` reads `yaw_deg`; `reach`/`aim` read `side`, `forward_m`, `up_m`, `lateral_m`. Unknown name → `None`.
 
@@ -78,7 +78,7 @@ Run: `python3 -m unittest tests.test_intent -v` — all pass.
 - [x] **Step 5: Commit**
 
 ```bash
-git add superbot/intent.py tests/test_intent.py
+git add clank/intent.py tests/test_intent.py
 git commit -m "feat(intent): skill + side + pixel on a socket the brain can share"
 ```
 
@@ -87,11 +87,11 @@ git commit -m "feat(intent): skill + side + pixel on a socket the brain can shar
 ### Task 2: Wrist projection
 
 **Files:**
-- Create: `superbot/projection.py`
+- Create: `clank/projection.py`
 - Test: `tests/test_projection.py`
 
 **Interfaces:**
-- Consumes: `superbot.body.Pose`.
+- Consumes: `clank.body.Pose`.
 - Produces: `Fov(angle_left, angle_right, angle_up, angle_down)` with `.from_degrees(left, right, up, down)`; `project_point(head: Pose, point_p, fov: Fov) -> tuple[float, float] | None`; `pixel_error(target: tuple[float, float], actual: tuple[float, float]) -> float`.
 
 - [x] **Step 1: Write the failing tests**
@@ -135,7 +135,7 @@ v = (|angle_up|   − atan2(z, x)) / (|angle_up|   + |angle_down|)
 - [x] **Step 5: Commit**
 
 ```bash
-git add superbot/projection.py tests/test_projection.py
+git add clank/projection.py tests/test_projection.py
 git commit -m "feat(projection): where the wrist lands in the view we emit"
 ```
 
@@ -144,7 +144,7 @@ git commit -m "feat(projection): where the wrist lands in the view we emit"
 ### Task 3: Glow score
 
 **Files:**
-- Create: `superbot/glow.py`
+- Create: `clank/glow.py`
 - Test: `tests/test_glow.py`
 
 **Interfaces:**
@@ -177,7 +177,7 @@ Score = the 95th percentile of `max(R, G, B)` over `clip(after − before, 0)`, 
 - [x] **Step 5: Commit**
 
 ```bash
-git add superbot/glow.py tests/test_glow.py
+git add clank/glow.py tests/test_glow.py
 git commit -m "feat(glow): a local brightness delta is the grab-range oracle"
 ```
 
@@ -212,7 +212,7 @@ Landed after the operator corrected the hub sequence: the floppy and headset hav
 **no** pre-grab glow, and the insertion slot glows **green**.
 
 **Files:**
-- Modify: `superbot/glow.py`, `tests/test_glow.py`
+- Modify: `clank/glow.py`, `tests/test_glow.py`
 - Modify: `docs/superpowers/specs/2026-10-30-targeting-adapter.md` §1, §8, §10
 - Modify: `research/superhot-play.md` §1, §2
 
@@ -226,7 +226,7 @@ Landed after the operator corrected the hub sequence: the floppy and headset hav
 - [x] **Step 3: Run tests** - 26 pass in `tests/test_glow.py`
 - [x] **Step 4: Commit**
 
-**Open question, deliberately not guessed:** `superbot.intent/1` has no way to say
+**Open question, deliberately not guessed:** `clank.intent/1` has no way to say
 "the target is whatever the green gate finds" - a writer currently names a pixel.
 Either the adapter computes the centroid when the intent carries no pixel, or the
 schema grows an explicit target-kind field. Decide it when the adapter exists, not
@@ -242,4 +242,4 @@ Gated on the live session and the operator; do not write them here.
   `green_centroid`, both of which are implemented and unit-tested without the game.
 - **S5** — the adapter capture loop (RFB or `DISPLAY=:1`) and the 10–30 Hz skill loop.
 - **S6** — the hub script and the disk lift.
-- Everything E5/d1. The brain is a writer on `superbot.intent/1`, after S6 produces frames that are not all `hold`.
+- Everything E5/d1. The brain is a writer on `clank.intent/1`, after S6 produces frames that are not all `hold`.

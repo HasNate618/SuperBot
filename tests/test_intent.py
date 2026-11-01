@@ -1,4 +1,4 @@
-"""`superbot.intent/1`: what a writer names, and nothing a robot cannot obey.
+"""`clank.intent/1`: what a writer names, and nothing a robot cannot obey.
 
 The point of this schema is the boundary. A writer (script, operator click, or a
 later model) says *which skill on which side, and optionally which pixel*. It does
@@ -11,7 +11,7 @@ from __future__ import annotations
 import math
 import unittest
 
-from superbot import intent
+from clank import intent
 
 
 class IntentRoundTrip(unittest.TestCase):
@@ -75,7 +75,7 @@ class Validation(unittest.TestCase):
 
     def test_a_wrong_schema_is_rejected(self) -> None:
         self.assertTrue(
-            intent.validate_intent(intent.Intent(skill="hold", schema="superbot.body/1"))
+            intent.validate_intent(intent.Intent(skill="hold", schema="clank.body/1"))
         )
 
 
@@ -151,7 +151,7 @@ class FrameField(unittest.TestCase):
 
     def test_the_body_contract_owns_the_vocabulary(self) -> None:
         # If `FRAMES` ever grows, this test must not need editing.
-        from superbot.body import FRAMES
+        from clank.body import FRAMES
 
         for frame in FRAMES:
             self.assertEqual(

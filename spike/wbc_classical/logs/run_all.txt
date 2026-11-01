@@ -1,4 +1,4 @@
-MODEL /home/nate/Projects/SuperBot/spike/e3/vendor/mujoco_menagerie/unitree_g1/scene.xml nq=36 nv=35 nu=29 head_gid=40 foot_gids=[15, 16, 17, 18, 30, 31, 32, 33]
+MODEL /home/nate/Projects/Clank/spike/e3/vendor/mujoco_menagerie/unitree_g1/scene.xml nq=36 nv=35 nu=29 head_gid=40 foot_gids=[15, 16, 17, 18, 30, 31, 32, 33]
 
 === HOLD (wall 1.81 s) ===
   n_ticks: 1000
@@ -189,4 +189,4 @@ MODEL /home/nate/Projects/SuperBot/spike/e3/vendor/mujoco_menagerie/unitree_g1/s
     punch_right: {'ticks': 75, 'base_max_xy_m': 0.01815217088112605, 'min_support_margin_m': 0.07740889037186527, 'max_wrist_res_m': 0.03875480652171965, 'max_head_yaw_err_deg': 6.038683865853423, 'fall': False}
     dodge_right: {'ticks': 75, 'base_max_xy_m': 0.10084674250665716, 'min_support_margin_m': 0.01790555135370863, 'max_wrist_res_m': 0.07672120388699083, 'max_head_yaw_err_deg': 3.632117869568137, 'fall': False}
 
-WROTE /home/nate/Projects/SuperBot/spike/wbc_classical/logs/summary.json
+WROTE /home/nate/Projects/Clank/spike/wbc_classical/logs/summary.json

@@ -11,7 +11,7 @@ from typing import Any
 
 
 class ConfigError(ValueError):
-    """Raised when config.toml or a SUPERBOT_ override is invalid."""
+    """Raised when config.toml or a CLANK_ override is invalid."""
 
 
 @dataclass(frozen=True)
@@ -131,7 +131,7 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         "vr_override": "",
         "pose_client": "spike/c0/c0_client.py",
         "openxr_active_runtime": os.path.expanduser("~/.config/openxr/1/active_runtime.json"),
-        "session_root": os.path.expanduser("~/.local/state/SuperBot/sessions"),
+        "session_root": os.path.expanduser("~/.local/state/Clank/sessions"),
     },
     "launch": {
         "shortcut_id": "14670405696621641728",
@@ -360,9 +360,9 @@ def load_config(
             merged[section][key] = _coerce(value, DEFAULTS[section][key], f"{section}.{key}")
 
     for env_key, raw in (env or {}).items():
-        if not env_key.startswith("SUPERBOT_"):
+        if not env_key.startswith("CLANK_"):
             continue
-        rest = env_key[len("SUPERBOT_") :]
+        rest = env_key[len("CLANK_") :]
         if "_" not in rest:
             raise ConfigError(f"invalid environment override {env_key}")
         raw_section, raw_key = rest.split("_", 1)

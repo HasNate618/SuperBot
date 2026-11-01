@@ -3,7 +3,7 @@
 - Date: 2026-10-30
 - Status: draft for review; no implementation until this document is accepted
 - Scope: close the loop so the simulated G1 can put a hand on a Superhot object and grab it. The hub floppy sequence is the first proof. The brain is a drop-in writer on the same intent socket, not part of this build.
-- Parent: `docs/2026-10-23-vr-bot-design.md` §§5–9, §11. Play rules: `research/superhot-play.md`.
+- Parent: `docs/2026-10-23-clank-design.md` §§5–9, §11. Play rules: `research/superhot-play.md`.
 - Target machine: the existing NixOS/Hyprland host, live session path (Monado remote + Weston VNC + Superhot). Do not take over the host desktop.
 
 Claim tags in this document: `[MEASURED]` local file or named run; `[OPERATOR]` told by the person who owns the game; `[ASSUMPTION]` inference, untested.
@@ -30,13 +30,13 @@ d1 is not this adapter. On GPU it is a hold-time chooser (digest 62–176 ms `[M
 
 - Packet path and buttons work in manual mode `[OPERATOR]`. Default relay grab is squeeze (`--grab-mode squeeze`).
 - One sim, one consumer: `body_state.json` at ~46 Hz, frames independently `[MEASURED: commit 0753032]`.
-- `BodyCommand` / `BodyState` schema `superbot.body/1` already carries per-hand `closure` and `trigger`, `AUTH_CLOSURE` / `AUTH_TRIGGER`, and `FLAG_SATURATED`.
+- `BodyCommand` / `BodyState` schema `clank.body/1` already carries per-hand `closure` and `trigger`, `AUTH_CLOSURE` / `AUTH_TRIGGER`, and `FLAG_SATURATED`.
 - Grip latches across `hold()` and other verbs; `release_*` opens it. Trigger does not latch.
 - Reach envelope ~0.20 m. Aim at 0.22 m reports `SATURATED`. Wrist residual vs clip VR points: 0.1557 m left / 0.1208 m right median `[MEASURED: research/c3m-results.md]`.
 - G1 has no neck. Head pose is derived. "Over the head" is unmeasured and may sit outside the envelope.
 - Superhot is authored around spawn. Walking more than about 1 m breaks the next teleport `[OPERATOR]`.
 - Game framebuffer today is Weston VNC on `127.0.0.1:5901`, viewed through noVNC. `weston-screenshooter` **blocks** in VNC mode `[MEASURED: research/r6-co-residency.md]`. `body_latest.jpg` is the MuJoCo tile, not the game.
-- `wire.fill` sets `per_view_data_valid = False` and does not write FOV `[MEASURED: superbot/wire.py]`. Projection cannot assume we emit FOV until we start, or until the remote driver's default is measured.
+- `wire.fill` sets `per_view_data_valid = False` and does not write FOV `[MEASURED: clank/wire.py]`. Projection cannot assume we emit FOV until we start, or until the remote driver's default is measured.
 
 ## 3. Goals and non-goals
 
@@ -57,7 +57,7 @@ d1 is not this adapter. On GPU it is a hold-time chooser (digest 62–176 ms `[M
 - Walking the level. A later bounded 0.3–0.7 m step, inside ~1 m of spawn, is out of this spec.
 - Headset-over-head as a known pose. Measure; if `SATURATED`, stop and record.
 - Fine-tuning, policy retraining, game telemetry as control, ROS2.
-- Changing `superbot/` away from stdlib-only. Image decode and numeric projection that need NumPy/PIL live next to the executor in `spike/wbc/`.
+- Changing `clank/` away from stdlib-only. Image decode and numeric projection that need NumPy/PIL live next to the executor in `spike/wbc/`.
 - Auto-grab when glow becomes true. Grab is its own intent.
 - Consecutive-frame differencing as the glow oracle.
 
@@ -81,7 +81,7 @@ Body     50 Hz        existing SonicExecutor + body_view
     grip latches; trigger is FIRE_HOLD_TICKS
         |
         v
-Relay    ~50 Hz       superbot/pose_relay.py (stdlib)
+Relay    ~50 Hz       clank/pose_relay.py (stdlib)
     achieved poses → mndrmt3 :4242
 ```
 
@@ -97,7 +97,7 @@ Invalid or stale intents become `hold`. The 50 Hz loop never waits on a frame or
 
 | Unit | Lives in | Why |
 | --- | --- | --- |
-| `superbot.intent` schema + parse/validate | `superbot/` (stdlib) | same bar as `body.py` |
+| `clank.intent` schema + parse/validate | `clank/` (stdlib) | same bar as `body.py` |
 | Adapter process (skill loop) | `spike/wbc/` | needs the body venv; may decode JPEG / do pinhole math |
 | Glow sampler | same adapter process | needs game pixels |
 | Frame source | adapter, via a VNC/RFB client or `DISPLAY=:1` grab | `weston-screenshooter` is dead in VNC; dashboard canvas is the operator, not a sensor |
@@ -108,11 +108,11 @@ Deleting the adapter must leave manual mode, the join, and open-loop verbs intac
 
 ## 5. Intent contract
 
-New schema name: `superbot.intent/1`. JSON, latest-wins, same transport style as `BodyCommand` (Unix socket or queue). This is **not** a field on `BodyCommand`. Pixels are not robotics state.
+New schema name: `clank.intent/1`. JSON, latest-wins, same transport style as `BodyCommand` (Unix socket or queue). This is **not** a field on `BodyCommand`. Pixels are not robotics state.
 
 ```text
 {
-  "schema": "superbot.intent/1",
+  "schema": "clank.intent/1",
   "seq": 0,
   "t_mono_ns": 0,
   "ttl_ms": 2000,
@@ -267,7 +267,7 @@ VNC is 1920×1048 of Weston `[MEASURED: /api/state]`, not a raw HMD eye. The ada
 
 Frame age > 0.3 s (same order as `STALE_AFTER_SEC` on the relay) → treat as `no_frame`, do not servo on a stale picture.
 
-`superbot/` does not grow a JPEG dependency. The adapter process may.
+`clank/` does not grow a JPEG dependency. The adapter process may.
 
 ## 10. Hub sequence
 
@@ -302,7 +302,7 @@ This spec does not implement in-level play. It only forbids inventing skills out
 
 ## 12. Writers
 
-All writers speak `superbot.intent/1`. If a path needs the operator to hold a mouse for the **servo**, the scaffolding leaked. An operator click that **names a pixel once** is a legal stand-in for d1 `box`.
+All writers speak `clank.intent/1`. If a path needs the operator to hold a mouse for the **servo**, the scaffolding leaked. An operator click that **names a pixel once** is a legal stand-in for d1 `box`.
 
 | Writer | When | What it proves |
 | --- | --- | --- |

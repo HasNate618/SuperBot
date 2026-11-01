@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from superbot.manual_input import (
+from clank.manual_input import (
     ManualInputBridge,
     ManualInputError,
     ManualInputUnavailable,

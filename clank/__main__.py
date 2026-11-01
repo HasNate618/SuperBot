@@ -23,7 +23,7 @@ STOP_TIMEOUT_SEC = 10.0
 
 
 def probe_dashboard(host: str, port: int, timeout: float = PROBE_TIMEOUT_SEC) -> dict | None:
-    """Return the parsed /api/state when it answers as a superbot dashboard.
+    """Return the parsed /api/state when it answers as a clank dashboard.
 
     Anything else - refused, timeout, garbage, a foreign server - is None.
     """
@@ -39,7 +39,7 @@ def probe_dashboard(host: str, port: int, timeout: float = PROBE_TIMEOUT_SEC) ->
 
 
 def read_own_pid(pidfile: Path) -> int | None:
-    """The pid in the pidfile, when it is a live process running superbot.
+    """The pid in the pidfile, when it is a live process running clank.
 
     Anything else - missing file, garbage, a dead pid, a foreign process, or
     ourselves - is None. Callers must not kill what this does not return.
@@ -56,7 +56,7 @@ def read_own_pid(pidfile: Path) -> int | None:
         )
     except OSError:
         return None
-    if "superbot" not in cmdline:
+    if "clank" not in cmdline:
         return None
     return pid
 
@@ -117,7 +117,7 @@ def replace_dashboard(cfg: Config) -> str | None:
             if maybe > 0 and pid_alive(maybe):
                 return (
                     f"dashboard pid file holds {raw!r}, which is not a running "
-                    "superbot dashboard; refusing to kill it"
+                    "clank dashboard; refusing to kill it"
                 )
         with contextlib.suppress(OSError):
             pidfile.unlink()
@@ -137,7 +137,7 @@ def replace_dashboard(cfg: Config) -> str | None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="superbot")
+    parser = argparse.ArgumentParser(prog="clank")
     parser.add_argument("--config", default="config.toml", help="TOML config path")
     parser.add_argument("--host", help="override dashboard host")
     parser.add_argument("--port", type=int, help="override dashboard port")
@@ -145,14 +145,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--replace",
         action="store_true",
-        help="stop a running superbot dashboard on this port and start a new one",
+        help="stop a running clank dashboard on this port and start a new one",
     )
     args = parser.parse_args(argv)
 
     try:
         cfg = load_config(Path(args.config), env=os.environ)
     except (ConfigError, OSError) as exc:
-        print(f"superbot: {exc}", file=sys.stderr)
+        print(f"clank: {exc}", file=sys.stderr)
         return 2
 
     if args.host is not None or args.port is not None:
@@ -168,21 +168,21 @@ def main(argv: list[str] | None = None) -> int:
     try:
         validate_config(cfg)
     except ConfigError as exc:
-        print(f"superbot: {exc}", file=sys.stderr)
+        print(f"clank: {exc}", file=sys.stderr)
         return 2
 
     host, port = cfg.dashboard.host, cfg.dashboard.port
     existing = probe_dashboard(host, port)
     if existing is not None and not args.replace:
         print(
-            f"superbot: dashboard already running at http://{host}:{port} "
+            f"clank: dashboard already running at http://{host}:{port} "
             f"(session {existing.get('state')}); use --replace to restart it"
         )
         return 0
     if existing is not None:
         problem = replace_dashboard(cfg)
         if problem is not None:
-            print(f"superbot: {problem}", file=sys.stderr)
+            print(f"clank: {problem}", file=sys.stderr)
             return 2
 
     try:
@@ -195,7 +195,7 @@ def main(argv: list[str] | None = None) -> int:
 
         run_dashboard(cfg)
     except OSError as exc:
-        print(f"superbot: {exc}", file=sys.stderr)
+        print(f"clank: {exc}", file=sys.stderr)
         return 2
     return 0
 

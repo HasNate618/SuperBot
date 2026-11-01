@@ -64,11 +64,11 @@ Browser (localhost:8765)
     |
     | HTTP: HTML, /api/state, /api/session/*, /preview.mjpg
     v
-superbot.dashboard  (stdlib ThreadingHTTPServer)
+clank.dashboard  (stdlib ThreadingHTTPServer)
     |
     | calls SessionManager methods
     v
-superbot.orchestrator  (single state machine, one lock)
+clank.orchestrator  (single state machine, one lock)
     |
     +-- monado-service            TCP 127.0.0.1:4242, null compositor, remote driver
     +-- weston (headless, gl)     private Wayland socket + Xwayland display :N
@@ -86,12 +86,12 @@ The dashboard process is the only long-lived process. It owns the session state 
 
 | Unit | Purpose | Depends on |
 | --- | --- | --- |
-| `superbot.config` | Typed configuration loaded from `config.toml` plus environment overrides; validates paths and numeric bounds. | Python stdlib |
-| `superbot.orchestrator.SessionManager` | State machine and process lifecycle; start, stop, mode switch, health probes, cleanup. | config, process helpers, preview |
-| `superbot.processes` | Small wrappers for process groups, `pgrep` probes, waiting with timeouts, log redirection. | stdlib subprocess/os/signal |
-| `superbot.preview.PreviewCapture` | Weston screenshot loop, crop, JPEG encode, atomic `latest.jpg` publication. | `weston-screenshooter`, `magick` |
-| `superbot.dashboard` | HTTP routes, JSON state, MJPEG stream, static files, request validation. | stdlib `http.server` |
-| `superbot/static/index.html` | Dashboard UI: preview, state, controls, logs. | no build step |
+| `clank.config` | Typed configuration loaded from `config.toml` plus environment overrides; validates paths and numeric bounds. | Python stdlib |
+| `clank.orchestrator.SessionManager` | State machine and process lifecycle; start, stop, mode switch, health probes, cleanup. | config, process helpers, preview |
+| `clank.processes` | Small wrappers for process groups, `pgrep` probes, waiting with timeouts, log redirection. | stdlib subprocess/os/signal |
+| `clank.preview.PreviewCapture` | Weston screenshot loop, crop, JPEG encode, atomic `latest.jpg` publication. | `weston-screenshooter`, `magick` |
+| `clank.dashboard` | HTTP routes, JSON state, MJPEG stream, static files, request validation. | stdlib `http.server` |
+| `clank/static/index.html` | Dashboard UI: preview, state, controls, logs. | no build step |
 | `spike/c0/c0_client.py` | Existing pose client, reused unchanged via its CLI. | existing |
 
 No FastAPI, Flask, Pillow, or other Python package is required. The only non-stdlib tools are Weston's own `weston-screenshooter`, ImageMagick `magick`, Steam, Proton, and Monado, all already present on the target machine.
@@ -115,12 +115,12 @@ The manager holds one `threading.RLock` for lifecycle transitions. Health probes
 Each step has a timeout and writes to the session log. `startup_timeout_sec` is an outer bound on the whole sequence; if it expires, the current step fails and the shutdown sequence runs. Any failure triggers the shutdown sequence and enters `failed`.
 
 1. **Preflight**
-   - Read `~/.local/state/SuperBot/current-session.json` if present. For each recorded process-group ID, check that it is alive and that its command line matches the recorded command name. If any match, fail with the PIDs and a targeted stop instruction. If none match, remove the pointer. Never kill a process only because its name matches `steam`, `weston`, or `monado`.
+   - Read `~/.local/state/Clank/current-session.json` if present. For each recorded process-group ID, check that it is alive and that its command line matches the recorded command name. If any match, fail with the PIDs and a targeted stop instruction. If none match, remove the pointer. Never kill a process only because its name matches `steam`, `weston`, or `monado`.
    - Host Steam is not running: `pgrep -x steam` must find nothing. If found, fail with: `Close the host Steam client before starting a hidden C0 session.`
    - `monado.service` and `monado.socket` are not active (`systemctl --user is-active --quiet ...`). If active, fail with a stop instruction.
    - TCP 4242 is free. If `/run/user/1000/monado_comp_ipc` exists and no process is listening on 4242, remove it as stale.
    - Required binaries/files exist and are executable/readable: Monado, Weston, `weston-screenshooter`, `weston-debug`, `magick`, Steam, game `.exe`, `~/.config/openxr/1/active_runtime.json`, `spike/c0/c0_client.py`.
-   - Create the session directory under `~/.local/state/SuperBot/sessions/<UTC timestamp>-<short id>/` and write `~/.local/state/SuperBot/current-session.json` with the session path. Update it with each process-group ID as that child starts.
+   - Create the session directory under `~/.local/state/Clank/sessions/<UTC timestamp>-<short id>/` and write `~/.local/state/Clank/current-session.json` with the session path. Update it with each process-group ID as that child starts.
 2. **Monado**
    - Start `monado-service` in its own process group with:
      - `XDG_RUNTIME_DIR`
@@ -134,7 +134,7 @@ Each step has a timeout and writes to the session log. `startup_timeout_sec` is 
    - Start Weston in its own process group with:
      - `--backend=headless --renderer=gl`
      - `--width=1280 --height=720`
-     - `--socket=superbot-<short id>`
+     - `--socket=clank-<short id>`
      - `--no-config --xwayland --debug`
      - `--log=<session>/weston.log`
    - stdout/stderr -> `session/weston-stdout.log`.
@@ -178,7 +178,7 @@ Executed on stop, on any startup failure, and on dashboard process exit. `stop_s
 3. Stop Weston: `SIGTERM` the process group, wait 5 s, `SIGKILL` if needed.
 4. Stop Monado: `SIGTERM`, wait 5 s, `SIGKILL` if needed. Remove `/run/user/1000/monado_comp_ipc` only if no Monado process remains and the socket is stale.
 5. Stop the preview loop thread and flush the session log.
-6. Remove `~/.local/state/SuperBot/current-session.json`. Set `state = stopped`; preserve `last_error` only for the failed case.
+6. Remove `~/.local/state/Clank/current-session.json`. Set `state = stopped`; preserve `last_error` only for the failed case.
 
 Cleanup is best-effort but verified: after the sequence, the manager probes for `SUPERHOT_VR.exe`, `steam` (ours), the Weston process, and Monado. Any survivor is logged as a warning and reported in `/api/state`.
 
@@ -204,7 +204,7 @@ Server: Python stdlib `ThreadingHTTPServer`, bound to `127.0.0.1:8765` by defaul
 
 | Method | Path | Behavior |
 | --- | --- | --- |
-| GET | `/` | Serve `superbot/static/index.html` and its CSS/JS. |
+| GET | `/` | Serve `clank/static/index.html` and its CSS/JS. |
 | GET | `/api/state` | JSON: state, session id, timestamps, mode, process health, preview status, last error, log paths. |
 | POST | `/api/session/start` | Start the session; 202 if accepted, 409 if not stopped/failed, 400 on preflight failure with the error message, 500 on an unexpected server error. |
 | POST | `/api/session/stop` | Stop the session; idempotent. |
@@ -254,7 +254,7 @@ State is polled every 1 s. The MJPEG image is independent of polling.
 
 ## 5. Configuration
 
-`config.toml` at the repository root, loaded with `tomllib`. Environment variables prefixed `SUPERBOT_` override individual keys using uppercase `SUPERBOT_<SECTION>_<KEY>` names (for example `SUPERBOT_PATHS_WESTON_BIN`). Unknown keys are rejected at startup.
+`config.toml` at the repository root, loaded with `tomllib`. Environment variables prefixed `CLANK_` override individual keys using uppercase `CLANK_<SECTION>_<KEY>` names (for example `CLANK_PATHS_WESTON_BIN`). Unknown keys are rejected at startup.
 
 Defaults:
 
@@ -269,7 +269,7 @@ steam_bin = "/home/nate/.local/bin/steam"
 game_exe = "/home/nate/Games/SUPERHOT VR/SUPERHOT_VR.exe"
 pose_client = "spike/c0/c0_client.py"
 openxr_active_runtime = "/home/nate/.config/openxr/1/active_runtime.json"
-session_root = "/home/nate/.local/state/SuperBot/sessions"
+session_root = "/home/nate/.local/state/Clank/sessions"
 
 [launch]
 shortcut_id = "18251483899710406656"
@@ -299,14 +299,14 @@ pose_handshake_sec = 10
 stop_sec = 60
 ```
 
-`weston_bin`, `weston_screenshooter_bin`, and `weston_debug_bin` must resolve to the same Weston package. If `weston_bin` is an absolute path and the other two are left at their defaults, derive them as siblings in the same directory. If `weston` is not on `PATH` (the current NixOS host has it in the store but not in the profile), `run.sh` puts it on `PATH` via `nix shell nixpkgs#weston` or the user sets `SUPERBOT_PATHS_WESTON_BIN` (and the two sibling keys if needed). The application must not hard-code store paths. `proton_app_id` is used to build the Player log path and is never used as a launch target.
+`weston_bin`, `weston_screenshooter_bin`, and `weston_debug_bin` must resolve to the same Weston package. If `weston_bin` is an absolute path and the other two are left at their defaults, derive them as siblings in the same directory. If `weston` is not on `PATH` (the current NixOS host has it in the store but not in the profile), `run.sh` puts it on `PATH` via `nix shell nixpkgs#weston` or the user sets `CLANK_PATHS_WESTON_BIN` (and the two sibling keys if needed). The application must not hard-code store paths. `proton_app_id` is used to build the Player log path and is never used as a launch target.
 
 ## 6. File layout
 
 ```text
 config.toml
 run.sh
-superbot/
+clank/
   __init__.py
   __main__.py          # argparse entry: serve dashboard
   config.py
@@ -356,7 +356,7 @@ Tests use the Python stdlib `unittest` runner: `python -m unittest discover -s t
 - `test_orchestrator.py`: state transitions with a fake process runner; start failure triggers cleanup; concurrent start returns conflict; host-Steam preflight; mode switch restarts the pose process; stop is idempotent.
 - `test_preview.py`: crop math for 1280x720 with a 32 px panel; stale PNG rejection; atomic replace; frame rate accounting.
 - `test_dashboard.py`: route validation, 409/400 responses, `/api/state` shape, `/api/logs` allowlist.
-- `python -m superbot --preview-smoke`: starts Weston headless with `mpv` (lavfi test pattern) on the private display, waits for a non-black frame, checks `/api/state` and `/api/frame.jpg`, then stops and asserts cleanup. Skipped if Weston/mpv are unavailable. This test must not start Monado, Steam, or the game.
+- `python -m clank --preview-smoke`: starts Weston headless with `mpv` (lavfi test pattern) on the private display, waits for a non-black frame, checks `/api/state` and `/api/frame.jpg`, then stops and asserts cleanup. Skipped if Weston/mpv are unavailable. This test must not start Monado, Steam, or the game.
 
 ### Manual acceptance with the real session
 

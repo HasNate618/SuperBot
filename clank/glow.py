@@ -232,7 +232,7 @@ def green_centroid(
     width = len(frame[0])
     height = len(frame)
     # Normalise against the last index so the far edge maps to 1.0, matching the
-    # [0, 1] pixel convention in `superbot.intent`.
+    # [0, 1] pixel convention in `clank.intent`.
     cx = (sum_x / hits) / max(1, width - 1)
     cy = (sum_y / hits) / max(1, height - 1)
     return (cx, cy)

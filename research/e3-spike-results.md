@@ -34,7 +34,7 @@ All throwaway code and assets are under `spike/e3/`; nothing was installed into 
 ### Python environment
 
 ```bash
-cd /home/nate/Projects/SuperBot/spike/e3
+cd /home/nate/Projects/Clank/spike/e3
 uv venv --python 3.12 .venv
 uv pip install --python .venv/bin/python 'mujoco==3.17.0' 'numpy<2.3' mink imageio
 ```

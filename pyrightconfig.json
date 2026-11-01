@@ -1,5 +1,5 @@
 {
-  "include": ["superbot", "tests", "spike"],
+  "include": ["clank", "tests", "spike"],
   "exclude": ["**/vendor/**", "**/__pycache__/**", "spike/e2/frames/**"],
   "venvPath": "spike/e3",
   "venv": ".venv",

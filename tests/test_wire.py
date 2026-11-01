@@ -4,7 +4,7 @@ import math
 import struct
 import unittest
 
-from superbot import wire
+from clank import wire
 
 
 class LayoutTests(unittest.TestCase):

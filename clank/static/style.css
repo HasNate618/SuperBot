@@ -1,24 +1,24 @@
-/* SUPERBOT C0 — brutalist cockpit. Flat black, white, one red. No glow,
+/* CLANK C0 — brutalist cockpit. Flat black, white, one red. No glow,
    no gradients, no rounded corners. The frame is the interface.
    Fonts are vendored and served by the dashboard, so they cannot be
    overridden by whatever the desktop defaults to. */
 
 @font-face {
-  font-family: "Superbot Sans";
+  font-family: "Clank Sans";
   src: url("/fonts/inter-var.woff2") format("woff2");
   font-weight: 100 900;
   font-style: normal;
   font-display: swap;
 }
 @font-face {
-  font-family: "Superbot Mono";
+  font-family: "Clank Mono";
   src: url("/fonts/plex-mono-400.woff2") format("woff2");
   font-weight: 400;
   font-style: normal;
   font-display: swap;
 }
 @font-face {
-  font-family: "Superbot Mono";
+  font-family: "Clank Mono";
   src: url("/fonts/plex-mono-600.woff2") format("woff2");
   font-weight: 600;
   font-style: normal;
@@ -34,10 +34,10 @@
   --muted: #8f8f8f;
   --red: #ff1e2d;
   --red-dark: #8f0f18;
-  --sans: "Superbot Sans", "Inter", "Liberation Sans", "DejaVu Sans", sans-serif;
+  --sans: "Clank Sans", "Inter", "Liberation Sans", "DejaVu Sans", sans-serif;
   --display: var(--sans);
   --ui: var(--sans);
-  --mono: "Superbot Mono", "IBM Plex Mono", "DejaVu Sans Mono", monospace;
+  --mono: "Clank Mono", "IBM Plex Mono", "DejaVu Sans Mono", monospace;
   --src-session: #ff1e2d;
   --src-monado: #ffb020;
   --src-weston: #35d6ff;

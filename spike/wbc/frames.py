@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Frames on this side of the fence, so `superbot/` can stay standard-library only.
+"""Frames on this side of the fence, so `clank/` can stay standard-library only.
 
-`superbot/framediff.py` and `superbot/glow.py` do the arithmetic over nested lists of
+`clank/framediff.py` and `clank/glow.py` do the arithmetic over nested lists of
 `(r, g, b)` ints. Something has to turn a PNG into those lists, and Pillow is not
-allowed inside `superbot/`. So decoding lives here, in the spike, with the venv.
+allowed inside `clank/`. So decoding lives here, in the spike, with the venv.
 
-Capture goes through `superbot.preview.PreviewCapture.capture_once` rather than a
+Capture goes through `clank.preview.PreviewCapture.capture_once` rather than a
 second screenshooter wrapper: that function already knows the two traps found the
 hard way - the tool ignores its output argument and writes a *timestamped* filename
 into the current directory, and the game only appears when its window is forward.
@@ -23,7 +23,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from superbot.preview import PreviewCapture  # noqa: E402
+from clank.preview import PreviewCapture  # noqa: E402
 
 
 @dataclass(frozen=True)

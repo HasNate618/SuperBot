@@ -1,6 +1,6 @@
 # RESEARCH — Can a simulated body play a VR game with no headset or controllers?
 
-> **Superseded in places — read `docs/2026-10-23-SuperBot-state-of-findings.md` first.**
+> **Superseded in places — read `docs/2026-10-23-Clank-state-of-findings.md` first.**
 > This is the 2026-10-11 feasibility study, written when no code existed here. Most of it has since
 > been measured or replaced: Monado's `remote` driver is proven end-to-end (E1–E3), the executor is
 > GEAR-SONIC (C3i–C3m), and Superhot VR accepts synthetic HMD poses (C0).

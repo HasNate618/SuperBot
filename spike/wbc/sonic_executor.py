@@ -2,7 +2,7 @@
 """GEAR-SONIC behind the `BodyCommand` contract.
 
 Lives on the spike side because it needs numpy + onnxruntime + mujoco, while
-`superbot/` stays standard-library only. Phase 3 promotes it once the join
+`clank/` stays standard-library only. Phase 3 promotes it once the join
 works; until then this is the measured adapter, not product code.
 
 The executor owns feasibility: it clamps, solves, and reports what MuJoCo
@@ -33,7 +33,7 @@ import sys
 from pathlib import Path
 
 # numpy/mujoco/onnxruntime live in spike/e3/.venv, not in the system interpreter
-# this repo's stdlib-only rule applies to `superbot/`, not to the spikes.
+# this repo's stdlib-only rule applies to `clank/`, not to the spikes.
 import numpy as np  # pyright: ignore[reportMissingImports]
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -41,7 +41,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 import sonic_runner as sr  # noqa: E402
 
-from superbot.body import (  # noqa: E402
+from clank.body import (  # noqa: E402
     AUTH_CLOSURE,
     AUTH_HEAD,
     AUTH_L_HAND,
@@ -57,7 +57,7 @@ from superbot.body import (  # noqa: E402
     Pose,
     commanded_buttons,
 )
-from superbot.projection import carry_with_head, root_offset, yaw_of  # noqa: E402
+from clank.projection import carry_with_head, root_offset, yaw_of  # noqa: E402
 
 # Authority this controller can honour today. Walking needs a locomotion clip
 # loaded and a live lookahead, so ROOT_VEL is not honoured in a hold session.
@@ -343,7 +343,7 @@ class SonicExecutor:
         """A wrist pose offset from the clip's wrist, optionally re-oriented.
 
         The offset is in the model's root frame: **+X is forward, +Y is the robot's
-        left, +Z is up** (`superbot.projection.root_offset` owns that mapping). This
+        left, +Z is up** (`clank.projection.root_offset` owns that mapping). This
         docstring previously stated the opposite - "+Y is forward, +X is the
         robot's left" - and the code implemented *that*, so `forward_m` moved the
         wrist across the body while `lateral_m` moved it forward. Measured

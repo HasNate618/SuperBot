@@ -1,6 +1,6 @@
 # Humanoid command spaces — a general interface for a slow brain and a fast body
 
-**Question.** How do published humanoid systems let a slow high-level writer (human, VLM, planner) command a whole-body controller without inventing a game-specific verb list? What should SuperBot's native command struct be, and how do Superhot's verbs become adapters over it?
+**Question.** How do published humanoid systems let a slow high-level writer (human, VLM, planner) command a whole-body controller without inventing a game-specific verb list? What should Clank's native command struct be, and how do Superhot's verbs become adapters over it?
 
 **Evidence tags.** `CITED` = a source link; `MEASURED` = a local spike/measurement; `ASSUMPTION` = a design hypothesis. Synthesis sentences that aggregate cited table rows are not individually re-tagged.
 
@@ -51,29 +51,29 @@ Dims are the published or code-derived command/observation sizes. “Hz” is th
 ### What the table shows
 
 1. **There is no standard vector.** Dimensions range from HOMIE's 3+14 to HOVER's 95-D reference, to AnyBody's variable keypoint set. The commonality is not a fixed size; it is a **fixed schema with a mask**.
-2. **The mask is the anti-verb device.** HOVER's `calculate_mask_length` is literally `num_bodies + num_joints + 7 root refs`; the command is `num_bodies×3 + num_joints + 7` [CITED](https://github.com/NVlabs/HOVER/blob/main/neural_wbc/core/neural_wbc/core/mask.py). A skill chooses which elements are authoritative; it does not choose a new controller. This is exactly the generalization SuperBot needs.
+2. **The mask is the anti-verb device.** HOVER's `calculate_mask_length` is literally `num_bodies + num_joints + 7 root refs`; the command is `num_bodies×3 + num_joints + 7` [CITED](https://github.com/NVlabs/HOVER/blob/main/neural_wbc/core/neural_wbc/core/mask.py). A skill chooses which elements are authoritative; it does not choose a new controller. This is exactly the generalization Clank needs.
 3. **Two rate regimes.** Learned policies sit at **50 Hz** with PD at **500–1000 Hz** (HOVER, HOMIE, ExBody2, TWIST2, HugWBC, HumanPlus, OmniH2O; see rows). Teleop/IK loops sit at **60–100 Hz** (Open-TeleVision, TWIST2's PICO stream). Nothing credible runs a VLM in the motor loop.
-4. **Root-relative is the norm.** OmniH2O, ExBody2, TWIST2, and HOVER all avoid absolute global pose; they use root-relative targets or root velocity/height. This is directly relevant to SuperBot, which has no reliable global odometry.
+4. **Root-relative is the norm.** OmniH2O, ExBody2, TWIST2, and HOVER all avoid absolute global pose; they use root-relative targets or root velocity/height. This is directly relevant to Clank, which has no reliable global odometry.
 5. **Task-space vs joint-space is an executor choice, not an interface choice.** HOMIE and HumanPlus pass joint targets because they have an exoskeleton or a learned tracker; Open-TeleVision and SEIKO pass Cartesian targets and solve IK/QP. Both can sit under the same task-space contract.
 
 ---
 
 ## 3. Pattern table — copy, adapt, or reject
 
-| Pattern | Representative systems | Verdict for SuperBot | Why |
+| Pattern | Representative systems | Verdict for Clank | Why |
 |---|---|---|---|
 | **3-point pose tracking** (head + hands) | OmniH2O, HOVER default, Open-TeleVision (head + wrists + hands), AnyBody | **Copy, adapt the head** | It is the minimal interface proven to work: OmniH2O's 3-point ablation is comparable to 22-point tracking [CITED](https://arxiv.org/html/2406.08858). But the G1 has **no neck**, so the “head pose” request must be executed as bounded waist yaw plus base yaw; roll/pitch will have a visible residual [MEASURED](../RESEARCH.md). AnyBody shows the longer-term generalization: arbitrary keypoint subsets, chosen at deploy time [CITED](https://arxiv.org/html/2606.29209). |
 | **Velocity + upper-body pose** | HOMIE, ExBody2, HugWBC | **Copy** | This is the natural split for the G1: legs consume `[v_x, v_y, ω_yaw]` (+ height), arms/waist consume a pose target. HOMIE's `[v_x, ω_yaw, h] + q_upper` is the cleanest published version [CITED](https://arxiv.org/html/2502.13013); ExBody2 decouples velocity from local keypoints [CITED](https://arxiv.org/html/2412.13196); HugWBC adds behavior commands but keeps the upper body as an intervention channel [CITED](https://arxiv.org/html/2502.03206). |
-| **Masked reference / authority** | HOVER | **Copy — this is the core schema idea** | A mask over bodies, joints, and root references expresses “hold”, “look”, “track hands”, “velocity only” without a verb enum. HOVER distills one policy over >15 modes [CITED](https://arxiv.org/abs/2410.21229). SuperBot should copy the *mask semantics*, not the 95-D H1 reference. |
-| **Latent VLA / universal token** | SONIC, LangWBC, Helix, GR00T N1 | **Reject for the v1 interface; adapt only as an optional executor** | Opaque, needs a large motion corpus or demonstration data, and is not debuggable when the body is wrong. SONIC's universal token is impressive — one encoder–decoder accepts robot, human, and hybrid motion [CITED](https://arxiv.org/html/2511.07820) — but it is a *learned* command space. SuperBot's constraint is no VLA retrain and no Superhot corpus. Keep the token idea behind the same `BodyCommand` if a learned executor is added later. |
+| **Masked reference / authority** | HOVER | **Copy — this is the core schema idea** | A mask over bodies, joints, and root references expresses “hold”, “look”, “track hands”, “velocity only” without a verb enum. HOVER distills one policy over >15 modes [CITED](https://arxiv.org/abs/2410.21229). Clank should copy the *mask semantics*, not the 95-D H1 reference. |
+| **Latent VLA / universal token** | SONIC, LangWBC, Helix, GR00T N1 | **Reject for the v1 interface; adapt only as an optional executor** | Opaque, needs a large motion corpus or demonstration data, and is not debuggable when the body is wrong. SONIC's universal token is impressive — one encoder–decoder accepts robot, human, and hybrid motion [CITED](https://arxiv.org/html/2511.07820) — but it is a *learned* command space. Clank's constraint is no VLA retrain and no Superhot corpus. Keep the token idea behind the same `BodyCommand` if a learned executor is added later. |
 | **Language-skill ID** | LangWBC, SayCan, Hi Robot | **Reject as the body interface; copy above it** | Language is too slow (5–20 s brain) and ambiguous to be a 50 Hz command. LangWBC maps text directly to a CVAE latent and actions [CITED](https://arxiv.org/html/2504.21738); that is a learned skill policy, not a body contract. Use language to *select* a skill adapter, which then writes `BodyCommand`. |
-| **QP task list** | SEIKO, pink/mink, classical WBC | **Copy for the arm/waist executor** | A prioritized task list (balance/contact > waist > hands > posture) with joint limits and velocity constraints handles the G1's redundancy and keeps the body honest. SEIKO solves whole-body retargeting and control as two QPs on a position-controlled humanoid [CITED](https://arxiv.org/html/2312.16465). Reject the multi-contact force-control part for v1: SuperBot has no force sensing and the game applies no forces. |
-| **Action chunking** | ACT, π0, GR00T N1, TWIST2's Diffusion Policy | **Adapt for ballistic skills** | Predict/execute a timed chunk to hide writer latency and make smooth ballistic motion. TWIST2 predicts 64 chunks ≈ 2 s [CITED](https://arxiv.org/html/2511.02832). SuperBot should carry a duration/waypoints in the command; do not temporally ensemble across an impact. |
-| **Joint setpoints as the contract** | HOMIE, HumanPlus, TWIST2 | **Adapt through the executor, do not expose as the contract** | Joint targets are simple and fast, but body-specific and require upstream retargeting. HOMIE can do it because it has an isomorphic exoskeleton [CITED](https://arxiv.org/html/2502.13013); SuperBot does not. Keep joint targets below the executor boundary. |
+| **QP task list** | SEIKO, pink/mink, classical WBC | **Copy for the arm/waist executor** | A prioritized task list (balance/contact > waist > hands > posture) with joint limits and velocity constraints handles the G1's redundancy and keeps the body honest. SEIKO solves whole-body retargeting and control as two QPs on a position-controlled humanoid [CITED](https://arxiv.org/html/2312.16465). Reject the multi-contact force-control part for v1: Clank has no force sensing and the game applies no forces. |
+| **Action chunking** | ACT, π0, GR00T N1, TWIST2's Diffusion Policy | **Adapt for ballistic skills** | Predict/execute a timed chunk to hide writer latency and make smooth ballistic motion. TWIST2 predicts 64 chunks ≈ 2 s [CITED](https://arxiv.org/html/2511.02832). Clank should carry a duration/waypoints in the command; do not temporally ensemble across an impact. |
+| **Joint setpoints as the contract** | HOMIE, HumanPlus, TWIST2 | **Adapt through the executor, do not expose as the contract** | Joint targets are simple and fast, but body-specific and require upstream retargeting. HOMIE can do it because it has an isomorphic exoskeleton [CITED](https://arxiv.org/html/2502.13013); Clank does not. Keep joint targets below the executor boundary. |
 
 ---
 
-## 4. Proposed SuperBot interface
+## 4. Proposed Clank interface
 
 ### 4.1 `BodyCommand` (task space, writer-agnostic)
 
@@ -99,7 +99,7 @@ class Pose:
 
 @dataclass(frozen=True)
 class BodyCommand:
-    schema: str = "superbot.body/1"
+    schema: str = "clank.body/1"
     seq: int = 0
     t_mono_ns: int = 0
     ttl_ms: int = 200
@@ -210,7 +210,7 @@ The game-facing layer is a **compiler from verbs to `BodyCommand`**. The body/ex
 
 - The 50 Hz control loop is System 1 in the control-theoretic sense. It can be classical: arm IK/QP, bounded waist, PD, and the existing legs policy. SEIKO (two QPs), Open-TeleVision (closed-loop IK), and HumanPlus's low-level PD path all consume task-space or joint targets without an end-to-end VLA [CITED](https://arxiv.org/html/2312.16465), [CITED](https://arxiv.org/html/2407.01512), [CITED](https://arxiv.org/html/2406.10454).
 - The learned whole-body systems in the table (OmniH2O, HOVER, HOMIE, ExBody2, TWIST2) learn for **tracking robustness**, not because the command space requires learning. Their command spaces are still task-space or joint-space structures that a classical executor could, in principle, consume.
-- SuperBot's constraints point the same way: no VLA retrain, no Superhot demonstration corpus, an 8 GB card, and an honest MuJoCo/PD path. A new learned System-1 would require motion data or RL and would not change the interface.
+- Clank's constraints point the same way: no VLA retrain, no Superhot demonstration corpus, an 8 GB card, and an honest MuJoCo/PD path. A new learned System-1 would require motion data or RL and would not change the interface.
 - The one learned component worth integrating is the **existing Playground locomotion policy** for the legs. **[ASSUMPTION]** Until it is in the loop, the executor should stand and report `velocity` as `UNSUPPORTED`.
 - A learned System-1 becomes worthwhile only when the frozen policy + IK cannot meet the balance/tracking targets — for example, a dynamic dodge or a punch that requires whole-body counterweight. Even then, it should be swapped in **behind the same `BodyCommand`/`BodyState` interface**, not replace it.
 

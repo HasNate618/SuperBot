@@ -267,7 +267,7 @@ class SessionManager:
         self._thread = threading.Thread(
             target=self._start_worker,
             args=(generation, session_dir),
-            name="superbot-start",
+            name="clank-start",
             daemon=True,
         )
         self._thread.start()
@@ -293,7 +293,7 @@ class SessionManager:
             self._idle.clear()
             self._state = State.STOPPING
             self._condition.notify_all()
-            self._thread = threading.Thread(target=self._stop_worker, name="superbot-stop", daemon=True)
+            self._thread = threading.Thread(target=self._stop_worker, name="clank-stop", daemon=True)
         self._thread.start()
 
     def set_mode(self, mode: str) -> None:
@@ -698,7 +698,7 @@ class SessionManager:
         # Requires=monado.socket.
         for unit in ("monado.service", "monado.socket"):
             if self.runner.systemd_unit_active(unit):
-                print(f"superbot session: stopping user unit {unit}", file=sys.stderr, flush=True)
+                print(f"clank session: stopping user unit {unit}", file=sys.stderr, flush=True)
                 self.runner.stop_systemd_unit(unit)
                 if self.runner.systemd_unit_active(unit):
                     raise PreflightError(f"user unit {unit} is still active after stopping it")
@@ -708,7 +708,7 @@ class SessionManager:
             # above, while it keeps 4242 and makes every start refuse. Reclaim it
             # when it is ours; refuse when it is somebody else's.
             print(
-                "superbot session: TCP 4242 is in use; checking whether it is our monado",
+                "clank session: TCP 4242 is in use; checking whether it is our monado",
                 file=sys.stderr,
                 flush=True,
             )
@@ -718,7 +718,7 @@ class SessionManager:
                 raise PreflightError(str(exc)) from exc
             if reclaimed:
                 print(
-                    "superbot session: stopped leftover monado "
+                    "clank session: stopped leftover monado "
                     + ", ".join(str(pid) for pid in reclaimed),
                     file=sys.stderr,
                     flush=True,
@@ -802,7 +802,7 @@ class SessionManager:
     def _start_weston(self) -> None:
         if self._session_id is None or self._session_dir is None:
             raise StartupError("no active session")
-        self._socket_name = f"superbot-{self._session_id.split('-')[-1]}"
+        self._socket_name = f"clank-{self._session_id.split('-')[-1]}"
         weston_log = self._log("weston")
         weston_ini = self._session_dir / "weston.ini"
         weston_ini.write_text(
@@ -902,7 +902,7 @@ class SessionManager:
             needle = "connected 127.0.0.1"
         elif mode == "body":
             # The join: the pose client stops inventing poses and relays the ones
-            # the simulated body actually achieved (see superbot/pose_relay.py).
+            # the simulated body actually achieved (see clank/pose_relay.py).
             relay = Path(__file__).with_name("pose_relay.py")
             state = Path(self.cfg.paths.session_root) / "body" / "body_state.json"
             argv = [
@@ -1034,7 +1034,7 @@ class SessionManager:
         threading.Thread(
             target=self._keep_game_window_fullscreen,
             args=(env,),
-            name="superbot-fullscreen",
+            name="clank-fullscreen",
             daemon=True,
         ).start()
 
@@ -1186,7 +1186,7 @@ class SessionManager:
                     self._monitor_thread = threading.Thread(
                         target=self._monitor_worker,
                         args=(generation,),
-                        name="superbot-monitor",
+                        name="clank-monitor",
                         daemon=True,
                     )
                     self._monitor_thread.start()

@@ -15,7 +15,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from superbot.processes import (
+from clank.processes import (
     Aborted,
     ProcessError,
     ProcessHandle,
@@ -248,10 +248,10 @@ class ProcessTests(unittest.TestCase):
         for code, expected in ((0, True), (1, False)):
             with self.subTest(code=code):
                 result = subprocess.CompletedProcess(["pgrep"], code, "", "")
-                with mock.patch("superbot.processes.subprocess.run", return_value=result):
+                with mock.patch("clank.processes.subprocess.run", return_value=result):
                     self.assertEqual(runner.process_name_running("steam"), expected)
         result = subprocess.CompletedProcess(["pgrep"], 2, "", "")
-        with mock.patch("superbot.processes.subprocess.run", return_value=result):
+        with mock.patch("clank.processes.subprocess.run", return_value=result):
             with self.assertRaises(ProcessError):
                 runner.process_name_running("steam")
 
@@ -260,19 +260,19 @@ class ProcessTests(unittest.TestCase):
         for code, expected in ((0, True), (3, False)):
             with self.subTest(code=code):
                 result = subprocess.CompletedProcess(["systemctl"], code, "", "")
-                with mock.patch("superbot.processes.subprocess.run", return_value=result):
+                with mock.patch("clank.processes.subprocess.run", return_value=result):
                     self.assertEqual(runner.systemd_unit_active("monado.service"), expected)
         for code in (1, 4):
             with self.subTest(code=code):
                 result = subprocess.CompletedProcess(["systemctl"], code, "", "")
-                with mock.patch("superbot.processes.subprocess.run", return_value=result):
+                with mock.patch("clank.processes.subprocess.run", return_value=result):
                     with self.assertRaises(ProcessError):
                         runner.systemd_unit_active("monado.service")
 
     def test_stop_systemd_unit_exit_codes(self) -> None:
         runner = ProcessRunner(Path("/tmp/pointer.json"))
         result = subprocess.CompletedProcess(["systemctl"], 0, "", "")
-        with mock.patch("superbot.processes.subprocess.run", return_value=result) as run:
+        with mock.patch("clank.processes.subprocess.run", return_value=result) as run:
             runner.stop_systemd_unit("monado.socket")
         self.assertEqual(
             run.call_args.args[0], ["systemctl", "--user", "stop", "monado.socket"]
@@ -280,14 +280,14 @@ class ProcessTests(unittest.TestCase):
         for code in (1, 5):
             with self.subTest(code=code):
                 result = subprocess.CompletedProcess(["systemctl"], code, "", "")
-                with mock.patch("superbot.processes.subprocess.run", return_value=result):
+                with mock.patch("clank.processes.subprocess.run", return_value=result):
                     with self.assertRaises(ProcessError):
                         runner.stop_systemd_unit("monado.socket")
 
     def test_process_probes_raise_on_timeout(self) -> None:
         runner = ProcessRunner(Path("/tmp/pointer.json"))
         timeout = subprocess.TimeoutExpired(["probe"], 5)
-        with mock.patch("superbot.processes.subprocess.run", side_effect=timeout):
+        with mock.patch("clank.processes.subprocess.run", side_effect=timeout):
             with self.assertRaises(subprocess.TimeoutExpired):
                 runner.process_name_running("steam")
             with self.assertRaises(subprocess.TimeoutExpired):
@@ -295,7 +295,7 @@ class ProcessTests(unittest.TestCase):
 
     def test_process_probes_raise_on_oserror(self) -> None:
         runner = ProcessRunner(Path("/tmp/pointer.json"))
-        with mock.patch("superbot.processes.subprocess.run", side_effect=OSError("missing probe")):
+        with mock.patch("clank.processes.subprocess.run", side_effect=OSError("missing probe")):
             with self.assertRaises(OSError):
                 runner.process_name_running("steam")
             with self.assertRaises(OSError):

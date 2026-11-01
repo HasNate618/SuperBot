@@ -39,7 +39,7 @@ import sonic_runner as sr  # pyright: ignore[reportMissingImports]  # noqa: E402
 from body_view import BodyRenderer  # pyright: ignore[reportMissingImports]  # noqa: E402
 from sonic_executor import SonicExecutor  # pyright: ignore[reportMissingImports]  # noqa: E402
 
-from superbot.body import (  # noqa: E402
+from clank.body import (  # noqa: E402
     AUTH_HEAD,
     AUTH_R_HAND,
     FLAG_FALL_RISK,

@@ -4,8 +4,8 @@ import time
 import unittest
 from pathlib import Path
 
-from superbot.body import AUTH_ROOT_VEL, BodyCommand, hold
-from superbot.bus import CommandBus, UnixCommandServer, send_command
+from clank.body import AUTH_ROOT_VEL, BodyCommand, hold
+from clank.bus import CommandBus, UnixCommandServer, send_command
 
 
 class FakeClock:

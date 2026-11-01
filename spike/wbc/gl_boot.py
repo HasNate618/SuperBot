@@ -30,7 +30,7 @@ def _glvnd_dirs() -> list[str]:
 
 def ensure() -> None:
     """Re-exec once with a library path that can actually resolve libEGL."""
-    if os.environ.get("SUPERBOT_GL_READY") == "1":
+    if os.environ.get("CLANK_GL_READY") == "1":
         return
     # A re-exec is only safe when argv names a real file. With `python -c` or
     # `python - <<HEREDOC` the program comes from the command line or stdin,
@@ -47,7 +47,7 @@ def ensure() -> None:
         return
     env = dict(os.environ)
     env["LD_LIBRARY_PATH"] = ":".join(missing + ([current] if current else []))
-    env["SUPERBOT_GL_READY"] = "1"
+    env["CLANK_GL_READY"] = "1"
     # Deliberate re-exec, argv is forward exactly - no shell involved.
     os.execve(sys.executable, [sys.executable, *sys.argv], env)  # noqa: S606
 

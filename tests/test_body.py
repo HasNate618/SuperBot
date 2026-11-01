@@ -1,8 +1,8 @@
 # Re-indexed: AUTH_TRIGGER, commanded_buttons and the BodyState button
-# fields live in superbot/body.py and are exercised below.
+# fields live in clank/body.py and are exercised below.
 import unittest
 
-from superbot.body import (
+from clank.body import (
     AUTH_CLOSURE,
     AUTH_HEAD,
     AUTH_L_HAND,
@@ -43,9 +43,9 @@ def sample_state() -> BodyState:
 
 
 class BodyTestCase(unittest.TestCase):
-    def test_schema_name_is_superbot_body_1(self) -> None:
-        self.assertEqual(SCHEMA, "superbot.body/1")
-        self.assertEqual(BodyCommand().schema, "superbot.body/1")
+    def test_schema_name_is_clank_body_1(self) -> None:
+        self.assertEqual(SCHEMA, "clank.body/1")
+        self.assertEqual(BodyCommand().schema, "clank.body/1")
 
     def test_command_roundtrip(self) -> None:
         cmd = BodyCommand(

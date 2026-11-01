@@ -35,8 +35,8 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent.parent))
 
-import superbot.framediff as framediff  # noqa: E402
-import superbot.glow as glow  # noqa: E402
+import clank.framediff as framediff  # noqa: E402
+import clank.glow as glow  # noqa: E402
 
 #: Above this fraction of changed pixels the whole view moved, which is a failed
 #: settle or a scene change - not a hand, and not a head turn we can attribute.

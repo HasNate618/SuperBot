@@ -63,7 +63,7 @@ def stamp(steps: list[tuple[BodyCommand, float]]) -> Iterator[tuple[BodyCommand,
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="superbot.scripted")
+    parser = argparse.ArgumentParser(prog="clank.scripted")
     parser.add_argument("--socket", required=True, help="command bus socket path")
     parser.add_argument("--file", required=True, help="newline-delimited JSON script")
     parser.add_argument("--loop", action="store_true", help="repeat the script forever")

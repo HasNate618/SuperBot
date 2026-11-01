@@ -5,7 +5,7 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 
-from superbot.config import (
+from clank.config import (
     ConfigError,
     body_pose_flags,
     load_config,
@@ -114,7 +114,7 @@ class ConfigTests(unittest.TestCase):
             tool = bin_dir / "novnc"
             tool.write_text("")
             tool.chmod(0o755)
-            cfg = load_config(None, env={"SUPERBOT_PATHS_NOVNC_BIN": str(tool)})
+            cfg = load_config(None, env={"CLANK_PATHS_NOVNC_BIN": str(tool)})
             self.assertEqual(cfg.paths.novnc_web_root, str(web))
 
     def test_explicit_novnc_web_root_wins(self) -> None:
@@ -133,8 +133,8 @@ class ConfigTests(unittest.TestCase):
             cfg = load_config(
                 None,
                 env={
-                    "SUPERBOT_PATHS_NOVNC_BIN": str(tool),
-                    "SUPERBOT_PATHS_NOVNC_WEB_ROOT": str(explicit),
+                    "CLANK_PATHS_NOVNC_BIN": str(tool),
+                    "CLANK_PATHS_NOVNC_WEB_ROOT": str(explicit),
                 },
             )
             self.assertEqual(cfg.paths.novnc_web_root, str(explicit))
@@ -148,7 +148,7 @@ class ConfigTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as raw:
             path = Path(raw) / "config.toml"
             path.write_text("[preview]\nfps = 6\n\n[dashboard]\nport = 9000\n")
-            cfg = load_config(path, env={"SUPERBOT_PREVIEW_FPS": "12"})
+            cfg = load_config(path, env={"CLANK_PREVIEW_FPS": "12"})
             self.assertEqual(cfg.preview.fps, 12.0)
             self.assertEqual(cfg.dashboard.port, 9000)
 
@@ -187,7 +187,7 @@ class ConfigTests(unittest.TestCase):
             path.write_text('[paths]\nnovnc_web_root = "web"\n')
             cfg = load_config(
                 path,
-                env={"SUPERBOT_PATHS_NOVNC_BIN": "/nonexistent/novnc"},
+                env={"CLANK_PATHS_NOVNC_BIN": "/nonexistent/novnc"},
             )
             self.assertEqual(cfg.paths.novnc_web_root, str((base / "web").resolve()))
 
@@ -200,7 +200,7 @@ class ConfigTests(unittest.TestCase):
 
     def test_unknown_env_key_is_rejected(self) -> None:
         with self.assertRaises(ConfigError):
-            load_config(None, env={"SUPERBOT_NOPE_X": "1"})
+            load_config(None, env={"CLANK_NOPE_X": "1"})
 
     def test_wrong_type_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
@@ -244,16 +244,16 @@ class ConfigTests(unittest.TestCase):
 
     def test_non_finite_floats_are_rejected(self) -> None:
         float_env_keys = [
-            "SUPERBOT_PREVIEW_FPS",
-            "SUPERBOT_LAUNCH_STEAM_SETTLE_SEC",
-            "SUPERBOT_LAUNCH_STEAM_READY_TIMEOUT_SEC",
-            "SUPERBOT_LAUNCH_GAME_PROCESS_TIMEOUT_SEC",
-            "SUPERBOT_LAUNCH_OPENXR_CLIENT_TIMEOUT_SEC",
-            "SUPERBOT_LAUNCH_STARTUP_TIMEOUT_SEC",
-            "SUPERBOT_TIMEOUTS_MONADO_STARTUP_SEC",
-            "SUPERBOT_TIMEOUTS_WESTON_STARTUP_SEC",
-            "SUPERBOT_TIMEOUTS_POSE_HANDSHAKE_SEC",
-            "SUPERBOT_TIMEOUTS_STOP_SEC",
+            "CLANK_PREVIEW_FPS",
+            "CLANK_LAUNCH_STEAM_SETTLE_SEC",
+            "CLANK_LAUNCH_STEAM_READY_TIMEOUT_SEC",
+            "CLANK_LAUNCH_GAME_PROCESS_TIMEOUT_SEC",
+            "CLANK_LAUNCH_OPENXR_CLIENT_TIMEOUT_SEC",
+            "CLANK_LAUNCH_STARTUP_TIMEOUT_SEC",
+            "CLANK_TIMEOUTS_MONADO_STARTUP_SEC",
+            "CLANK_TIMEOUTS_WESTON_STARTUP_SEC",
+            "CLANK_TIMEOUTS_POSE_HANDSHAKE_SEC",
+            "CLANK_TIMEOUTS_STOP_SEC",
         ]
         for env_key in float_env_keys:
             for raw in ("nan", "inf", "-inf"):
@@ -266,7 +266,7 @@ class ConfigTests(unittest.TestCase):
     def test_weston_siblings_are_derived(self) -> None:
         cfg = load_config(
             None,
-            env={"SUPERBOT_PATHS_WESTON_BIN": "/opt/weston/bin/weston"},
+            env={"CLANK_PATHS_WESTON_BIN": "/opt/weston/bin/weston"},
         )
         self.assertEqual(cfg.paths.weston_screenshooter_bin, "/opt/weston/bin/weston-screenshooter")
         self.assertEqual(cfg.paths.weston_debug_bin, "/opt/weston/bin/weston-debug")
@@ -298,15 +298,15 @@ class ConfigTests(unittest.TestCase):
             novnc_tool.write_text("")
             novnc_tool.chmod(0o755)
             env = {
-                "SUPERBOT_PATHS_MONADO_BIN": str(base / "monado-service"),
-                "SUPERBOT_PATHS_WESTON_BIN": str(base / "weston"),
-                "SUPERBOT_PATHS_STEAM_BIN": str(base / "steam"),
-                "SUPERBOT_PATHS_NOVNC_BIN": str(novnc_tool),
-                "SUPERBOT_PATHS_WEBSOCKIFY_BIN": str(base / "websockify"),
-                "SUPERBOT_PATHS_GAME_EXE": str(base / "game.exe"),
-                "SUPERBOT_PATHS_POSE_CLIENT": str(base / "pose.py"),
-                "SUPERBOT_PATHS_OPENXR_ACTIVE_RUNTIME": str(base / "runtime.json"),
-                "SUPERBOT_PATHS_SESSION_ROOT": str(base / "sessions"),
+                "CLANK_PATHS_MONADO_BIN": str(base / "monado-service"),
+                "CLANK_PATHS_WESTON_BIN": str(base / "weston"),
+                "CLANK_PATHS_STEAM_BIN": str(base / "steam"),
+                "CLANK_PATHS_NOVNC_BIN": str(novnc_tool),
+                "CLANK_PATHS_WEBSOCKIFY_BIN": str(base / "websockify"),
+                "CLANK_PATHS_GAME_EXE": str(base / "game.exe"),
+                "CLANK_PATHS_POSE_CLIENT": str(base / "pose.py"),
+                "CLANK_PATHS_OPENXR_ACTIVE_RUNTIME": str(base / "runtime.json"),
+                "CLANK_PATHS_SESSION_ROOT": str(base / "sessions"),
             }
             cfg = load_config(None, env=env)
             self.assertEqual(missing_requirements(cfg), [])
