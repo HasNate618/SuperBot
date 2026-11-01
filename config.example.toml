@@ -31,6 +31,11 @@ websockify_bin = "websockify"
 steam_bin = "/home/YOUR_USER/.local/bin/steam"
 game_exe = "/home/YOUR_USER/Games/Job Simulator/JobSimulator.exe"
 
+# Tool used to send the fullscreen client message to the nested compositor.
+# Weston's xwm ignores a window's own _NET_WM_STATE_FULLSCREEN, so the game would
+# otherwise stay windowed with a title bar. Empty disables the step.
+xdotool_bin = "xdotool"
+
 # Unity log, relative to the Proton prefix's pfx/drive_c/users/steamuser.
 # The dashboard links it. Job Simulator writes output_log.txt; most Unity
 # titles write Player.log.
@@ -67,6 +72,16 @@ proton_app_id = "0000000000"
 # "application_name: '...'" line. Job Simulator through OpenComposite reports
 # OpenComposite_wine64-preloader, so "OpenComposite" matches it.
 openxr_client_name = "OpenComposite"
+
+# Per-eye render scale, in percent. Monado's remote HMD reports 960x1080 per eye
+# (a 1920x1080 display split side by side) and scales that by
+# OXR_VIEWPORT_SCALE_PERCENTAGE. 100 is Monado's own default and too soft to read
+# text from; 200 renders 1920x2160 per eye. 0 is refused; the ceiling is 400.
+viewport_scale_percentage = 200
+
+# xdotool --name pattern for the game window, used to fullscreen it. Empty
+# disables the fullscreen step and leaves the game windowed.
+game_window = "Job Simulator"
 
 # Extra args passed to Steam. -cef-disable-gpu keeps the Steam UI from
 # fighting the game for the GPU on small cards.
@@ -122,9 +137,11 @@ reel = true
 # So the heading is chosen rather than walked. 0.0 leaves everything unchanged.
 yaw_offset_deg = 0.0
 # The headset's field of view to DECLARE to the runtime, full angles in degrees.
-# Nothing is declared by default, so the remote driver falls back to its own default
-# and the game looks narrow. Give both or neither; 0/0 leaves it undeclared.
-# Whether this build honours the declaration is still unmeasured - see
+# Give both or neither; 0/0 leaves it undeclared and uses the driver's own 85 deg.
+# MEASURED 2026-10-31: leave this 0 for Job Simulator. Declaring a frustum makes the
+# game stop rendering (grey background, ~0% CPU) whether it is set at launch or
+# only after a mode switch, so the wider view is not worth a dead game here.
+# Whether this build honours the declaration is otherwise measured - see
 # research/fov-declaration.md.
 fov_h_deg = 0.0
 fov_v_deg = 0.0

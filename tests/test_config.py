@@ -24,6 +24,9 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(cfg.dashboard.port, 8765)
         self.assertEqual(cfg.launch.shortcut_id, "14670405696621641728")
         self.assertEqual(cfg.launch.openxr_client_name, "OpenComposite")
+        self.assertEqual(cfg.launch.viewport_scale_percentage, 200.0)
+        self.assertEqual(cfg.launch.game_window, "Job Simulator")
+        self.assertEqual(cfg.paths.xdotool_bin, "xdotool")
         self.assertTrue(cfg.paths.game_player_log.endswith("output_log.txt"))
         self.assertTrue(cfg.paths.pose_client.endswith("spike/c0/c0_client.py"))
 
@@ -40,6 +43,17 @@ class ConfigTests(unittest.TestCase):
             validate_config(
                 replace(cfg, preview=replace(cfg.preview, fps=29.97))
             )
+
+    def test_viewport_scale_is_bounded(self) -> None:
+        cfg = load_config(None, env={})
+        for value in (0.0, -10.0, 500.0):
+            with self.assertRaises(ConfigError):
+                validate_config(
+                    replace(
+                        cfg,
+                        launch=replace(cfg.launch, viewport_scale_percentage=value),
+                    )
+                )
 
     def test_vnc_ports_must_differ(self) -> None:
         cfg = load_config(None, env={})

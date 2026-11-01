@@ -39,6 +39,9 @@
               pkgs.mpv
               pkgs.novnc
               pkgs.python3Packages.websockify
+              # Sends the fullscreen client message weston's xwm needs; the game's
+              # own _NET_WM_STATE_FULLSCREEN is ignored, so it would stay windowed.
+              pkgs.xdotool
               # OpenVR -> OpenXR shim. Proton's C:\vrclient bridge loads its
               # bin/linux64/vrclient.so when VR_OVERRIDE points here. xrizer panics
               # on Job Simulator's action manifest; OpenComposite does not.

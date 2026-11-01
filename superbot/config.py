@@ -21,6 +21,7 @@ class PathsConfig:
     weston_screenshooter_bin: str
     weston_debug_bin: str
     steam_bin: str
+    xdotool_bin: str
     novnc_bin: str
     websockify_bin: str
     novnc_web_root: str
@@ -42,6 +43,8 @@ class LaunchConfig:
     game_process_timeout_sec: float
     openxr_client_timeout_sec: float
     openxr_client_name: str
+    viewport_scale_percentage: float
+    game_window: str
     startup_timeout_sec: float
 
 
@@ -114,6 +117,7 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         "weston_screenshooter_bin": "weston-screenshooter",
         "weston_debug_bin": "weston-debug",
         "steam_bin": os.path.expanduser("~/.local/bin/steam"),
+        "xdotool_bin": "xdotool",
         "novnc_bin": "novnc",
         "websockify_bin": "websockify",
         "novnc_web_root": "",
@@ -141,6 +145,12 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         # the "application_name: '...'" line. Job Simulator through the OpenComposite
         # shim reports OpenComposite_wine64-preloader, so "OpenComposite" matches.
         "openxr_client_name": "OpenComposite",
+        # Monado's remote HMD reports 960x1080 per eye (a 1920x1080 display split
+        # side by side) and scales it by OXR_VIEWPORT_SCALE_PERCENTAGE. At 100 the
+        # mirror is too soft to read text in; 200 renders 1920x2160 per eye.
+        "viewport_scale_percentage": 200.0,
+        # xdotool --name pattern used to fullscreen the game window. Empty disables.
+        "game_window": "Job Simulator",
         "startup_timeout_sec": 300.0,
     },
     "body": {
@@ -291,6 +301,11 @@ def _validate(cfg: Config) -> None:
         value = getattr(cfg.launch, field_name)
         if value <= 0 or not math.isfinite(value):
             raise ConfigError(f"launch.{field_name} must be positive")
+    scale = cfg.launch.viewport_scale_percentage
+    if not math.isfinite(scale) or not 0.0 < scale <= 400.0:
+        # A percentage, not a fraction: 100 is native and 400 is already 16x the
+        # pixels per eye. Refused at load rather than surprising the GPU.
+        raise ConfigError("launch.viewport_scale_percentage must be finite and in (0, 400]")
     for field_name in (
         "monado_startup_sec",
         "weston_startup_sec",

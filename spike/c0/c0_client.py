@@ -256,7 +256,44 @@ SCRIPTS = {
 }
 
 
-def fill(d, st):
+def fov_from_args(args):
+    """`(half_h, half_v)` radians from --fov-h-deg/--fov-v-deg, or None.
+
+    Both angles or neither: a lone horizontal angle would need an invented aspect
+    ratio. 0/0 returns None and leaves the driver's own field of view in force -
+    the behaviour every pre-declaration measurement was taken under.
+    """
+    h, v = float(args.fov_h_deg), float(args.fov_v_deg)
+    if not h and not v:
+        return None
+    if not h or not v:
+        sys.exit("--fov-h-deg and --fov-v-deg must be given together")
+    if not (0.0 < h < 180.0 and 0.0 < v < 180.0):
+        sys.exit("--fov-h-deg/--fov-v-deg must be between 0 and 180 degrees")
+    return (math.radians(h) / 2.0, math.radians(v) / 2.0)
+
+
+def fill(d, st, *, fov=None, ipd_m=0.063):
+    if fov is not None:
+        # Declaring a frustum sets per_view_data_valid, which also makes the
+        # per-view eye poses authoritative - so state them instead of leaving the
+        # zeros blank_packet() wrote (a zero-norm quaternion is not identity).
+        half_h, half_v = float(fov[0]), float(fov[1])
+        ipd = float(ipd_m)
+        for i, side in enumerate((-1.0, 1.0)):
+            view = d.head.views[i]
+            view.fov.angle_left = half_h
+            view.fov.angle_right = half_h
+            view.fov.angle_up = half_v
+            view.fov.angle_down = half_v
+            view.pose.position.x = side * ipd / 2.0
+            view.pose.position.y = 0.0
+            view.pose.position.z = 0.0
+            view.pose.orientation.x = 0.0
+            view.pose.orientation.y = 0.0
+            view.pose.orientation.z = 0.0
+            view.pose.orientation.w = 1.0
+        d.head.per_view_data_valid = True
     d.head.center.position.x = st.head_p[0]
     d.head.center.position.y = st.head_p[1]
     d.head.center.position.z = st.head_p[2]
@@ -328,7 +365,12 @@ def main():
     ap.add_argument("--walk-speed", type=float, default=0.64, help="G1 SONIC measured walk speed, m/s")
     ap.add_argument("--dt-click", type=float, default=0.05, help="click pulse width, s")
     ap.add_argument("--log", default=None, help="CSV path (default spike/c0/logs/c0_<mode>.csv)")
+    ap.add_argument("--fov-h-deg", type=float, default=0.0, dest="fov_h_deg",
+                    help="declared horizontal field of view, degrees (0 = undeclared)")
+    ap.add_argument("--fov-v-deg", type=float, default=0.0, dest="fov_v_deg",
+                    help="declared vertical field of view, degrees (0 = undeclared)")
     args = ap.parse_args()
+    fov = fov_from_args(args)
 
     assert_layout()
     script = SCRIPTS[args.mode]
@@ -375,7 +417,7 @@ def main():
                 if t >= args.duration:
                     break
                 st = script(t, args, State())
-                d = fill(blank_packet(), st)
+                d = fill(blank_packet(), st, fov=fov)
                 sock_file.write(bytes(d))
                 sock_file.flush()
                 w.writerow([

@@ -23,6 +23,15 @@ from .processes import Aborted, ProcessHandle, ProcessRunner
 MODES = ("hold", "yaw", "trigger", "dodge", "walk", "clock", "manual", "body")
 
 
+def initial_mode(cfg: Config) -> str:
+    """The mode a session starts in.
+
+    Whole-body control is the point of the launcher, so the body is the default
+    whenever it is enabled; otherwise the static hold pose stands in.
+    """
+    return "body" if cfg.body.enabled else "hold"
+
+
 class State(StrEnum):
     STOPPED = "stopped"
     STARTING = "starting"
@@ -137,7 +146,7 @@ class SessionManager:
         self._started_at: datetime | None = None
         self._last_error: str | None = None
         self._survivors: list[str] = []
-        self._mode = "hold"
+        self._mode = initial_mode(cfg)
         self._handles: dict[str, ProcessHandle] = {}
         self._game_pids: list[int] = []
         self._game_audio_muted: bool = False
@@ -590,6 +599,13 @@ class SessionManager:
             env["VR_OVERRIDE"] = self.cfg.paths.vr_override
             # pressure-vessel hides the host's OpenXR runtimes unless asked to import.
             env["PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES"] = "1"
+        scale = self.cfg.launch.viewport_scale_percentage
+        if scale != 100.0:
+            # The OpenXR runtime scales the HMD's per-view image by this percentage,
+            # and that runtime runs inside the game, so the value has to be in the
+            # environment Steam hands down. 100 is Monado's own default, which is
+            # 960x1080 per eye for the remote HMD and too soft to read text from.
+            env["OXR_VIEWPORT_SCALE_PERCENTAGE"] = f"{scale:g}"
         return env
 
     def _log(self, name: str) -> Path:
@@ -858,6 +874,11 @@ class SessionManager:
         pose_log = self._log("pose")
         pose_log.unlink(missing_ok=True)
         self._manual_input.clear()
+        # The declared field of view belongs to the session, not the mode, so every
+        # pose client states the same frustum and a live switch never changes it.
+        # Keep it 0 for Job Simulator: declaring one makes the game stop rendering
+        # and fall back to its grey background, whether set at launch or later.
+        fov_flags = body_pose_flags(self.cfg.body)
         if mode == "manual":
             manual = Path(self.cfg.paths.pose_client).with_name("c0_manual.py")
             if not manual.exists():
@@ -869,6 +890,7 @@ class SessionManager:
                 str(manual),
                 "--input-socket",
                 str(input_socket),
+                *fov_flags,
             ]
             needle = "connected 127.0.0.1"
         elif mode == "body":
@@ -889,7 +911,7 @@ class SessionManager:
                 f"{self.cfg.body.yaw_offset_deg:g}",
                 # Omitted rather than passed as 0: undeclared is the existing
                 # behaviour, and 0 deg is not a valid declaration.
-                *body_pose_flags(self.cfg.body),
+                *fov_flags,
             ]
             needle = "handshake ok"
         else:
@@ -902,6 +924,7 @@ class SessionManager:
                 "3600",
                 "--log",
                 str(self._session_dir / f"c0_{mode}.csv"),
+                *fov_flags,
             ]
             needle = "handshake ok"
         self._start("pose", argv, self._base_env(), Path.cwd(), pose_log)
@@ -974,6 +997,69 @@ class SessionManager:
             self._startup_timeout(self.cfg.launch.openxr_client_timeout_sec),
             self._stop_event,
         )
+        self._fullscreen_game_window()
+
+    def _fullscreen_game_window(self) -> None:
+        """Keep the game's Xwayland window fullscreen.
+
+        Job Simulator sets _NET_WM_STATE_FULLSCREEN itself, but weston's xwm only
+        acts on a client message, so without this the window keeps its title bar
+        and sits at a ~38x59 offset, clipped at the bottom. kiosk-shell would do it
+        for us, but its Xwayland path segfaults (weston 15 and 16 alike).
+
+        Unity drops the fullscreen state when it resizes its window on scene load,
+        so the first request is applied now (deterministically) and a daemon
+        thread re-asserts it for a bounded time afterwards. Best effort: a missing
+        window or xdotool is logged, never fatal.
+        """
+        if not (
+            self.cfg.paths.xdotool_bin
+            and self.cfg.launch.game_window
+            and self._display
+        ):
+            return
+        env = self._base_env()
+        env["DISPLAY"] = self._display
+        if not self._apply_game_fullscreen_once(env):
+            self._session_log(
+                f"game window {self.cfg.launch.game_window!r} not seen yet"
+            )
+        threading.Thread(
+            target=self._keep_game_window_fullscreen,
+            args=(env,),
+            name="superbot-fullscreen",
+            daemon=True,
+        ).start()
+
+    def _apply_game_fullscreen_once(self, env: dict[str, str]) -> bool:
+        xdotool = self.cfg.paths.xdotool_bin
+        pattern = self.cfg.launch.game_window
+        try:
+            result = self.runner.run(
+                [xdotool, "search", "--name", pattern], env=env, timeout=5
+            )
+        except Exception as exc:
+            self._session_log(f"xdotool search failed: {exc}")
+            return False
+        windows = (result.stdout or "").split()
+        for window in windows:
+            try:
+                self.runner.run(
+                    [xdotool, "windowstate", "--add", "fullscreen", window],
+                    env=env,
+                    timeout=5,
+                )
+            except Exception as exc:
+                self._session_log(f"could not fullscreen window {window}: {exc}")
+        return bool(windows)
+
+    def _keep_game_window_fullscreen(self, env: dict[str, str]) -> None:
+        deadline = time.monotonic() + 90.0
+        while not self._stop_event.is_set() and time.monotonic() < deadline:
+            with contextlib.suppress(Exception):
+                self._apply_game_fullscreen_once(env)
+            if self._stop_event.wait(2.0):
+                return
 
     def _step(self, name: str, log_name: str, action: Callable[[], None], fallback_log_name: str | None = None) -> None:
         try:

@@ -112,6 +112,8 @@ def make_manual():
         invert_y=False,
         speed=0.8,
         hand_speed=0.5,
+        fov_h_deg=0.0,
+        fov_v_deg=0.0,
     )
     return manual.Manual(args)
 
@@ -125,6 +127,7 @@ class ManualPunchTests(unittest.TestCase):
         for _ in range(steps):
             m.update(inp, self.DT)
             packet = m.packet()
+        assert packet is not None
         return packet
 
     def test_f_punches_active_hand_forward_then_returns(self) -> None:

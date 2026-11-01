@@ -21,6 +21,7 @@ from superbot.orchestrator import (
     PreflightError,
     SessionManager,
     State,
+    initial_mode,
     _OpenXRLogParser,
     parse_openxr_client,
 )
@@ -31,7 +32,7 @@ class FakeHandle:
         self.name = name
         self.pid = pid
         self.pgid = pid
-        self.log_path = Path("/tmp") / f"{name}.log"
+        self.log_path = Path(tempfile.gettempdir()) / f"{name}.log"
         self._alive = True
         self._group_alive = False
 
@@ -149,7 +150,12 @@ class FakeRunner:
             self.game_started = False
 
     def run(self, argv, env=None, cwd=None, timeout=10, check=False):
-        self.runs.append([str(item) for item in argv])
+        argv = [str(item) for item in argv]
+        self.runs.append(argv)
+        # The fullscreen step polls `xdotool search`; answer it so startup does not
+        # sit on the 30 s deadline in every test.
+        if argv and argv[0].endswith("xdotool") and "search" in argv:
+            return subprocess.CompletedProcess(argv, 0, "4242\n", "")
         return subprocess.CompletedProcess(argv, 0, "", "")
 
     def debug_scene_graph(self, debug_bin, env, timeout=5):
@@ -201,7 +207,7 @@ class OrchestratorTests(unittest.TestCase):
         )
         self.cfg = cfg
         self.runner = FakeRunner()
-        self.manager = SessionManager(cfg, runner=self.runner)
+        self.manager = SessionManager(cfg, runner=self.runner)  # type: ignore[arg-type]
 
     def tearDown(self) -> None:
         self.manager.stop()
@@ -224,6 +230,39 @@ class OrchestratorTests(unittest.TestCase):
         snapshot = self.manager.snapshot()
         self.assertIsNotNone(snapshot["session_id"])
         self.assertIsNotNone(snapshot["started_at"])
+
+    def test_session_starts_in_body_mode_when_body_enabled(self) -> None:
+        cfg = replace(self.cfg, body=replace(self.cfg.body, enabled=True))
+        self.assertEqual(initial_mode(cfg), "body")
+
+    def test_session_starts_in_hold_mode_when_body_disabled(self) -> None:
+        # load_config's default: no body view, so the static pose stands in.
+        self.assertEqual(initial_mode(self.cfg), "hold")
+
+    def test_steam_env_carries_the_viewport_scale(self) -> None:
+        self.assertEqual(
+            self.manager._steam_env()["OXR_VIEWPORT_SCALE_PERCENTAGE"], "200"
+        )
+
+    def test_steam_env_omits_a_native_scale(self) -> None:
+        self.manager.cfg = replace(
+            self.cfg,
+            launch=replace(self.cfg.launch, viewport_scale_percentage=100.0),
+        )
+        self.assertNotIn(
+            "OXR_VIEWPORT_SCALE_PERCENTAGE", self.manager._steam_env()
+        )
+
+    def test_launch_asks_the_game_window_to_fullscreen(self) -> None:
+        self.start()
+        calls = [
+            argv for argv in self.runner.runs if argv and argv[0].endswith("xdotool")
+        ]
+        self.assertTrue(any("search" in argv for argv in calls), calls)
+        windowstate = [argv for argv in calls if "windowstate" in argv]
+        self.assertTrue(windowstate, calls)
+        self.assertIn("fullscreen", windowstate[-1])
+        self.assertIn("4242", windowstate[-1])
 
     def test_start_uses_vnc_and_proxy(self) -> None:
         self.start()
@@ -1970,6 +2009,31 @@ class OrchestratorTests(unittest.TestCase):
         )
         self.start()
         self.manager.set_mode("body")
+        argv = self.runner.starts[-1][1]
+        self.assertEqual(float(argv[argv.index("--fov-h-deg") + 1]), 110.0)
+        self.assertEqual(float(argv[argv.index("--fov-v-deg") + 1]), 78.0)
+
+    def test_manual_mode_declares_the_configured_field_of_view(self) -> None:
+        # The frustum is a property of the session, not the mode: switching into
+        # body after the game connected must not change the view configuration,
+        # or the client keeps rendering against swapchains built for the old one.
+        self.manager.cfg = replace(
+            self.cfg,
+            body=replace(self.cfg.body, fov_h_deg=110.0, fov_v_deg=78.0),
+        )
+        self.start()
+        self.manager.set_mode("manual")
+        argv = self.runner.starts[-1][1]
+        self.assertEqual(float(argv[argv.index("--fov-h-deg") + 1]), 110.0)
+        self.assertEqual(float(argv[argv.index("--fov-v-deg") + 1]), 78.0)
+
+    def test_scripted_mode_declares_the_configured_field_of_view(self) -> None:
+        self.manager.cfg = replace(
+            self.cfg,
+            body=replace(self.cfg.body, fov_h_deg=110.0, fov_v_deg=78.0),
+        )
+        self.start()
+        self.manager.set_mode("hold")
         argv = self.runner.starts[-1][1]
         self.assertEqual(float(argv[argv.index("--fov-h-deg") + 1]), 110.0)
         self.assertEqual(float(argv[argv.index("--fov-v-deg") + 1]), 78.0)

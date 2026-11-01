@@ -184,6 +184,9 @@ class BrowserInput:
 class Manual:
     def __init__(self, args):
         self.args = args
+        # Declared once: the frustum must not change mid-session, or the game's
+        # swapchains go stale (see orchestrator._start_pose).
+        self.fov = c0.fov_from_args(args)
         self.pos = [0.0, 1.221, 0.0]
         self.yaw = 0.0
         self.pitch = 0.0
@@ -344,21 +347,23 @@ class Manual:
         rest_l = (-0.222, -0.5, 0.017)
         rest_r = (0.222, -0.5, 0.017)
         hand = {
-            "L": ([hp[i] + rest_l[i] for i in range(3)], (0.0, 0.0, 0.0, 1.0)),
-            "R": ([hp[i] + rest_r[i] for i in range(3)], (0.0, 0.0, 0.0, 1.0)),
+            "L": ((hp[0] + rest_l[0], hp[1] + rest_l[1], hp[2] + rest_l[2]),
+                  (0.0, 0.0, 0.0, 1.0)),
+            "R": ((hp[0] + rest_r[0], hp[1] + rest_r[1], hp[2] + rest_r[2]),
+                  (0.0, 0.0, 0.0, 1.0)),
         }
         off = self.rot(q, active_off)
-        hand[self.active] = ([hp[i] + off[i] for i in range(3)], q)
+        hand[self.active] = ((hp[0] + off[0], hp[1] + off[1], hp[2] + off[2]), q)
 
         st = c0.State()
-        st.head_p = tuple(hp)
+        st.head_p = (hp[0], hp[1], hp[2])
         st.head_q = q
         st.l_p, st.l_q = hand["L"]
         st.r_p, st.r_q = hand["R"]
         st.trigger = 1.0 if self.trigger else 0.0
         st.trigger_click = self.trigger and not self.prev_trigger
         st.squeeze = 1.0 if self.grip else 0.0
-        d = c0.fill(c0.blank_packet(), st)
+        d = c0.fill(c0.blank_packet(), st, fov=self.fov)
         for side in (d.left, d.right):
             side.active = True
             side.hand_tracking_active = False
@@ -415,6 +420,10 @@ def main():
     ap.add_argument("--invert-y", action="store_true")
     ap.add_argument("--input-socket", required=True, help="Unix datagram socket for browser input")
     ap.add_argument("--duration", type=float, default=0.0, help="exit after N seconds (0 = forever)")
+    ap.add_argument("--fov-h-deg", type=float, default=0.0, dest="fov_h_deg",
+                    help="declared horizontal field of view, degrees (0 = undeclared)")
+    ap.add_argument("--fov-v-deg", type=float, default=0.0, dest="fov_v_deg",
+                    help="declared vertical field of view, degrees (0 = undeclared)")
     args = ap.parse_args()
 
     inp = BrowserInput(Path(args.input_socket))
